@@ -1,6 +1,6 @@
 {
   "name": "fate",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "author": "VagueDustin Enterprises",
   "license": "MIT",
   "type": "module",
@@ -35,7 +35,8 @@
       "icon": "build/icon.ico",
       "target": [
         "nsis",
-        "portable"
+        "portable",
+        "appx"
       ]
     },
     "nsis": {
@@ -43,6 +44,12 @@
       "perMachine": true,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true
+    },
+    "appx": {
+      "applicationId": "FATEMarkdownViewer",
+      "identityName": "VagueDustinEnterprises.FATE-MarkdownViewer",
+      "publisher": "CN=8E281BA4-FA63-4F64-812E-5D5067FCC2EB",
+      "publisherDisplayName": "VagueDustin Enterprises"
     },
     "fileAssociations": [
       {
