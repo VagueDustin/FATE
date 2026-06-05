@@ -41,6 +41,8 @@ function App() {
         setUpdateStatus(message);
         setUpdateAction(action);
       });
+
+      window.electronAPI.appReady();
     }
   }, []);
 
@@ -116,7 +118,7 @@ function App() {
         </div>
       )}
       
-      {appVersion && (
+      {appVersion && !isViewing && (
         <div className="version-container">
           <span className="version-text">v{appVersion}</span>
           <button className="update-btn" onClick={handleUpdateAction}>

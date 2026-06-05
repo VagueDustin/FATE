@@ -5,9 +5,6 @@ const { autoUpdater } = require('electron-updater');
 
 const isDev = process.env.NODE_ENV === 'development';
 
-// Disable hardware acceleration to prevent Discord from thinking this is a game
-app.disableHardwareAcceleration();
-
 let mainWindow;
 
 function createWindow() {
@@ -28,7 +25,7 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
 
-  mainWindow.webContents.on('did-finish-load', () => {
+  ipcMain.once('app-ready', () => {
     handleArgs(process.argv);
   });
 }

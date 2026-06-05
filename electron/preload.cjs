@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   installUpdate: () => ipcRenderer.invoke('install-update'),
+  appReady: () => ipcRenderer.send('app-ready'),
   onUpdateMessage: (callback) => {
     ipcRenderer.removeAllListeners('update-message');
     ipcRenderer.on('update-message', (_event, message, action) => callback(message, action));
