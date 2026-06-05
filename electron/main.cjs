@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { autoUpdater } = require('electron-updater');
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -47,7 +48,12 @@ function handleArgs(argv) {
   }
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  createWindow();
+  if (!isDev) {
+    autoUpdater.checkForUpdatesAndNotify();
+  }
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

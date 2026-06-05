@@ -1,7 +1,7 @@
 {
   "name": "fate",
-  "private": true,
   "version": "1.0.1",
+  "license": "MIT",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -15,6 +15,13 @@
   "build": {
     "appId": "com.vaguedustin.fate",
     "productName": "FATE",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "VagueDustin",
+        "repo": "FATE"
+      }
+    ],
     "directories": {
       "output": "dist-electron"
     },
@@ -47,6 +54,7 @@
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",
     "dompurify": "^3.4.8",
+    "electron-updater": "^6.8.3",
     "highlight.js": "^11.11.1",
     "marked": "^18.0.5",
     "react": "^19.2.6",
