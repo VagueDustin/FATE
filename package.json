@@ -1,6 +1,6 @@
 {
   "name": "fate",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "author": "VagueDustin Enterprises",
   "license": "MIT",
   "type": "module",
@@ -48,7 +48,8 @@
       "applicationId": "FATEMarkdownViewer",
       "identityName": "VagueDustinEnterprises.FATE-MarkdownViewer",
       "publisher": "CN=8E281BA4-FA63-4F64-812E-5D5067FCC2EB",
-      "publisherDisplayName": "VagueDustin Enterprises™"
+      "publisherDisplayName": "VagueDustin Enterprises™",
+      "displayName": "FATE - Markdown Viewer"
     },
     "fileAssociations": [
       {
