@@ -291,3 +291,41 @@
   font-style: italic;
   opacity: 0.8;
 }
+
+/* Version and Update UI */
+.version-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: rgba(20, 20, 20, 0.8);
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(5px);
+  z-index: 1000;
+}
+
+.version-text {
+  color: #9ca3af;
+  font-family: monospace;
+  font-size: 0.9rem;
+}
+
+.update-btn {
+  background: rgba(229, 62, 62, 0.2);
+  color: #ff4d4d;
+  border: 1px solid rgba(229, 62, 62, 0.5);
+  border-radius: 4px;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.update-btn:hover {
+  background: rgba(229, 62, 62, 0.4);
+  color: #fff;
+}

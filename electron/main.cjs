@@ -5,6 +5,9 @@ const { autoUpdater } = require('electron-updater');
 
 const isDev = process.env.NODE_ENV === 'development';
 
+// Disable hardware acceleration to prevent Discord from thinking this is a game
+app.disableHardwareAcceleration();
+
 let mainWindow;
 
 function createWindow() {
@@ -50,6 +53,39 @@ function handleArgs(argv) {
 
 app.whenReady().then(() => {
   createWindow();
+  
+  ipcMain.handle('get-app-version', () => app.getVersion());
+  
+  ipcMain.handle('check-for-updates', () => {
+    if (!isDev) {
+      autoUpdater.checkForUpdates();
+    }
+  });
+
+  ipcMain.handle('install-update', () => {
+    autoUpdater.quitAndInstall();
+  });
+
+  autoUpdater.on('checking-for-update', () => {
+    if(mainWindow) mainWindow.webContents.send('update-message', 'Checking for updates...', null);
+  });
+  
+  autoUpdater.on('update-available', (info) => {
+    if(mainWindow) mainWindow.webContents.send('update-message', `Update v${info.version} available! Downloading...`, null);
+  });
+  
+  autoUpdater.on('update-not-available', () => {
+    if(mainWindow) mainWindow.webContents.send('update-message', 'You are on the latest version.', null);
+  });
+  
+  autoUpdater.on('error', (err) => {
+    if(mainWindow) mainWindow.webContents.send('update-message', `Error checking for updates: ${err.message}`, null);
+  });
+  
+  autoUpdater.on('update-downloaded', () => {
+    if(mainWindow) mainWindow.webContents.send('update-message', 'Update downloaded! Ready to install.', 'install');
+  });
+
   if (!isDev) {
     autoUpdater.checkForUpdatesAndNotify();
   }

@@ -21,6 +21,9 @@ function App() {
   const [fileContent, setFileContent] = useState('');
   const [fileName, setFileName] = useState('');
   const [isViewing, setIsViewing] = useState(false);
+  const [appVersion, setAppVersion] = useState('');
+  const [updateStatus, setUpdateStatus] = useState('');
+  const [updateAction, setUpdateAction] = useState(null);
 
   useEffect(() => {
     if (window.electronAPI) {
@@ -31,8 +34,23 @@ function App() {
         setFileContent(cleanHtml);
         setIsViewing(true);
       });
+
+      window.electronAPI.getAppVersion().then(version => setAppVersion(version));
+
+      window.electronAPI.onUpdateMessage((message, action) => {
+        setUpdateStatus(message);
+        setUpdateAction(action);
+      });
     }
   }, []);
+
+  const handleUpdateAction = () => {
+    if (updateAction === 'install') {
+      window.electronAPI.installUpdate();
+    } else {
+      window.electronAPI.checkForUpdates();
+    }
+  };
 
   const onDrop = (acceptedFiles) => {
     const file = acceptedFiles[0];
@@ -95,6 +113,15 @@ function App() {
             className="markdown-body"
             dangerouslySetInnerHTML={{ __html: fileContent }}
           />
+        </div>
+      )}
+      
+      {appVersion && (
+        <div className="version-container">
+          <span className="version-text">v{appVersion}</span>
+          <button className="update-btn" onClick={handleUpdateAction}>
+            {updateStatus ? updateStatus : "Check for updates"}
+          </button>
         </div>
       )}
     </div>
