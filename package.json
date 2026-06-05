@@ -1,6 +1,7 @@
 {
   "name": "fate",
-  "version": "1.0.3",
+  "version": "1.0.4",
+  "author": "VagueDustin Enterprises™",
   "license": "MIT",
   "type": "module",
   "main": "electron/main.cjs",
@@ -22,6 +23,7 @@
         "repo": "FATE"
       }
     ],
+    "artifactName": "FATE-Setup-${version}.${ext}",
     "directories": {
       "output": "dist-electron"
     },
