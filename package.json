@@ -1,6 +1,6 @@
 {
-  "name": "fate",
-  "version": "1.2.5",
+  "name": "fate-markdown-viewer",
+  "version": "1.2.6",
   "author": "VagueDustin Enterprises",
   "license": "MIT",
   "type": "module",
@@ -15,7 +15,7 @@
   },
   "build": {
     "appId": "com.vaguedustin.fate",
-    "productName": "FATE",
+    "productName": "FATE - Markdown Viewer",
     "publish": [
       {
         "provider": "github",
