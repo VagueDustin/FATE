@@ -564,6 +564,7 @@ html, body, #root {
   cursor: pointer;
   transition: all 0.3s ease;
   z-index: 100;
+  box-shadow: 0 0 12px rgba(229, 62, 62, 0.4);
 }
 
 .settings-trigger:hover {
@@ -712,7 +713,47 @@ input:checked + .slider:before { transform: translateX(20px); }
 [data-theme='light'] .markdown-container, 
 [data-theme='light'] .markdown-body {
   background: var(--bg-primary);
+  color: var(--text-primary) !important;
+}
+
+[data-theme='light'] .viewer-header {
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-color);
   color: var(--text-primary);
+}
+
+[data-theme='light'] .viewer-header .filename-container span,
+[data-theme='light'] .viewer-header .filename-container svg {
+  color: var(--text-primary) !important;
+}
+
+[data-theme='light'] .viewer-header .back-btn {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+[data-theme='light'] .viewer-header .back-btn:hover {
+  background: #ebecf0;
+}
+
+[data-theme='light'] .markdown-body h1,
+[data-theme='light'] .markdown-body h2,
+[data-theme='light'] .markdown-body h3,
+[data-theme='light'] .markdown-body h4,
+[data-theme='light'] .markdown-body h5,
+[data-theme='light'] .markdown-body h6,
+[data-theme='light'] .markdown-body p,
+[data-theme='light'] .markdown-body li,
+[data-theme='light'] .markdown-body a,
+[data-theme='light'] .markdown-body span,
+[data-theme='light'] .markdown-body strong {
+  color: var(--text-primary);
+}
+
+[data-theme='light'] .markdown-body h1,
+[data-theme='light'] .markdown-body h2 {
+  border-bottom: 1px solid var(--border-color);
 }
 
 [data-theme='light'] .sidebar {
@@ -790,3 +831,164 @@ input:checked + .slider:before { transform: translateX(20px); }
 [data-theme='light'] .markdown-body table td {
   border-color: var(--border-color);
 }
+
+/* Dracula Theme Overrides */
+[data-theme='dracula'] {
+  --bg-primary: #282a36;
+  --bg-secondary: #44475a;
+  --text-primary: #f8f8f2;
+  --border-color: #6272a4;
+  --accent-primary: #bd93f9;
+}
+
+[data-theme='dracula'] body, 
+[data-theme='dracula'] .app-container, 
+[data-theme='dracula'] .viewer-layout, 
+[data-theme='dracula'] .viewer-main, 
+[data-theme='dracula'] .markdown-container, 
+[data-theme='dracula'] .markdown-body {
+  background: var(--bg-primary);
+  color: var(--text-primary) !important;
+}
+
+[data-theme='dracula'] .viewer-header {
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+[data-theme='dracula'] .viewer-header .filename-container span,
+[data-theme='dracula'] .viewer-header .filename-container svg {
+  color: var(--text-primary) !important;
+}
+
+[data-theme='dracula'] .viewer-header .back-btn {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+[data-theme='dracula'] .viewer-header .back-btn:hover {
+  background: #6272a4;
+}
+
+[data-theme='dracula'] .markdown-body h1,
+[data-theme='dracula'] .markdown-body h2,
+[data-theme='dracula'] .markdown-body h3,
+[data-theme='dracula'] .markdown-body h4,
+[data-theme='dracula'] .markdown-body h5,
+[data-theme='dracula'] .markdown-body h6,
+[data-theme='dracula'] .markdown-body p,
+[data-theme='dracula'] .markdown-body li,
+[data-theme='dracula'] .markdown-body a,
+[data-theme='dracula'] .markdown-body span,
+[data-theme='dracula'] .markdown-body strong {
+  color: var(--text-primary);
+}
+
+[data-theme='dracula'] .markdown-body h1,
+[data-theme='dracula'] .markdown-body h2 {
+  border-bottom: 1px solid var(--border-color);
+}
+
+[data-theme='dracula'] .sidebar {
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border-color);
+}
+
+[data-theme='dracula'] .toc-list li {
+  color: #f8f8f2;
+}
+[data-theme='dracula'] .toc-list li:hover {
+  background: #6272a4;
+  color: #f8f8f2;
+}
+[data-theme='dracula'] .toc-list li.active {
+  background: rgba(189, 147, 249, 0.15);
+  color: #bd93f9;
+  border-left-color: #bd93f9;
+}
+
+[data-theme='dracula'] .settings-modal {
+  background: var(--bg-primary);
+  border-color: var(--border-color);
+}
+[data-theme='dracula'] .settings-header h2, 
+[data-theme='dracula'] .setting-item {
+  color: var(--text-primary);
+}
+[data-theme='dracula'] .setting-item select, 
+[data-theme='dracula'] .setting-item input[type="number"] {
+  background: var(--bg-secondary);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+[data-theme='dracula'] .shortcut-btn {
+  background: var(--bg-secondary);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+[data-theme='dracula'] .setting-group h3 {
+  color: #bd93f9;
+}
+[data-theme='dracula'] .shortcut-btn.recording {
+  background: rgba(189, 147, 249, 0.2);
+  border-color: #bd93f9;
+  color: #bd93f9;
+}
+[data-theme='dracula'] input:checked + .slider { background-color: #bd93f9; }
+
+[data-theme='dracula'] .home-screen {
+  background: radial-gradient(circle at 50% 0%, #44475a 0%, #282a36 100%);
+}
+[data-theme='dracula'] .hero-title { color: #f8f8f2; }
+[data-theme='dracula'] .hero-subtitle { color: #6272a4; }
+[data-theme='dracula'] .dropzone {
+  background: rgba(68, 71, 90, 0.8);
+  border-color: var(--border-color);
+}
+[data-theme='dracula'] .dropzone p { color: #f8f8f2; }
+[data-theme='dracula'] .icon { color: #bd93f9; }
+[data-theme='dracula'] .dropzone.active {
+  background: rgba(189, 147, 249, 0.1);
+  border-color: #bd93f9;
+}
+[data-theme='dracula'] .header h1 {
+  text-shadow: -3px 0 #bd93f9, 3px 0 #111;
+}
+[data-theme='dracula'] .progress-bar {
+  background: linear-gradient(90deg, #bd93f9, #ff79c6, #ffb86c);
+  box-shadow: 0 0 10px rgba(189, 147, 249, 0.8);
+}
+[data-theme='dracula'] ::-webkit-scrollbar-thumb {
+  background: #bd93f9;
+}
+[data-theme='dracula'] ::-webkit-scrollbar-thumb:hover {
+  background: #ff79c6;
+}
+[data-theme='dracula'] .update-btn {
+  background: rgba(189, 147, 249, 0.2);
+  color: #bd93f9;
+  border-color: rgba(189, 147, 249, 0.5);
+}
+[data-theme='dracula'] .update-btn:hover {
+  background: rgba(189, 147, 249, 0.4);
+  color: #fff;
+}
+[data-theme='dracula'] .settings-trigger {
+  box-shadow: 0 0 12px rgba(189, 147, 249, 0.4);
+}
+[data-theme='dracula'] .settings-trigger:hover {
+  background: rgba(189, 147, 249, 0.2);
+  color: #bd93f9;
+  border-color: rgba(189, 147, 249, 0.5);
+  box-shadow: 0 0 15px rgba(189, 147, 249, 0.6);
+}
+
+[data-theme='dracula'] .markdown-body code { background-color: #44475a; }
+[data-theme='dracula'] .markdown-body pre { background-color: #44475a; }
+[data-theme='dracula'] .markdown-body blockquote { color: #6272a4; border-left-color: #6272a4; }
+[data-theme='dracula'] .markdown-body table tr { background-color: var(--bg-primary); border-top-color: var(--border-color); }
+[data-theme='dracula'] .markdown-body table tr:nth-child(2n) { background-color: var(--bg-secondary); }
+[data-theme='dracula'] .markdown-body table th,
+[data-theme='dracula'] .markdown-body table td { border-color: var(--border-color); }

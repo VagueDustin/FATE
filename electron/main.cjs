@@ -32,14 +32,17 @@ rpc.on('ready', () => {
   setDiscordActivity();
 });
 
-function setDiscordActivity(activity = {}) {
-  if (!rpcReady || !store.get('discordEnabled')) {
-    if (rpcReady) rpc.clearActivity().catch(console.error);
-    return;
-  }
+let currentActivity = {};
+
+function setDiscordActivity(activity) {
+  if (activity) currentActivity = activity;
+  if (!rpcReady) return;
+  
+  const showFilename = store.get('discordEnabled');
+  
   rpc.setActivity({
-    details: activity.details || 'Idling on the home screen',
-    state: activity.state || 'Exploring Markdown',
+    details: currentActivity.details || 'Idling on the home screen',
+    state: showFilename ? (currentActivity.state || 'Exploring Markdown') : undefined,
     startTimestamp: sessionStartTimestamp,
     largeImageKey: 'fate-logo',
     largeImageText: 'FATE',
@@ -180,12 +183,7 @@ app.whenReady().then(() => {
   ipcMain.handle('store-set', (event, key, val) => {
     store.set(key, val);
     if (key === 'discordEnabled') {
-      if (val) {
-        if (!rpcReady) rpc.login({ clientId: discordClientId }).catch(console.error);
-        else setDiscordActivity();
-      } else {
-        if (rpcReady) rpc.clearActivity().catch(console.error);
-      }
+      setDiscordActivity();
     }
   });
 

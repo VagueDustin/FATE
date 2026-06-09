@@ -468,6 +468,7 @@ function App() {
                   <select value={settings.theme} onChange={e => updateSetting('theme', e.target.value)}>
                     <option value="dark">Dark</option>
                     <option value="light">Light</option>
+                    <option value="dracula">Dracula</option>
                   </select>
                 </div>
                 <div className="setting-item">
@@ -483,7 +484,7 @@ function App() {
               <div className="setting-group">
                 <h3>Integrations & Updates</h3>
                 <div className="setting-item">
-                  <span>Discord Rich Presence</span>
+                  <span>Show filename on Discord RPC</span>
                   <label className="switch">
                     <input type="checkbox" checked={settings.discordEnabled} onChange={e => updateSetting('discordEnabled', e.target.checked)} />
                     <span className="slider round"></span>
