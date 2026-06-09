@@ -7,6 +7,7 @@ import 'highlight.js/styles/github-dark.css';
 import markedKatex from 'marked-katex-extension';
 import 'katex/dist/katex.min.css';
 import { UploadSimple, FileText, ArrowLeft, List, CircleNotch } from '@phosphor-icons/react';
+import fateLogo from './assets/FATE-Square-Icon.png';
 import './App.css';
 
 // Configure marked to use highlight.js
@@ -278,7 +279,7 @@ function App() {
       {!isViewing ? (
         <div className="upload-view">
           <div className="header">
-            <img src="/src/assets/FATE-Square-Icon.png" alt="FATE Logo" className="fate-logo" style={{ width: '120px', height: '120px', marginBottom: '1rem', borderRadius: '24px', boxShadow: '0 8px 32px rgba(230, 57, 70, 0.2)' }} />
+            <img src={fateLogo} alt="FATE Logo" className="fate-logo" style={{ width: '120px', height: '120px', marginBottom: '1rem', borderRadius: '24px', boxShadow: '0 8px 32px rgba(230, 57, 70, 0.2)' }} />
             <h1>FATE</h1>
             <p>Formatted Article & Text Explorer</p>
             <p className="enterprise-text">Provided by VagueDustin Enterprises&trade;</p>
