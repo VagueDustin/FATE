@@ -2,12 +2,24 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
+import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css';
 import markedKatex from 'marked-katex-extension';
 import 'katex/dist/katex.min.css';
 import { UploadSimple, FileText, ArrowLeft, List, CircleNotch } from '@phosphor-icons/react';
 import './App.css';
-import MarkdownWorker from './markdownWorker?worker&inline';
+
+// Configure marked to use highlight.js
+marked.setOptions({
+  highlight: function(code, lang) {
+    const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+    return hljs.highlight(code, { language }).value;
+  },
+  gfm: true,
+  breaks: true
+});
+
+marked.use(markedKatex({ throwOnError: false, nonStandard: true }));
 
 function App() {
   const [fileContent, setFileContent] = useState('');
@@ -24,16 +36,6 @@ function App() {
   const [sidebarWidth, setSidebarWidth] = useState(300);
   
   const [isLoading, setIsLoading] = useState(false);
-  const workerRef = useRef(null);
-
-  useEffect(() => {
-    workerRef.current = new MarkdownWorker();
-    return () => {
-      if (workerRef.current) {
-        workerRef.current.terminate();
-      }
-    };
-  }, []);
 
   const startResizing = useCallback((e) => {
     isResizing.current = true;
@@ -59,51 +61,61 @@ function App() {
 
   const processMarkdown = (content, fPath) => {
     setIsLoading(true);
-    if (workerRef.current) {
-      workerRef.current.onmessage = (e) => {
-        const { rawHtml, fPath: returnedPath } = e.data;
-        
-        const cleanHtml = DOMPurify.sanitize(rawHtml, {
-          USE_PROFILES: { mathMl: true, html: true },
-          ADD_TAGS: ['annotation'],
-          ADD_ATTR: ['class', 'style', 'aria-hidden', 'encoding', 'xmlns', 'viewBox', 'd', 'preserveAspectRatio']
-        });
+    
+    // Repair mathematically corrupted control-characters from unescaped markdown generators
+    const repairedContent = content
+      .replace(/\x09heta/g, '\\theta')
+      .replace(/\x09ext/g, '\\text')
+      .replace(/\x09imes/g, '\\times')
+      .replace(/\x09au/g, '\\tau')
+      .replace(/\x0Crac/g, '\\frac')
+      .replace(/\x0Dight/g, '\\right')
+      .replace(/\x08eta/g, '\\beta')
+      .replace(/\x08egin/g, '\\begin')
+      .replace(/\x07pprox/g, '\\approx')
+      .replace(/\x07lpha/g, '\\alpha')
+      .replace(/\x0Dho/g, '\\rho')
+      .replace(/\x0B/g, '\\v')
+      .replace(/\\ /g, '\\\\ ');
 
-        const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = cleanHtml;
-        
-        if (returnedPath) {
-          const dirPath = returnedPath.substring(0, Math.max(returnedPath.lastIndexOf('\\'), returnedPath.lastIndexOf('/')));
-          const imgs = tempDiv.querySelectorAll('img');
-          imgs.forEach(img => {
-            const src = img.getAttribute('src');
-            if (src && !src.startsWith('http') && !src.startsWith('data:')) {
-              const isAbsolute = /^[a-zA-Z]:[\\/]/.test(src) || src.startsWith('/');
-              const absPath = isAbsolute ? src.replace(/\\/g, '/') : `${dirPath}/${src}`.replace(/\\/g, '/');
-              img.setAttribute('src', `fate-local://${absPath}`);
-            }
-          });
+    const rawHtml = marked.parse(repairedContent);
+    const cleanHtml = DOMPurify.sanitize(rawHtml, {
+      USE_PROFILES: { mathMl: true, html: true },
+      ADD_TAGS: ['annotation'],
+      ADD_ATTR: ['class', 'style', 'aria-hidden', 'encoding', 'xmlns', 'viewBox', 'd', 'preserveAspectRatio']
+    });
+
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = cleanHtml;
+    
+    if (fPath) {
+      const dirPath = fPath.substring(0, Math.max(fPath.lastIndexOf('\\'), fPath.lastIndexOf('/')));
+      const imgs = tempDiv.querySelectorAll('img');
+      imgs.forEach(img => {
+        const src = img.getAttribute('src');
+        if (src && !src.startsWith('http') && !src.startsWith('data:')) {
+          const isAbsolute = /^[a-zA-Z]:[\\/]/.test(src) || src.startsWith('/');
+          const absPath = isAbsolute ? src.replace(/\\/g, '/') : `${dirPath}/${src}`.replace(/\\/g, '/');
+          img.setAttribute('src', `fate-local://${absPath}`);
         }
+      });
+    }
 
-        const headings = Array.from(tempDiv.querySelectorAll('h1, h2, h3'));
-        const tocData = headings.map((h, i) => {
-          const id = `heading-${i}`;
-          h.id = id;
-          return { id, html: h.innerHTML, level: parseInt(h.tagName.substring(1)) };
-        });
+    const headings = Array.from(tempDiv.querySelectorAll('h1, h2, h3'));
+    const tocData = headings.map((h, i) => {
+      const id = `heading-${i}`;
+      h.id = id;
+      return { id, html: h.innerHTML, level: parseInt(h.tagName.substring(1)) };
+    });
 
-        setToc(tocData);
-        setIsSidebarOpen(tocData.length > 0);
-        setFileContent(tempDiv.innerHTML);
-        setIsLoading(false);
-        setIsViewing(true);
-        
-        if (window.electronAPI) {
-          window.electronAPI.setTitle(`FATE - ${returnedPath ? returnedPath.split(/[/\\]/).pop() : 'Document'}`);
-        }
-      };
-      
-      workerRef.current.postMessage({ content, fPath });
+    setToc(tocData);
+    setIsSidebarOpen(tocData.length > 0);
+    setFileContent(tempDiv.innerHTML);
+    setIsLoading(false);
+    setIsViewing(true);
+    
+    if (window.electronAPI) {
+      window.electronAPI.setTitle(`FATE - ${fPath ? fPath.split(/[/\\]/).pop() : 'Document'}`);
     }
   };
 
