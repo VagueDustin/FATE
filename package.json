@@ -43,7 +43,8 @@
       "perMachine": true,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "include": "build/installer.nsh"
+      "include": "build/installer.nsh",
+      "warningsAsErrors": false
     },
     "appx": {
       "applicationId": "FATEMarkdownViewer",
