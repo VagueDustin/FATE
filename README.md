@@ -48,13 +48,38 @@ Don't want to use the pre-compiled releases? You can easily build FATE from sour
 ## Changelog
 
 ### v1.1.0
+- **[Feature]** Injected dynamic auto-repair algorithms into the file parser to automatically reconstruct corrupted LaTeX string literals (such as missing `\` for `\theta`, `\approx`, and `\begin` cases).
+- **[Feature]** Implemented Print to PDF functionality with correctly inverted light-theme printer styles.
+- **[Feature]** Added fully scaled Microsoft Store (AppX) tile assets to replace default generic icons.
 - **[Enhancement]** Enabled `nonStandard` boundaries for the KaTeX inline parser, eliminating parse failures when equations are tightly packed against punctuation or parentheses.
 - **[Enhancement]** Upgraded the Table of Contents sidebar to natively render mathematical equations inside headings.
-- **[Feature]** Added fully scaled Microsoft Store (AppX) tile assets to replace default generic icons.
+- **[Enhancement]** Styled scrollbars to match the application's premium dark red aesthetic theme.
+- **[Bugfix]** Fixed viewport cutoff scaling bugs that occurred when the Table of Contents sidebar was expanded on ultrawide monitors.
 - **[Maintenance]** Cleaned up build scripts and prepared the application for production release.
 
 ### v1.0.8
-- **[Feature]** Injected dynamic auto-repair algorithms into the file parser to automatically reconstruct corrupted LaTeX string literals (such as missing `\` for `\theta`, `\approx`, and `\begin` cases).
-- **[Bugfix]** Fixed viewport cutoff scaling bugs that occurred when the Table of Contents sidebar was expanded on ultrawide monitors.
-- **[Enhancement]** Styled scrollbars to match the application's premium dark red aesthetic theme.
-- **[Feature]** Implemented Print to PDF functionality with correctly inverted light-theme printer styles.
+- **[Compliance]** Added `PRIVACY.md` and explicitly defined `displayName` in AppX build configuration for Microsoft Store validation.
+
+### v1.0.7
+- **[Minor]** Added trademark symbol to AppX publisher display name.
+
+### v1.0.6
+- **[Bugfix]** Resolved build artifact collision by disabling the portable target.
+
+### v1.0.5
+- **[Enhancement]** Bypassed CDN cache.
+
+### v1.0.4
+- **[Bugfix]** Added explicit publisher information and fixed artifact naming conventions.
+
+### v1.0.3
+- **[Bugfix]** Fixed a critical race condition, dynamically hid update UI when viewing a document, and re-enabled GPU rendering support.
+
+### v1.0.2
+- **[Feature]** Added automatic update UI and resolved Discord overlay conflicts.
+
+### v1.0.1
+- **[Enhancement]** Configured automatic updates and applied MIT licensing.
+
+### v1.0.0
+- **[Release]** Initial FATE Markdown Viewer release with Electron, React, and Vite.
