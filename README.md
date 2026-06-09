@@ -49,6 +49,15 @@ Don't want to use the pre-compiled releases? You can easily build FATE from sour
 
 ## Changelog
 
+### v1.3.0
+- **[Feature]** Fully integrated Discord Rich Presence to proudly display your reading activity.
+- **[Enhancement]** Complete UI responsiveness overhaul using fluid Flexbox scaling.
+- **[Enhancement]** Rebranded core identity and window titles to explicitly declare "FATE - Markdown Viewer".
+- **[Enhancement]** Integrated premium square FATE app icons and rectangular FATE document icons for `.md` Windows File Explorer associations.
+- **[Enhancement]** Regenerated and unified all Microsoft Appx package tile assets.
+- **[Maintenance]** Completely purged all default boilerplate graphics from the source tree.
+
+
 ### v1.1.0
 - **[Feature]** Injected dynamic auto-repair algorithms into the file parser to automatically reconstruct corrupted LaTeX string literals (such as missing `\` for `\theta`, `\approx`, and `\begin` cases).
 - **[Feature]** Implemented Print to PDF functionality with correctly inverted light-theme printer styles.
