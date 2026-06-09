@@ -6,7 +6,7 @@ import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css';
 import markedKatex from 'marked-katex-extension';
 import 'katex/dist/katex.min.css';
-import { UploadSimple, FileText, ArrowLeft, List, CircleNotch } from '@phosphor-icons/react';
+import { UploadSimple, FileText, ArrowLeft, List, CircleNotch, Gear, X } from '@phosphor-icons/react';
 import fateLogo from './assets/FATE-Square-Icon.png';
 import './App.css';
 
@@ -35,6 +35,27 @@ function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [activeHeading, setActiveHeading] = useState('');
   const [sidebarWidth, setSidebarWidth] = useState(300);
+  
+  const [showSettings, setShowSettings] = useState(false);
+  const [settings, setSettings] = useState({
+    theme: 'dark',
+    discordEnabled: false,
+    autoUpdatesEnabled: true,
+    sidebarWidth: 300,
+    shortcuts: { openFile: 'Control+O', print: 'Control+P', close: 'Escape' }
+  });
+  const [activeShortcutRebind, setActiveShortcutRebind] = useState(null);
+
+  const updateSetting = (key, value) => {
+    setSettings(prev => {
+      const updated = { ...prev, [key]: value };
+      if (window.electronAPI) window.electronAPI.store.set(key, value);
+      if (key === 'theme') {
+        document.documentElement.setAttribute('data-theme', value);
+      }
+      return updated;
+    });
+  };
   
   const [isLoading, setIsLoading] = useState(false);
   const contentRef = useRef(null);
@@ -141,6 +162,24 @@ function App() {
 
   useEffect(() => {
     if (window.electronAPI) {
+      Promise.all([
+        window.electronAPI.store.get('theme'),
+        window.electronAPI.store.get('discordEnabled'),
+        window.electronAPI.store.get('autoUpdatesEnabled'),
+        window.electronAPI.store.get('sidebarWidth'),
+        window.electronAPI.store.get('shortcuts')
+      ]).then(([theme, discordEnabled, autoUpdatesEnabled, savedSidebarWidth, shortcuts]) => {
+        const newSettings = {
+          theme: theme || 'dark',
+          discordEnabled: discordEnabled || false,
+          autoUpdatesEnabled: autoUpdatesEnabled !== false,
+          sidebarWidth: savedSidebarWidth || 300,
+          shortcuts: shortcuts || { openFile: 'Control+O', print: 'Control+P', close: 'Escape' }
+        };
+        setSettings(newSettings);
+        setSidebarWidth(newSettings.sidebarWidth);
+        document.documentElement.setAttribute('data-theme', newSettings.theme);
+      });
       window.electronAPI.onOpenFile((content, name, path) => {
         setFileName(name);
         setFilePath(path);
@@ -167,22 +206,58 @@ function App() {
   }, []);
 
   // Keyboard Shortcuts
+  const matchesShortcut = (e, shortcutString) => {
+    if (!shortcutString) return false;
+    const parts = shortcutString.split('+');
+    const key = parts[parts.length - 1].toLowerCase();
+    const ctrl = parts.includes('Control');
+    const shift = parts.includes('Shift');
+    const alt = parts.includes('Alt');
+    const meta = parts.includes('Meta');
+
+    if (e.ctrlKey !== ctrl) return false;
+    if (e.shiftKey !== shift) return false;
+    if (e.altKey !== alt) return false;
+    if (e.metaKey !== meta) return false;
+
+    if (key === 'escape' && e.key.toLowerCase() === 'escape') return true;
+    if (e.key.toLowerCase() === key) return true;
+    return false;
+  };
+
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key === 'Escape') {
+      if (activeShortcutRebind) {
+        e.preventDefault();
+        e.stopPropagation();
+        let keys = [];
+        if (e.ctrlKey) keys.push('Control');
+        if (e.shiftKey) keys.push('Shift');
+        if (e.altKey) keys.push('Alt');
+        if (e.metaKey) keys.push('Meta');
+        
+        if (!['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) {
+           keys.push(e.key === ' ' ? 'Space' : e.key.length === 1 ? e.key.toUpperCase() : e.key);
+           updateSetting('shortcuts', { ...settings.shortcuts, [activeShortcutRebind]: keys.join('+') });
+           setActiveShortcutRebind(null);
+        }
+        return;
+      }
+
+      if (matchesShortcut(e, settings.shortcuts.close)) {
         setIsViewing(false);
         if (window.electronAPI) window.electronAPI.setTitle('FATE');
-      } else if (e.ctrlKey && e.key === 'o') {
+      } else if (matchesShortcut(e, settings.shortcuts.openFile)) {
         e.preventDefault();
         if (window.electronAPI) window.electronAPI.openFileDialog();
-      } else if (e.ctrlKey && e.key === 'p' && isViewing) {
+      } else if (matchesShortcut(e, settings.shortcuts.print) && isViewing) {
         e.preventDefault();
         window.print();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isViewing]);
+  }, [isViewing, settings.shortcuts, activeShortcutRebind]);
 
   // Scroll Progress and Active Heading Tracking
   useEffect(() => {
@@ -364,11 +439,81 @@ function App() {
       )}
       
       {appVersion && !isViewing && (
-        <div className="version-container">
-          <span className="version-text">v{appVersion}</span>
-          <button className="update-btn" onClick={handleUpdateAction}>
-            {updateStatus ? updateStatus : "Check for updates"}
-          </button>
+        <>
+          <div className="settings-trigger" onClick={() => setShowSettings(true)}>
+            <Gear size={24} weight="duotone" />
+          </div>
+          <div className="version-container">
+            <span className="version-text">v{appVersion}</span>
+            <button className="update-btn" onClick={handleUpdateAction}>
+              {updateStatus ? updateStatus : "Check for updates"}
+            </button>
+          </div>
+        </>
+      )}
+
+      {showSettings && (
+        <div className="settings-modal-backdrop" onClick={() => setShowSettings(false)}>
+          <div className="settings-modal" onClick={e => e.stopPropagation()}>
+            <div className="settings-header">
+              <h2>Settings</h2>
+              <X size={24} className="close-icon" onClick={() => setShowSettings(false)} />
+            </div>
+            
+            <div className="settings-body">
+              <div className="setting-group">
+                <h3>Appearance</h3>
+                <div className="setting-item">
+                  <span>Theme</span>
+                  <select value={settings.theme} onChange={e => updateSetting('theme', e.target.value)}>
+                    <option value="dark">Dark</option>
+                    <option value="light">Light</option>
+                  </select>
+                </div>
+                <div className="setting-item">
+                  <span>Default Sidebar Width (px)</span>
+                  <input type="number" min="150" max="800" value={settings.sidebarWidth} onChange={e => {
+                    const val = parseInt(e.target.value);
+                    updateSetting('sidebarWidth', val);
+                    setSidebarWidth(val);
+                  }} />
+                </div>
+              </div>
+
+              <div className="setting-group">
+                <h3>Integrations & Updates</h3>
+                <div className="setting-item">
+                  <span>Discord Rich Presence</span>
+                  <label className="switch">
+                    <input type="checkbox" checked={settings.discordEnabled} onChange={e => updateSetting('discordEnabled', e.target.checked)} />
+                    <span className="slider round"></span>
+                  </label>
+                </div>
+                <div className="setting-item">
+                  <span>Automatic Updates</span>
+                  <label className="switch">
+                    <input type="checkbox" checked={settings.autoUpdatesEnabled} onChange={e => updateSetting('autoUpdatesEnabled', e.target.checked)} />
+                    <span className="slider round"></span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="setting-group">
+                <h3>Keyboard Shortcuts</h3>
+                {['openFile', 'print', 'close'].map(action => (
+                  <div className="setting-item" key={action}>
+                    <span>{action === 'openFile' ? 'Open File' : action === 'print' ? 'Print / Export PDF' : 'Close File / Return Home'}</span>
+                    <button 
+                      className={`shortcut-btn ${activeShortcutRebind === action ? 'recording' : ''}`}
+                      onClick={() => setActiveShortcutRebind(activeShortcutRebind === action ? null : action)}
+                    >
+                      {activeShortcutRebind === action ? 'Press new shortcut...' : settings.shortcuts[action]}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

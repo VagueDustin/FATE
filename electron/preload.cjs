@@ -16,6 +16,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   installUpdate: () => ipcRenderer.invoke('install-update'),
   appReady: () => ipcRenderer.send('app-ready'),
+  store: {
+    get: (key) => ipcRenderer.invoke('store-get', key),
+    set: (key, val) => ipcRenderer.invoke('store-set', key, val)
+  },
   onUpdateMessage: (callback) => {
     ipcRenderer.removeAllListeners('update-message');
     ipcRenderer.on('update-message', (_event, message, action) => callback(message, action));

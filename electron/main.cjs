@@ -4,6 +4,21 @@ const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
 const { pathToFileURL } = require('url');
 const DiscordRPC = require('discord-rpc');
+const Store = require('electron-store');
+
+const store = new Store({
+  defaults: {
+    theme: 'dark',
+    discordEnabled: false,
+    autoUpdatesEnabled: true,
+    sidebarWidth: 300,
+    shortcuts: {
+      openFile: 'Control+O',
+      print: 'Control+P',
+      close: 'Escape'
+    }
+  }
+});
 
 const discordClientId = '1513749770005381233';
 DiscordRPC.register(discordClientId);
@@ -18,7 +33,10 @@ rpc.on('ready', () => {
 });
 
 function setDiscordActivity(activity = {}) {
-  if (!rpcReady) return;
+  if (!rpcReady || !store.get('discordEnabled')) {
+    if (rpcReady) rpc.clearActivity().catch(console.error);
+    return;
+  }
   rpc.setActivity({
     details: activity.details || 'Idling on the home screen',
     state: activity.state || 'Exploring Markdown',
@@ -158,6 +176,19 @@ app.whenReady().then(() => {
     setDiscordActivity(activity);
   });
 
+  ipcMain.handle('store-get', (event, key) => store.get(key));
+  ipcMain.handle('store-set', (event, key, val) => {
+    store.set(key, val);
+    if (key === 'discordEnabled') {
+      if (val) {
+        if (!rpcReady) rpc.login({ clientId: discordClientId }).catch(console.error);
+        else setDiscordActivity();
+      } else {
+        if (rpcReady) rpc.clearActivity().catch(console.error);
+      }
+    }
+  });
+
   ipcMain.handle('open-file-dialog', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
       properties: ['openFile'],
@@ -171,7 +202,7 @@ app.whenReady().then(() => {
   });
   
   ipcMain.handle('check-for-updates', () => {
-    if (!isDev) {
+    if (!isDev && store.get('autoUpdatesEnabled')) {
       autoUpdater.checkForUpdates();
     }
   });
