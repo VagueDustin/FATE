@@ -98,7 +98,8 @@ function App() {
         if (src && !src.startsWith('http') && !src.startsWith('data:')) {
           const isAbsolute = /^[a-zA-Z]:[\\/]/.test(src) || src.startsWith('/');
           const absPath = isAbsolute ? src.replace(/\\/g, '/') : `${dirPath}/${src}`.replace(/\\/g, '/');
-          img.setAttribute('src', `fate-local://${absPath}`);
+          const finalPath = absPath.startsWith('/') ? absPath : `/${absPath}`;
+          img.setAttribute('src', `fate-local://${finalPath}`);
         }
       });
     }
@@ -259,10 +260,11 @@ function App() {
       )}
 
       {!isViewing ? (
-        <div className="home-screen">
-          <div className="logo-container">
-            <h1 className="app-title">FATE</h1>
-            <p className="app-subtitle">Formatted Article & Text Explorer</p>
+        <div className="upload-view">
+          <div className="header">
+            <h1>FATE</h1>
+            <p>Formatted Article & Text Explorer</p>
+            <p className="enterprise-text">Provided by VagueDustin Enterprises&trade;</p>
           </div>
           
           <div {...getRootProps()} className={`dropzone ${isDragActive ? 'active' : ''}`}>
