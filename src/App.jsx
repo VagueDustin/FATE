@@ -148,13 +148,13 @@ function App() {
     if (window.electronAPI) {
       if (isViewing && fileName) {
         window.electronAPI.setDiscordActivity({
-          state: 'Reading Markdown',
-          details: `Viewing: ${fileName}`
+          details: 'Reading Markdown',
+          state: `Viewing: ${fileName}`
         });
       } else {
         window.electronAPI.setDiscordActivity({
-          state: 'Exploring Markdown',
-          details: 'Idling on the home screen'
+          details: 'Idling on the home screen',
+          state: 'Exploring Markdown'
         });
       }
     }

@@ -727,13 +727,13 @@ input:checked + .slider:before { transform: translateX(20px); }
   color: var(--text-primary) !important;
 }
 
-[data-theme='light'] .viewer-header .back-btn {
+[data-theme='light'] .viewer-header .action-btn {
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   color: var(--text-primary);
 }
 
-[data-theme='light'] .viewer-header .back-btn:hover {
+[data-theme='light'] .viewer-header .action-btn:hover {
   background: #ebecf0;
 }
 
@@ -858,18 +858,21 @@ input:checked + .slider:before { transform: translateX(20px); }
 }
 
 [data-theme='dracula'] .viewer-header .filename-container span,
-[data-theme='dracula'] .viewer-header .filename-container svg {
-  color: var(--text-primary) !important;
+[data-theme='dracula'] .viewer-header .filename-container svg,
+[data-theme='dracula'] .file-icon {
+  color: var(--accent-primary) !important;
 }
 
-[data-theme='dracula'] .viewer-header .back-btn {
+[data-theme='dracula'] .viewer-header .action-btn {
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   color: var(--text-primary);
 }
 
-[data-theme='dracula'] .viewer-header .back-btn:hover {
-  background: #6272a4;
+[data-theme='dracula'] .viewer-header .action-btn:hover {
+  background: rgba(189, 147, 249, 0.15);
+  border-color: var(--accent-primary);
+  color: #fff;
 }
 
 [data-theme='dracula'] .markdown-body h1,
@@ -992,3 +995,8 @@ input:checked + .slider:before { transform: translateX(20px); }
 [data-theme='dracula'] .markdown-body table tr:nth-child(2n) { background-color: var(--bg-secondary); }
 [data-theme='dracula'] .markdown-body table th,
 [data-theme='dracula'] .markdown-body table td { border-color: var(--border-color); }
+
+[data-theme='dracula'] .sidebar-resizer:hover, 
+[data-theme='dracula'] .sidebar-resizer:active {
+  background: var(--accent-primary);
+}
