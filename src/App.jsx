@@ -36,6 +36,8 @@ function App() {
   const [sidebarWidth, setSidebarWidth] = useState(300);
   
   const [isLoading, setIsLoading] = useState(false);
+  const contentRef = useRef(null);
+  const isResizing = useRef(false);
 
   const startResizing = useCallback((e) => {
     isResizing.current = true;
