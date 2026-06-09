@@ -17,6 +17,8 @@ FATE supports standard accessibility shortcuts to improve your reading experienc
 
 | Action | Shortcut |
 | --- | --- |
+| **Open File** | `Ctrl` + `O` |
+| **Close File / Return Home** | `Escape` |
 | **Zoom In** | `Ctrl` + `+` |
 | **Zoom Out** | `Ctrl` + `-` |
 | **Reset Zoom** | `Ctrl` + `0` |
