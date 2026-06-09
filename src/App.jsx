@@ -2,13 +2,12 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css';
 import markedKatex from 'marked-katex-extension';
 import 'katex/dist/katex.min.css';
 import { UploadSimple, FileText, ArrowLeft, List, CircleNotch } from '@phosphor-icons/react';
 import './App.css';
-import MarkdownWorker from './markdownWorker?worker';
+import MarkdownWorker from './markdownWorker?worker&inline';
 
 function App() {
   const [fileContent, setFileContent] = useState('');
@@ -62,8 +61,14 @@ function App() {
     setIsLoading(true);
     if (workerRef.current) {
       workerRef.current.onmessage = (e) => {
-        const { cleanHtml, fPath: returnedPath } = e.data;
+        const { rawHtml, fPath: returnedPath } = e.data;
         
+        const cleanHtml = DOMPurify.sanitize(rawHtml, {
+          USE_PROFILES: { mathMl: true, html: true },
+          ADD_TAGS: ['annotation'],
+          ADD_ATTR: ['class', 'style', 'aria-hidden', 'encoding', 'xmlns', 'viewBox', 'd', 'preserveAspectRatio']
+        });
+
         const tempDiv = document.createElement('div');
         tempDiv.innerHTML = cleanHtml;
         

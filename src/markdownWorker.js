@@ -1,5 +1,4 @@
 import { marked } from 'marked';
-import DOMPurify from 'dompurify';
 import hljs from 'highlight.js';
 import markedKatex from 'marked-katex-extension';
 
@@ -35,11 +34,6 @@ self.onmessage = (e) => {
     .replace(/\\ /g, '\\\\ ');
 
   const rawHtml = marked.parse(repairedContent);
-  const cleanHtml = DOMPurify.sanitize(rawHtml, {
-    USE_PROFILES: { mathMl: true, html: true },
-    ADD_TAGS: ['annotation'],
-    ADD_ATTR: ['class', 'style', 'aria-hidden', 'encoding', 'xmlns', 'viewBox', 'd', 'preserveAspectRatio']
-  });
 
-  self.postMessage({ cleanHtml, fPath });
+  self.postMessage({ rawHtml, fPath });
 };
