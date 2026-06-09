@@ -1,6 +1,6 @@
 {
   "name": "fate",
-  "version": "1.0.8",
+  "version": "1.1.0",
   "author": "VagueDustin Enterprises",
   "license": "MIT",
   "type": "module",
@@ -65,7 +65,9 @@
     "dompurify": "^3.4.8",
     "electron-updater": "^6.8.3",
     "highlight.js": "^11.11.1",
+    "katex": "^0.17.0",
     "marked": "^18.0.5",
+    "marked-katex-extension": "^5.1.10",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-dropzone": "^15.0.0"

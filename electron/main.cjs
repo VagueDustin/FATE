@@ -1,11 +1,18 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, protocol, dialog, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
+const { pathToFileURL } = require('url');
+
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'fate-local', privileges: { bypassCSP: true, supportFetchAPI: true, secure: true, standard: true, stream: true } }
+]);
 
 const isDev = process.env.NODE_ENV === 'development';
 
 let mainWindow;
+let currentFileWatcher = null;
+let currentOpenedFilePath = null;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -19,6 +26,31 @@ function createWindow() {
     autoHideMenuBar: true
   });
 
+  // SECURITY: Prevent inner navigation and force external links to open in default browser
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('http')) {
+      shell.openExternal(url);
+    }
+    return { action: 'deny' };
+  });
+
+  mainWindow.webContents.on('will-navigate', async (event, url) => {
+    if (!url.startsWith('http://localhost:5173') && !url.startsWith('file://') && !url.startsWith('devtools://')) {
+      event.preventDefault();
+      const { response } = await dialog.showMessageBox(mainWindow, {
+        type: 'warning',
+        buttons: ['Cancel', 'Open Browser'],
+        defaultId: 1,
+        cancelId: 0,
+        title: 'External Link',
+        message: `You are about to open an external link:\n${url}\n\nDo you want to continue?`
+      });
+      if (response === 1) {
+        shell.openExternal(url);
+      }
+    }
+  });
+
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
   } else {
@@ -30,28 +62,82 @@ function createWindow() {
   });
 }
 
+function openAndWatchFile(filePath) {
+  if (!fs.existsSync(filePath)) return;
+  
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const name = path.basename(filePath);
+    currentOpenedFilePath = filePath;
+    
+    if (mainWindow) {
+      mainWindow.webContents.send('open-file', content, name, filePath);
+    }
+
+    // Setup file watcher for live reload
+    if (currentFileWatcher) {
+      currentFileWatcher.close();
+    }
+    
+    currentFileWatcher = fs.watch(filePath, (eventType) => {
+      if (eventType === 'change') {
+        try {
+          const updatedContent = fs.readFileSync(filePath, 'utf-8');
+          if (mainWindow) {
+            mainWindow.webContents.send('file-changed', updatedContent);
+          }
+        } catch (err) {
+          console.error("Error reading updated file:", err);
+        }
+      }
+    });
+
+  } catch (e) {
+    console.error('Error reading file:', e);
+  }
+}
+
 function handleArgs(argv) {
   if (argv.length >= 2) {
-    // In production, the file path is usually the last argument when opening from explorer
     const filePath = argv.find(arg => arg.endsWith('.md'));
-    if (filePath && fs.existsSync(filePath)) {
-      try {
-        const content = fs.readFileSync(filePath, 'utf-8');
-        const name = path.basename(filePath);
-        if (mainWindow) {
-          mainWindow.webContents.send('open-file', content, name);
-        }
-      } catch (e) {
-        console.error('Error reading file:', e);
-      }
+    if (filePath) {
+      openAndWatchFile(filePath);
     }
   }
 }
 
 app.whenReady().then(() => {
+  // Register custom protocol for local images
+  protocol.handle('fate-local', (request) => {
+    let urlPath = request.url.replace(/^fate-local:\/\//, '');
+    if (process.platform === 'win32' && urlPath.startsWith('/')) {
+      urlPath = urlPath.slice(1);
+    }
+    urlPath = decodeURIComponent(urlPath);
+    return net.fetch(pathToFileURL(urlPath).toString());
+  });
+
   createWindow();
   
   ipcMain.handle('get-app-version', () => app.getVersion());
+  
+  ipcMain.on('set-title', (event, title) => {
+    const webContents = event.sender;
+    const win = BrowserWindow.fromWebContents(webContents);
+    if (win) win.setTitle(title);
+  });
+
+  ipcMain.handle('open-file-dialog', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openFile'],
+      filters: [{ name: 'Markdown', extensions: ['md', 'markdown', 'txt'] }]
+    });
+    
+    if (!result.canceled && result.filePaths.length > 0) {
+      const filePath = result.filePaths[0];
+      openAndWatchFile(filePath);
+    }
+  });
   
   ipcMain.handle('check-for-updates', () => {
     if (!isDev) {
@@ -100,7 +186,6 @@ app.on('activate', () => {
   }
 });
 
-// Handle second instance
 const gotTheLock = app.requestSingleInstanceLock()
 
 if (!gotTheLock) {
