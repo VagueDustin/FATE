@@ -278,6 +278,7 @@ function App() {
       {!isViewing ? (
         <div className="upload-view">
           <div className="header">
+            <img src="/src/assets/FATE-Square-Icon.png" alt="FATE Logo" className="fate-logo" style={{ width: '120px', height: '120px', marginBottom: '1rem', borderRadius: '24px', boxShadow: '0 8px 32px rgba(230, 57, 70, 0.2)' }} />
             <h1>FATE</h1>
             <p>Formatted Article & Text Explorer</p>
             <p className="enterprise-text">Provided by VagueDustin Enterprises&trade;</p>
