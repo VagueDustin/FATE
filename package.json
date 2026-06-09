@@ -1,6 +1,6 @@
 {
   "name": "fate",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "author": "VagueDustin Enterprises",
   "license": "MIT",
   "type": "module",
@@ -56,7 +56,8 @@
         "ext": "md",
         "name": "Markdown Document",
         "description": "Markdown Document",
-        "role": "Viewer"
+        "role": "Viewer",
+        "icon": "build/icon-doc.ico"
       }
     ]
   },
