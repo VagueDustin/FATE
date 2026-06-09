@@ -3,7 +3,33 @@ const path = require('path');
 const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
 const { pathToFileURL } = require('url');
+const DiscordRPC = require('discord-rpc');
 
+const discordClientId = '1513749770005381233';
+DiscordRPC.register(discordClientId);
+
+const rpc = new DiscordRPC.Client({ transport: 'ipc' });
+let rpcReady = false;
+const sessionStartTimestamp = new Date();
+
+rpc.on('ready', () => {
+  rpcReady = true;
+  setDiscordActivity();
+});
+
+function setDiscordActivity(activity = {}) {
+  if (!rpcReady) return;
+  rpc.setActivity({
+    details: activity.details || 'Idling on the home screen',
+    state: activity.state || 'Exploring Markdown',
+    startTimestamp: sessionStartTimestamp,
+    largeImageKey: 'fate-logo',
+    largeImageText: 'FATE',
+    instance: false,
+  }).catch(console.error);
+}
+
+rpc.login({ clientId: discordClientId }).catch(console.error);
 protocol.registerSchemesAsPrivileged([
   { scheme: 'fate-local', privileges: { bypassCSP: true, supportFetchAPI: true, secure: true, standard: true, stream: true } }
 ]);
@@ -125,6 +151,10 @@ app.whenReady().then(() => {
     const webContents = event.sender;
     const win = BrowserWindow.fromWebContents(webContents);
     if (win) win.setTitle(title);
+  });
+
+  ipcMain.on('set-discord-activity', (event, activity) => {
+    setDiscordActivity(activity);
   });
 
   ipcMain.handle('open-file-dialog', async () => {

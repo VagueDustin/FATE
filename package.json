@@ -1,6 +1,6 @@
 {
   "name": "fate",
-  "version": "1.1.5",
+  "version": "1.2.0",
   "author": "VagueDustin Enterprises",
   "license": "MIT",
   "type": "module",
@@ -62,6 +62,7 @@
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",
+    "discord-rpc": "^4.0.1",
     "dompurify": "^3.4.8",
     "electron-updater": "^6.8.3",
     "highlight.js": "^11.11.1",

@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   openFileDialog: () => ipcRenderer.invoke('open-file-dialog'),
   setTitle: (title) => ipcRenderer.send('set-title', title),
+  setDiscordActivity: (activity) => ipcRenderer.send('set-discord-activity', activity),
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   installUpdate: () => ipcRenderer.invoke('install-update'),

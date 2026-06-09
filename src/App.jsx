@@ -124,6 +124,22 @@ function App() {
 
   useEffect(() => {
     if (window.electronAPI) {
+      if (isViewing && fileName) {
+        window.electronAPI.setDiscordActivity({
+          state: 'Reading Markdown',
+          details: `Viewing: ${fileName}`
+        });
+      } else {
+        window.electronAPI.setDiscordActivity({
+          state: 'Exploring Markdown',
+          details: 'Idling on the home screen'
+        });
+      }
+    }
+  }, [isViewing, fileName]);
+
+  useEffect(() => {
+    if (window.electronAPI) {
       window.electronAPI.onOpenFile((content, name, path) => {
         setFileName(name);
         setFilePath(path);
