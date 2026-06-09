@@ -49,6 +49,23 @@ Don't want to use the pre-compiled releases? You can easily build FATE from sour
 
 ## Changelog
 
+### v1.4.2
+- **[Bugfix]** Fixed missing Dracula theme hooks for interactive UI buttons and scrollbars.
+- **[Bugfix]** Corrected Discord RPC payload mapping to accurately mask the filename when Privacy Mode is enabled.
+
+### v1.4.1
+- **[Feature]** Added the Dracula theme option.
+- **[Enhancement]** Refactored Discord Rich Presence to use a "Privacy Filter" instead of completely disabling the client.
+- **[Enhancement]** Added a red pulsing glow to the Settings gear icon.
+- **[Bugfix]** Fixed Light theme typography contrast by applying aggressive readability overrides to markdown headers and paragraphs.
+
+### v1.4.0
+- **[Feature]** Implemented a dynamic Settings modal featuring Theme toggling, Discord RPC control, Automatic Updates toggle, and an adjustable sidebar width.
+- **[Feature]** Built a dynamic keyboard shortcut re-binding system.
+- **[Feature]** Added a persistent `electron-store` backend to seamlessly save all user preferences across application updates.
+- **[Feature]** Added a custom NSIS installer checkbox to automatically associate FATE with `.md` and `.markdown` files.
+- **[Maintenance]** Streamlined GitHub releases to exclusively publish the optimized `.exe` installer.
+
 ### v1.3.0
 - **[Feature]** Fully integrated Discord Rich Presence to proudly display your reading activity.
 - **[Enhancement]** Complete UI responsiveness overhaul using fluid Flexbox scaling.
