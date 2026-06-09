@@ -122,10 +122,20 @@ html, body, #root {
 }
 
 .dropzone .icon {
-  font-size: 4.5rem;
-  color: #e53e3e;
-  margin-bottom: 1.5rem;
+  font-size: 3rem;
+  color: var(--primary-color);
+  margin-bottom: 1rem;
   transition: transform 0.3s ease;
+}
+
+.spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 .dropzone:hover .icon {

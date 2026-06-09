@@ -6,20 +6,9 @@ import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css';
 import markedKatex from 'marked-katex-extension';
 import 'katex/dist/katex.min.css';
-import { UploadSimple, FileText, ArrowLeft, List } from '@phosphor-icons/react';
+import { UploadSimple, FileText, ArrowLeft, List, CircleNotch } from '@phosphor-icons/react';
 import './App.css';
-
-// Configure marked to use highlight.js
-marked.setOptions({
-  highlight: function(code, lang) {
-    const language = hljs.getLanguage(lang) ? lang : 'plaintext';
-    return hljs.highlight(code, { language }).value;
-  },
-  gfm: true,
-  breaks: true
-});
-
-marked.use(markedKatex({ throwOnError: false, nonStandard: true }));
+import MarkdownWorker from './markdownWorker?worker';
 
 function App() {
   const [fileContent, setFileContent] = useState('');
@@ -35,16 +24,29 @@ function App() {
   const [activeHeading, setActiveHeading] = useState('');
   const [sidebarWidth, setSidebarWidth] = useState(300);
   
-  const contentRef = useRef(null);
-  const isResizing = useRef(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const workerRef = useRef(null);
+
+  useEffect(() => {
+    workerRef.current = new MarkdownWorker();
+    return () => {
+      if (workerRef.current) {
+        workerRef.current.terminate();
+      }
+    };
+  }, []);
 
   const startResizing = useCallback((e) => {
     isResizing.current = true;
+    e.target.setPointerCapture(e.pointerId);
     e.preventDefault();
   }, []);
 
-  const stopResizing = useCallback(() => {
+  const stopResizing = useCallback((e) => {
     isResizing.current = false;
+    if (e && e.target && e.target.hasPointerCapture && e.target.hasPointerCapture(e.pointerId)) {
+      e.target.releasePointerCapture(e.pointerId);
+    }
   }, []);
 
   const resize = useCallback((e) => {
@@ -56,73 +58,47 @@ function App() {
     }
   }, []);
 
-  useEffect(() => {
-    window.addEventListener('mousemove', resize);
-    window.addEventListener('mouseup', stopResizing);
-    return () => {
-      window.removeEventListener('mousemove', resize);
-      window.removeEventListener('mouseup', stopResizing);
-    };
-  }, [resize, stopResizing]);
-
   const processMarkdown = (content, fPath) => {
-    // Repair mathematically corrupted control-characters from unescaped markdown generators
-    const repairedContent = content
-      .replace(/\x09heta/g, '\\theta')
-      .replace(/\x09ext/g, '\\text')
-      .replace(/\x09imes/g, '\\times')
-      .replace(/\x09au/g, '\\tau')
-      .replace(/\x0Crac/g, '\\frac')
-      .replace(/\x0Dight/g, '\\right')
-      .replace(/\x08eta/g, '\\beta')
-      .replace(/\x08egin/g, '\\begin')
-      .replace(/\x07pprox/g, '\\approx')
-      .replace(/\x07lpha/g, '\\alpha')
-      .replace(/\x0Dho/g, '\\rho')
-      .replace(/\x0B/g, '\\v')
-      .replace(/\\ /g, '\\\\ ');
-
-    const rawHtml = marked.parse(repairedContent);
-    const cleanHtml = DOMPurify.sanitize(rawHtml, {
-      USE_PROFILES: { mathMl: true, html: true },
-      ADD_TAGS: ['annotation'],
-      ADD_ATTR: ['class', 'style', 'aria-hidden', 'encoding', 'xmlns', 'viewBox', 'd', 'preserveAspectRatio']
-    });
-    
-    // Post-process HTML for ToC and Images
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = cleanHtml;
-    
-    // Process Images for local paths
-    if (fPath) {
-      const dirPath = fPath.substring(0, Math.max(fPath.lastIndexOf('\\'), fPath.lastIndexOf('/')));
-      const imgs = tempDiv.querySelectorAll('img');
-      imgs.forEach(img => {
-        const src = img.getAttribute('src');
-        if (src && !src.startsWith('http') && !src.startsWith('data:')) {
-          const absPath = `${dirPath}/${src}`.replace(/\\/g, '/');
-          img.setAttribute('src', `fate-local://${absPath}`);
+    setIsLoading(true);
+    if (workerRef.current) {
+      workerRef.current.onmessage = (e) => {
+        const { cleanHtml, fPath: returnedPath } = e.data;
+        
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = cleanHtml;
+        
+        if (returnedPath) {
+          const dirPath = returnedPath.substring(0, Math.max(returnedPath.lastIndexOf('\\'), returnedPath.lastIndexOf('/')));
+          const imgs = tempDiv.querySelectorAll('img');
+          imgs.forEach(img => {
+            const src = img.getAttribute('src');
+            if (src && !src.startsWith('http') && !src.startsWith('data:')) {
+              const isAbsolute = /^[a-zA-Z]:[\\/]/.test(src) || src.startsWith('/');
+              const absPath = isAbsolute ? src.replace(/\\/g, '/') : `${dirPath}/${src}`.replace(/\\/g, '/');
+              img.setAttribute('src', `fate-local://${absPath}`);
+            }
+          });
         }
-      });
-    }
 
-    // Process Headings for ToC
-    const headings = Array.from(tempDiv.querySelectorAll('h1, h2, h3'));
-    const tocData = headings.map((h, i) => {
-      const id = `heading-${i}`;
-      h.id = id;
+        const headings = Array.from(tempDiv.querySelectorAll('h1, h2, h3'));
+        const tocData = headings.map((h, i) => {
+          const id = `heading-${i}`;
+          h.id = id;
+          return { id, html: h.innerHTML, level: parseInt(h.tagName.substring(1)) };
+        });
+
+        setToc(tocData);
+        setIsSidebarOpen(tocData.length > 0);
+        setFileContent(tempDiv.innerHTML);
+        setIsLoading(false);
+        setIsViewing(true);
+        
+        if (window.electronAPI) {
+          window.electronAPI.setTitle(`FATE - ${returnedPath ? returnedPath.split(/[/\\]/).pop() : 'Document'}`);
+        }
+      };
       
-      return { id, html: h.innerHTML, level: parseInt(h.tagName.substring(1)) };
-    });
-
-    setToc(tocData);
-    setIsSidebarOpen(tocData.length > 0);
-    setFileContent(tempDiv.innerHTML);
-    setIsViewing(true);
-    
-    // Set window title
-    if (window.electronAPI) {
-      window.electronAPI.setTitle(`FATE - ${fPath ? fPath.split(/[/\\]/).pop() : 'Document'}`);
+      workerRef.current.postMessage({ content, fPath });
     }
   };
 
@@ -264,21 +240,26 @@ function App() {
       )}
 
       {!isViewing ? (
-        <div className="upload-view">
-          <div className="header">
-            <h1>FATE</h1>
-            <p>Formatted Article & Text Explorer</p>
-            <p className="enterprise-text">Provided by VagueDustin Enterprises&trade;</p>
+        <div className="home-screen">
+          <div className="logo-container">
+            <h1 className="app-title">FATE</h1>
+            <p className="app-subtitle">Formatted Article & Text Explorer</p>
           </div>
           
-          <div 
-            {...getRootProps()} 
-            className={`dropzone ${isDragActive ? 'active' : ''}`}
-          >
+          <div {...getRootProps()} className={`dropzone ${isDragActive ? 'active' : ''}`}>
             <input {...getInputProps()} />
-            <UploadSimple className="icon" weight="duotone" />
-            <p>{isDragActive ? "Drop the markdown file here" : "Drag & drop a markdown file"}</p>
-            <span className="sub-text">or click to select a file (.md, .markdown)</span>
+            {isLoading ? (
+              <>
+                <CircleNotch className="icon spinner" weight="bold" />
+                <p>Rendering document...</p>
+              </>
+            ) : (
+              <>
+                <UploadSimple className="icon" weight="duotone" />
+                <p>{isDragActive ? "Drop the markdown file here" : "Drag & drop a markdown file"}</p>
+                <span className="sub-text">or click to select a file (.md, .markdown)</span>
+              </>
+            )}
           </div>
         </div>
       ) : (
@@ -301,7 +282,13 @@ function App() {
                   ))}
                 </ul>
               </aside>
-              <div className="sidebar-resizer" onMouseDown={startResizing} />
+              <div 
+                className="sidebar-resizer" 
+                onPointerDown={startResizing} 
+                onPointerMove={resize} 
+                onPointerUp={stopResizing} 
+                onPointerCancel={stopResizing}
+              />
             </>
           )}
           
