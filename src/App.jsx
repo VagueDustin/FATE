@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
@@ -22,16 +22,24 @@ marked.setOptions({
 
 marked.use(markedKatex({ throwOnError: false, nonStandard: true }));
 
+const TOCItem = memo(({ item, isActive, onClick }) => (
+  <li
+    className={`toc-level-${item.level} ${isActive ? 'active' : ''}`}
+    onClick={() => onClick(item.id)}
+    dangerouslySetInnerHTML={{ __html: item.html }}
+  />
+));
+
+TOCItem.displayName = 'TOCItem';
+
 function App() {
   const [fileContent, setFileContent] = useState('');
   const [fileName, setFileName] = useState('');
-  const [filePath, setFilePath] = useState(null);
   const [isViewing, setIsViewing] = useState(false);
   const [appVersion, setAppVersion] = useState('');
   const [updateStatus, setUpdateStatus] = useState('');
   const [updateAction, setUpdateAction] = useState(null);
   const [toc, setToc] = useState([]);
-  const [scrollProgress, setScrollProgress] = useState(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [activeHeading, setActiveHeading] = useState('');
   const [sidebarWidth, setSidebarWidth] = useState(300);
@@ -59,6 +67,9 @@ function App() {
   
   const [isLoading, setIsLoading] = useState(false);
   const contentRef = useRef(null);
+  const progressBarRef = useRef(null);
+  const headingsRef = useRef([]);
+  const currentFilePathRef = useRef(null);
   const isResizing = useRef(false);
 
   const startResizing = useCallback((e) => {
@@ -86,23 +97,27 @@ function App() {
   const processMarkdown = (content, fPath) => {
     setIsLoading(true);
     
-    // Repair mathematically corrupted control-characters from unescaped markdown generators
-    const repairedContent = content
-      .replace(/\x09heta/g, '\\theta')
-      .replace(/\x09ext/g, '\\text')
-      .replace(/\x09imes/g, '\\times')
-      .replace(/\x09au/g, '\\tau')
-      .replace(/\x0Crac/g, '\\frac')
-      .replace(/\x0Dight/g, '\\right')
-      .replace(/\x08eta/g, '\\beta')
-      .replace(/\x08egin/g, '\\begin')
-      .replace(/\x07pprox/g, '\\approx')
-      .replace(/\x07lpha/g, '\\alpha')
-      .replace(/\x0Dho/g, '\\rho')
-      .replace(/\x0B/g, '\\v')
-      .replace(/\\ /g, '\\\\ ');
+    // Use a small delay to allow the loading spinner to paint before heavy synchronous parsing blocks the thread
+    setTimeout(() => {
+      // Repair mathematically corrupted control-characters from unescaped markdown generators
+      /* eslint-disable no-control-regex */
+      const repairedContent = content
+        .replace(/\x09heta/g, '\\theta')
+        .replace(/\x09ext/g, '\\text')
+        .replace(/\x09imes/g, '\\times')
+        .replace(/\x09au/g, '\\tau')
+        .replace(/\x0Crac/g, '\\frac')
+        .replace(/\x0Dight/g, '\\right')
+        .replace(/\x08eta/g, '\\beta')
+        .replace(/\x08egin/g, '\\begin')
+        .replace(/\x07pprox/g, '\\approx')
+        .replace(/\x07lpha/g, '\\alpha')
+        .replace(/\x0Dho/g, '\\rho')
+        .replace(/\x0B/g, '\\v')
+        .replace(/\\ /g, '\\\\ ');
+      /* eslint-enable no-control-regex */
 
-    const rawHtml = marked.parse(repairedContent);
+      const rawHtml = marked.parse(repairedContent);
     const cleanHtml = DOMPurify.sanitize(rawHtml, {
       USE_PROFILES: { mathMl: true, html: true },
       ADD_TAGS: ['annotation'],
@@ -133,15 +148,16 @@ function App() {
       return { id, html: h.innerHTML, level: parseInt(h.tagName.substring(1)) };
     });
 
-    setToc(tocData);
-    setIsSidebarOpen(tocData.length > 0);
-    setFileContent(tempDiv.innerHTML);
-    setIsLoading(false);
-    setIsViewing(true);
-    
-    if (window.electronAPI) {
-      window.electronAPI.setTitle(`FATE - ${fPath ? fPath.split(/[/\\]/).pop() : 'Document'}`);
-    }
+      setToc(tocData);
+      setIsSidebarOpen(tocData.length > 0);
+      setFileContent(tempDiv.innerHTML);
+      setIsLoading(false);
+      setIsViewing(true);
+
+      if (window.electronAPI) {
+        window.electronAPI.setTitle(`FATE - ${fPath ? fPath.split(/[/\\]/).pop() : 'Document'}`);
+      }
+    }, 10);
   };
 
   useEffect(() => {
@@ -180,18 +196,15 @@ function App() {
         setSidebarWidth(newSettings.sidebarWidth);
         document.documentElement.setAttribute('data-theme', newSettings.theme);
       });
+
       window.electronAPI.onOpenFile((content, name, path) => {
         setFileName(name);
-        setFilePath(path);
+        currentFilePathRef.current = path;
         processMarkdown(content, path);
       });
 
       window.electronAPI.onFileChanged((content) => {
-        // Keep the same path
-        setFilePath(prevPath => {
-          processMarkdown(content, prevPath);
-          return prevPath;
-        });
+        processMarkdown(content, currentFilePathRef.current);
       });
 
       window.electronAPI.getAppVersion().then(version => setAppVersion(version));
@@ -261,31 +274,52 @@ function App() {
 
   // Scroll Progress and Active Heading Tracking
   useEffect(() => {
-    const handleScroll = () => {
-      if (!contentRef.current) return;
-      
-      const { scrollTop, scrollHeight, clientHeight } = contentRef.current;
-      const progress = (scrollTop / (scrollHeight - clientHeight)) * 100;
-      setScrollProgress(progress || 0);
+    // Cache headings for TOC tracking whenever content changes
+    if (contentRef.current) {
+      headingsRef.current = Array.from(contentRef.current.querySelectorAll('h1, h2, h3'));
+    }
+  }, [fileContent]);
 
-      const headings = Array.from(contentRef.current.querySelectorAll('h1, h2, h3'));
-      let currentActive = activeHeading;
+  useEffect(() => {
+    let ticking = false;
+
+    const handleScroll = () => {
+      if (!contentRef.current || !headingsRef.current) return;
       
-      for (const h of headings) {
-        const rect = h.getBoundingClientRect();
-        if (rect.top <= window.innerHeight * 0.4) {
-          currentActive = h.id;
-        } else {
-          break;
-        }
-      }
-      
-      if (headings.length > 0 && currentActive === '' && headings[0].getBoundingClientRect().top > window.innerHeight * 0.4) {
-        currentActive = headings[0].id;
-      }
-      
-      if (currentActive !== activeHeading) {
-        setActiveHeading(currentActive);
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          const { scrollTop, scrollHeight, clientHeight } = contentRef.current;
+
+          // 1. Update Progress Bar directly via Ref (avoids App re-render)
+          if (progressBarRef.current) {
+            const progress = (scrollTop / (scrollHeight - clientHeight)) * 100;
+            progressBarRef.current.style.width = `${progress || 0}%`;
+          }
+
+          // 2. Track Active Heading (updates state only when heading changes)
+          const headings = headingsRef.current;
+          let currentActive = '';
+
+          for (const h of headings) {
+            const rect = h.getBoundingClientRect();
+            if (rect.top <= window.innerHeight * 0.4) {
+              currentActive = h.id;
+            } else {
+              break;
+            }
+          }
+
+          if (headings.length > 0 && currentActive === '' && headings[0].getBoundingClientRect().top > window.innerHeight * 0.4) {
+            currentActive = headings[0].id;
+          }
+
+          if (currentActive && currentActive !== activeHeading) {
+            setActiveHeading(currentActive);
+          }
+
+          ticking = false;
+        });
+        ticking = true;
       }
     };
 
@@ -317,7 +351,6 @@ function App() {
         return;
       }
       setFileName(file.name);
-      setFilePath(file.path || null); // path is available in Electron via webkitRelativePath or path property
       const reader = new FileReader();
       reader.onload = (e) => {
         const text = e.target.result;
@@ -335,19 +368,19 @@ function App() {
     multiple: false
   });
 
-  const scrollToHeading = (id) => {
+  const scrollToHeading = useCallback((id) => {
     const element = document.getElementById(id);
     if (element && contentRef.current) {
       const topOffset = element.offsetTop - 40; // 40px padding
       contentRef.current.scrollTo({ top: topOffset, behavior: 'smooth' });
     }
-  };
+  }, []);
 
   return (
     <div className="app-container">
       {isViewing && (
         <div className="progress-bar-container">
-          <div className="progress-bar" style={{ width: `${scrollProgress}%` }} />
+          <div className="progress-bar" ref={progressBarRef} />
         </div>
       )}
 
@@ -387,11 +420,11 @@ function App() {
                 </div>
                 <ul className="toc-list">
                   {toc.map((item) => (
-                    <li 
+                    <TOCItem
                       key={item.id} 
-                      className={`toc-level-${item.level} ${activeHeading === item.id ? 'active' : ''}`}
-                      onClick={() => scrollToHeading(item.id)}
-                      dangerouslySetInnerHTML={{ __html: item.html }}
+                      item={item}
+                      isActive={activeHeading === item.id}
+                      onClick={scrollToHeading}
                     />
                   ))}
                 </ul>
