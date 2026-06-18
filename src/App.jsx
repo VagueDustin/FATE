@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
@@ -22,10 +22,29 @@ marked.setOptions({
 
 marked.use(markedKatex({ throwOnError: false, nonStandard: true }));
 
+// Keyboard Shortcut Utility
+const matchesShortcut = (e, shortcutString) => {
+  if (!shortcutString) return false;
+  const parts = shortcutString.split('+');
+  const key = parts[parts.length - 1].toLowerCase();
+  const ctrl = parts.includes('Control');
+  const shift = parts.includes('Shift');
+  const alt = parts.includes('Alt');
+  const meta = parts.includes('Meta');
+
+  if (e.ctrlKey !== ctrl) return false;
+  if (e.shiftKey !== shift) return false;
+  if (e.altKey !== alt) return false;
+  if (e.metaKey !== meta) return false;
+
+  if (key === 'escape' && e.key.toLowerCase() === 'escape') return true;
+  if (e.key.toLowerCase() === key) return true;
+  return false;
+};
+
 function App() {
   const [fileContent, setFileContent] = useState('');
   const [fileName, setFileName] = useState('');
-  const [filePath, setFilePath] = useState(null);
   const [isViewing, setIsViewing] = useState(false);
   const [appVersion, setAppVersion] = useState('');
   const [updateStatus, setUpdateStatus] = useState('');
@@ -59,7 +78,11 @@ function App() {
   
   const [isLoading, setIsLoading] = useState(false);
   const contentRef = useRef(null);
+  const filePathRef = useRef(null);
   const isResizing = useRef(false);
+  const headingsRef = useRef([]);
+  const activeHeadingRef = useRef('');
+  const scrollTicking = useRef(false);
 
   const startResizing = useCallback((e) => {
     isResizing.current = true;
@@ -83,10 +106,11 @@ function App() {
     }
   }, []);
 
-  const processMarkdown = (content, fPath) => {
+  const processMarkdown = useCallback((content, fPath) => {
     setIsLoading(true);
     
     // Repair mathematically corrupted control-characters from unescaped markdown generators
+    /* eslint-disable no-control-regex */
     const repairedContent = content
       .replace(/\x09heta/g, '\\theta')
       .replace(/\x09ext/g, '\\text')
@@ -101,6 +125,7 @@ function App() {
       .replace(/\x0Dho/g, '\\rho')
       .replace(/\x0B/g, '\\v')
       .replace(/\\ /g, '\\\\ ');
+    /* eslint-enable no-control-regex */
 
     const rawHtml = marked.parse(repairedContent);
     const cleanHtml = DOMPurify.sanitize(rawHtml, {
@@ -142,7 +167,16 @@ function App() {
     if (window.electronAPI) {
       window.electronAPI.setTitle(`FATE - ${fPath ? fPath.split(/[/\\]/).pop() : 'Document'}`);
     }
-  };
+  }, []);
+
+  // Cache heading elements for scroll performance
+  useEffect(() => {
+    if (isViewing && contentRef.current) {
+      headingsRef.current = Array.from(contentRef.current.querySelectorAll('h1, h2, h3'));
+    } else {
+      headingsRef.current = [];
+    }
+  }, [isViewing, fileContent]);
 
   useEffect(() => {
     if (window.electronAPI) {
@@ -182,16 +216,12 @@ function App() {
       });
       window.electronAPI.onOpenFile((content, name, path) => {
         setFileName(name);
-        setFilePath(path);
+        filePathRef.current = path;
         processMarkdown(content, path);
       });
 
       window.electronAPI.onFileChanged((content) => {
-        // Keep the same path
-        setFilePath(prevPath => {
-          processMarkdown(content, prevPath);
-          return prevPath;
-        });
+        processMarkdown(content, filePathRef.current);
       });
 
       window.electronAPI.getAppVersion().then(version => setAppVersion(version));
@@ -203,27 +233,8 @@ function App() {
 
       window.electronAPI.appReady();
     }
-  }, []);
+  }, [processMarkdown]);
 
-  // Keyboard Shortcuts
-  const matchesShortcut = (e, shortcutString) => {
-    if (!shortcutString) return false;
-    const parts = shortcutString.split('+');
-    const key = parts[parts.length - 1].toLowerCase();
-    const ctrl = parts.includes('Control');
-    const shift = parts.includes('Shift');
-    const alt = parts.includes('Alt');
-    const meta = parts.includes('Meta');
-
-    if (e.ctrlKey !== ctrl) return false;
-    if (e.shiftKey !== shift) return false;
-    if (e.altKey !== alt) return false;
-    if (e.metaKey !== meta) return false;
-
-    if (key === 'escape' && e.key.toLowerCase() === 'escape') return true;
-    if (e.key.toLowerCase() === key) return true;
-    return false;
-  };
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -262,43 +273,53 @@ function App() {
   // Scroll Progress and Active Heading Tracking
   useEffect(() => {
     const handleScroll = () => {
-      if (!contentRef.current) return;
-      
-      const { scrollTop, scrollHeight, clientHeight } = contentRef.current;
-      const progress = (scrollTop / (scrollHeight - clientHeight)) * 100;
-      setScrollProgress(progress || 0);
+      if (!contentRef.current || scrollTicking.current) return;
 
-      const headings = Array.from(contentRef.current.querySelectorAll('h1, h2, h3'));
-      let currentActive = activeHeading;
-      
-      for (const h of headings) {
-        const rect = h.getBoundingClientRect();
-        if (rect.top <= window.innerHeight * 0.4) {
-          currentActive = h.id;
-        } else {
-          break;
+      scrollTicking.current = true;
+      requestAnimationFrame(() => {
+        if (!contentRef.current) {
+          scrollTicking.current = false;
+          return;
         }
-      }
-      
-      if (headings.length > 0 && currentActive === '' && headings[0].getBoundingClientRect().top > window.innerHeight * 0.4) {
-        currentActive = headings[0].id;
-      }
-      
-      if (currentActive !== activeHeading) {
-        setActiveHeading(currentActive);
-      }
+
+        const { scrollTop, scrollHeight, clientHeight } = contentRef.current;
+        const progress = (scrollTop / (scrollHeight - clientHeight)) * 100;
+        setScrollProgress(progress || 0);
+
+        const headings = headingsRef.current;
+        let currentActive = activeHeadingRef.current;
+
+        for (const h of headings) {
+          const rect = h.getBoundingClientRect();
+          if (rect.top <= window.innerHeight * 0.4) {
+            currentActive = h.id;
+          } else {
+            break;
+          }
+        }
+
+        if (headings.length > 0 && currentActive === '' && headings[0].getBoundingClientRect().top > window.innerHeight * 0.4) {
+          currentActive = headings[0].id;
+        }
+
+        if (currentActive !== activeHeadingRef.current) {
+          activeHeadingRef.current = currentActive;
+          setActiveHeading(currentActive);
+        }
+        scrollTicking.current = false;
+      });
     };
 
     const scrollContainer = contentRef.current;
-    if (scrollContainer) {
-      scrollContainer.addEventListener('scroll', handleScroll);
+    if (scrollContainer && isViewing) {
+      scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
       handleScroll(); // Initial check
     }
 
     return () => {
       if (scrollContainer) scrollContainer.removeEventListener('scroll', handleScroll);
     };
-  }, [isViewing, fileContent, activeHeading]);
+  }, [isViewing, fileContent]);
 
   const handleUpdateAction = () => {
     if (updateAction === 'install') {
@@ -317,7 +338,6 @@ function App() {
         return;
       }
       setFileName(file.name);
-      setFilePath(file.path || null); // path is available in Electron via webkitRelativePath or path property
       const reader = new FileReader();
       reader.onload = (e) => {
         const text = e.target.result;
@@ -335,13 +355,13 @@ function App() {
     multiple: false
   });
 
-  const scrollToHeading = (id) => {
+  const scrollToHeading = useCallback((id) => {
     const element = document.getElementById(id);
     if (element && contentRef.current) {
       const topOffset = element.offsetTop - 40; // 40px padding
       contentRef.current.scrollTo({ top: topOffset, behavior: 'smooth' });
     }
-  };
+  }, []);
 
   return (
     <div className="app-container">
