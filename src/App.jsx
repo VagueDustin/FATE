@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
@@ -25,7 +25,6 @@ marked.use(markedKatex({ throwOnError: false, nonStandard: true }));
 function App() {
   const [fileContent, setFileContent] = useState('');
   const [fileName, setFileName] = useState('');
-  const [filePath, setFilePath] = useState(null);
   const [isViewing, setIsViewing] = useState(false);
   const [appVersion, setAppVersion] = useState('');
   const [updateStatus, setUpdateStatus] = useState('');
@@ -59,6 +58,10 @@ function App() {
   
   const [isLoading, setIsLoading] = useState(false);
   const contentRef = useRef(null);
+  const headingsRef = useRef([]);
+  const activeHeadingRef = useRef('');
+  const scrollRafId = useRef(null);
+  const filePathRef = useRef(null);
   const isResizing = useRef(false);
 
   const startResizing = useCallback((e) => {
@@ -83,9 +86,10 @@ function App() {
     }
   }, []);
 
-  const processMarkdown = (content, fPath) => {
+  const processMarkdown = useCallback((content, fPath) => {
     setIsLoading(true);
     
+    /* eslint-disable no-control-regex */
     // Repair mathematically corrupted control-characters from unescaped markdown generators
     const repairedContent = content
       .replace(/\x09heta/g, '\\theta')
@@ -142,7 +146,8 @@ function App() {
     if (window.electronAPI) {
       window.electronAPI.setTitle(`FATE - ${fPath ? fPath.split(/[/\\]/).pop() : 'Document'}`);
     }
-  };
+    filePathRef.current = fPath;
+  }, []);
 
   useEffect(() => {
     if (window.electronAPI) {
@@ -182,16 +187,11 @@ function App() {
       });
       window.electronAPI.onOpenFile((content, name, path) => {
         setFileName(name);
-        setFilePath(path);
         processMarkdown(content, path);
       });
 
       window.electronAPI.onFileChanged((content) => {
-        // Keep the same path
-        setFilePath(prevPath => {
-          processMarkdown(content, prevPath);
-          return prevPath;
-        });
+        processMarkdown(content, filePathRef.current);
       });
 
       window.electronAPI.getAppVersion().then(version => setAppVersion(version));
@@ -203,7 +203,7 @@ function App() {
 
       window.electronAPI.appReady();
     }
-  }, []);
+  }, [processMarkdown]);
 
   // Keyboard Shortcuts
   const matchesShortcut = (e, shortcutString) => {
@@ -259,46 +259,65 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isViewing, settings.shortcuts, activeShortcutRebind]);
 
+  // Cache headings when content changes to avoid repeated DOM queries during scroll
+  useEffect(() => {
+    if (isViewing && contentRef.current) {
+      headingsRef.current = Array.from(contentRef.current.querySelectorAll('h1, h2, h3'));
+    } else {
+      headingsRef.current = [];
+    }
+  }, [isViewing, fileContent]);
+
   // Scroll Progress and Active Heading Tracking
   useEffect(() => {
     const handleScroll = () => {
-      if (!contentRef.current) return;
-      
-      const { scrollTop, scrollHeight, clientHeight } = contentRef.current;
-      const progress = (scrollTop / (scrollHeight - clientHeight)) * 100;
-      setScrollProgress(progress || 0);
+      if (scrollRafId.current) return;
 
-      const headings = Array.from(contentRef.current.querySelectorAll('h1, h2, h3'));
-      let currentActive = activeHeading;
-      
-      for (const h of headings) {
-        const rect = h.getBoundingClientRect();
-        if (rect.top <= window.innerHeight * 0.4) {
-          currentActive = h.id;
-        } else {
-          break;
+      // Throttle scroll events using requestAnimationFrame for better performance
+      scrollRafId.current = requestAnimationFrame(() => {
+        scrollRafId.current = null;
+        if (!contentRef.current) return;
+
+        const { scrollTop, scrollHeight, clientHeight } = contentRef.current;
+        const progress = (scrollTop / (scrollHeight - clientHeight)) * 100;
+        setScrollProgress(progress || 0);
+
+        const headings = headingsRef.current;
+        let currentActive = activeHeadingRef.current;
+
+        const threshold = window.innerHeight * 0.4;
+        for (const h of headings) {
+          const rect = h.getBoundingClientRect();
+          if (rect.top <= threshold) {
+            currentActive = h.id;
+          } else {
+            break;
+          }
         }
-      }
-      
-      if (headings.length > 0 && currentActive === '' && headings[0].getBoundingClientRect().top > window.innerHeight * 0.4) {
-        currentActive = headings[0].id;
-      }
-      
-      if (currentActive !== activeHeading) {
-        setActiveHeading(currentActive);
-      }
+
+        if (headings.length > 0 && currentActive === '' && headings[0].getBoundingClientRect().top > threshold) {
+          currentActive = headings[0].id;
+        }
+
+        // Only update state if the active heading has actually changed
+        if (currentActive !== activeHeadingRef.current) {
+          activeHeadingRef.current = currentActive;
+          setActiveHeading(currentActive);
+        }
+      });
     };
 
     const scrollContainer = contentRef.current;
     if (scrollContainer) {
-      scrollContainer.addEventListener('scroll', handleScroll);
+      scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
       handleScroll(); // Initial check
     }
 
     return () => {
       if (scrollContainer) scrollContainer.removeEventListener('scroll', handleScroll);
+      if (scrollRafId.current) cancelAnimationFrame(scrollRafId.current);
     };
-  }, [isViewing, fileContent, activeHeading]);
+  }, [isViewing, fileContent]);
 
   const handleUpdateAction = () => {
     if (updateAction === 'install') {
@@ -317,7 +336,6 @@ function App() {
         return;
       }
       setFileName(file.name);
-      setFilePath(file.path || null); // path is available in Electron via webkitRelativePath or path property
       const reader = new FileReader();
       reader.onload = (e) => {
         const text = e.target.result;
