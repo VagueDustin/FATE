@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
@@ -25,13 +25,12 @@ marked.use(markedKatex({ throwOnError: false, nonStandard: true }));
 function App() {
   const [fileContent, setFileContent] = useState('');
   const [fileName, setFileName] = useState('');
-  const [filePath, setFilePath] = useState(null);
+  const filePathRef = useRef(null);
   const [isViewing, setIsViewing] = useState(false);
   const [appVersion, setAppVersion] = useState('');
   const [updateStatus, setUpdateStatus] = useState('');
   const [updateAction, setUpdateAction] = useState(null);
   const [toc, setToc] = useState([]);
-  const [scrollProgress, setScrollProgress] = useState(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [activeHeading, setActiveHeading] = useState('');
   const [sidebarWidth, setSidebarWidth] = useState(300);
@@ -60,6 +59,9 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const contentRef = useRef(null);
   const isResizing = useRef(false);
+  const headingsRef = useRef([]);
+  const progressBarRef = useRef(null);
+  const lastActiveHeadingRef = useRef('');
 
   const startResizing = useCallback((e) => {
     isResizing.current = true;
@@ -87,6 +89,7 @@ function App() {
     setIsLoading(true);
     
     // Repair mathematically corrupted control-characters from unescaped markdown generators
+    /* eslint-disable no-control-regex */
     const repairedContent = content
       .replace(/\x09heta/g, '\\theta')
       .replace(/\x09ext/g, '\\text')
@@ -101,6 +104,7 @@ function App() {
       .replace(/\x0Dho/g, '\\rho')
       .replace(/\x0B/g, '\\v')
       .replace(/\\ /g, '\\\\ ');
+    /* eslint-enable no-control-regex */
 
     const rawHtml = marked.parse(repairedContent);
     const cleanHtml = DOMPurify.sanitize(rawHtml, {
@@ -182,16 +186,13 @@ function App() {
       });
       window.electronAPI.onOpenFile((content, name, path) => {
         setFileName(name);
-        setFilePath(path);
+        filePathRef.current = path;
         processMarkdown(content, path);
       });
 
       window.electronAPI.onFileChanged((content) => {
         // Keep the same path
-        setFilePath(prevPath => {
-          processMarkdown(content, prevPath);
-          return prevPath;
-        });
+        processMarkdown(content, filePathRef.current);
       });
 
       window.electronAPI.getAppVersion().then(version => setAppVersion(version));
@@ -261,44 +262,69 @@ function App() {
 
   // Scroll Progress and Active Heading Tracking
   useEffect(() => {
-    const handleScroll = () => {
-      if (!contentRef.current) return;
-      
-      const { scrollTop, scrollHeight, clientHeight } = contentRef.current;
-      const progress = (scrollTop / (scrollHeight - clientHeight)) * 100;
-      setScrollProgress(progress || 0);
+    let ticking = false;
 
-      const headings = Array.from(contentRef.current.querySelectorAll('h1, h2, h3'));
-      let currentActive = activeHeading;
-      
-      for (const h of headings) {
-        const rect = h.getBoundingClientRect();
-        if (rect.top <= window.innerHeight * 0.4) {
-          currentActive = h.id;
-        } else {
-          break;
-        }
-      }
-      
-      if (headings.length > 0 && currentActive === '' && headings[0].getBoundingClientRect().top > window.innerHeight * 0.4) {
-        currentActive = headings[0].id;
-      }
-      
-      if (currentActive !== activeHeading) {
-        setActiveHeading(currentActive);
+    /**
+     * BOLT OPTIMIZATION: High-performance scroll handler
+     * 1. Uses requestAnimationFrame to throttle updates to 60fps
+     * 2. Bypasses React state for progress bar (direct DOM manipulation)
+     * 3. Uses cached heading refs to avoid layout thrashing (querySelectorAll)
+     * 4. Only updates active heading state when it actually changes
+     */
+    const handleScroll = () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          if (!contentRef.current) {
+            ticking = false;
+            return;
+          }
+
+          const { scrollTop, scrollHeight, clientHeight } = contentRef.current;
+          const progress = (scrollTop / (scrollHeight - clientHeight)) * 100;
+
+          // Direct DOM manipulation for progress bar to avoid full component re-renders
+          if (progressBarRef.current) {
+            progressBarRef.current.style.width = `${progress || 0}%`;
+          }
+
+          // Performance: Use cached headingsRef instead of querySelectorAll
+          const headings = headingsRef.current;
+          let currentActive = lastActiveHeadingRef.current;
+
+          for (const h of headings) {
+            const rect = h.getBoundingClientRect();
+            if (rect.top <= window.innerHeight * 0.4) {
+              currentActive = h.id;
+            } else {
+              break;
+            }
+          }
+
+          if (headings.length > 0 && currentActive === '' && headings[0].getBoundingClientRect().top > window.innerHeight * 0.4) {
+            currentActive = headings[0].id;
+          }
+
+          if (currentActive !== lastActiveHeadingRef.current) {
+            lastActiveHeadingRef.current = currentActive;
+            setActiveHeading(currentActive);
+          }
+
+          ticking = false;
+        });
+        ticking = true;
       }
     };
 
     const scrollContainer = contentRef.current;
     if (scrollContainer) {
-      scrollContainer.addEventListener('scroll', handleScroll);
+      scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
       handleScroll(); // Initial check
     }
 
     return () => {
       if (scrollContainer) scrollContainer.removeEventListener('scroll', handleScroll);
     };
-  }, [isViewing, fileContent, activeHeading]);
+  }, [isViewing]);
 
   const handleUpdateAction = () => {
     if (updateAction === 'install') {
@@ -317,7 +343,7 @@ function App() {
         return;
       }
       setFileName(file.name);
-      setFilePath(file.path || null); // path is available in Electron via webkitRelativePath or path property
+      filePathRef.current = file.path || null; // path is available in Electron via webkitRelativePath or path property
       const reader = new FileReader();
       reader.onload = (e) => {
         const text = e.target.result;
@@ -335,6 +361,15 @@ function App() {
     multiple: false
   });
 
+  // Cache heading elements when content is rendered to avoid repeated DOM queries during scroll
+  useEffect(() => {
+    if (isViewing && fileContent && contentRef.current) {
+      headingsRef.current = Array.from(contentRef.current.querySelectorAll('h1, h2, h3'));
+    } else {
+      headingsRef.current = [];
+    }
+  }, [isViewing, fileContent]);
+
   const scrollToHeading = (id) => {
     const element = document.getElementById(id);
     if (element && contentRef.current) {
@@ -347,7 +382,11 @@ function App() {
     <div className="app-container">
       {isViewing && (
         <div className="progress-bar-container">
-          <div className="progress-bar" style={{ width: `${scrollProgress}%` }} />
+          <div
+            className="progress-bar"
+            ref={progressBarRef}
+            style={{ width: '0%' }}
+          />
         </div>
       )}
 
