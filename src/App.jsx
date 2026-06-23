@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
@@ -25,13 +25,12 @@ marked.use(markedKatex({ throwOnError: false, nonStandard: true }));
 function App() {
   const [fileContent, setFileContent] = useState('');
   const [fileName, setFileName] = useState('');
-  const [filePath, setFilePath] = useState(null);
+  const filePath = useRef(null);
   const [isViewing, setIsViewing] = useState(false);
   const [appVersion, setAppVersion] = useState('');
   const [updateStatus, setUpdateStatus] = useState('');
   const [updateAction, setUpdateAction] = useState(null);
   const [toc, setToc] = useState([]);
-  const [scrollProgress, setScrollProgress] = useState(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [activeHeading, setActiveHeading] = useState('');
   const [sidebarWidth, setSidebarWidth] = useState(300);
@@ -60,6 +59,10 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const contentRef = useRef(null);
   const isResizing = useRef(false);
+  const progressBarRef = useRef(null);
+  const headingsRef = useRef([]);
+  const ticking = useRef(false);
+  const activeHeadingRef = useRef('');
 
   const startResizing = useCallback((e) => {
     isResizing.current = true;
@@ -87,6 +90,7 @@ function App() {
     setIsLoading(true);
     
     // Repair mathematically corrupted control-characters from unescaped markdown generators
+    /* eslint-disable no-control-regex */
     const repairedContent = content
       .replace(/\x09heta/g, '\\theta')
       .replace(/\x09ext/g, '\\text')
@@ -101,6 +105,7 @@ function App() {
       .replace(/\x0Dho/g, '\\rho')
       .replace(/\x0B/g, '\\v')
       .replace(/\\ /g, '\\\\ ');
+    /* eslint-enable no-control-regex */
 
     const rawHtml = marked.parse(repairedContent);
     const cleanHtml = DOMPurify.sanitize(rawHtml, {
@@ -136,6 +141,7 @@ function App() {
     setToc(tocData);
     setIsSidebarOpen(tocData.length > 0);
     setFileContent(tempDiv.innerHTML);
+    // Headings ref will be updated in the useEffect after content is rendered
     setIsLoading(false);
     setIsViewing(true);
     
@@ -182,16 +188,13 @@ function App() {
       });
       window.electronAPI.onOpenFile((content, name, path) => {
         setFileName(name);
-        setFilePath(path);
+        filePath.current = path;
         processMarkdown(content, path);
       });
 
       window.electronAPI.onFileChanged((content) => {
         // Keep the same path
-        setFilePath(prevPath => {
-          processMarkdown(content, prevPath);
-          return prevPath;
-        });
+        processMarkdown(content, filePath.current);
       });
 
       window.electronAPI.getAppVersion().then(version => setAppVersion(version));
@@ -259,17 +262,35 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isViewing, settings.shortcuts, activeShortcutRebind]);
 
+  // Cache headings when content changes
+  useEffect(() => {
+    if (isViewing && contentRef.current) {
+      headingsRef.current = Array.from(contentRef.current.querySelectorAll('h1, h2, h3'));
+    } else {
+      headingsRef.current = [];
+    }
+  }, [isViewing, fileContent]);
+
   // Scroll Progress and Active Heading Tracking
   useEffect(() => {
-    const handleScroll = () => {
-      if (!contentRef.current) return;
+    let rafId = null;
+
+    const updateScrollState = () => {
+      if (!contentRef.current) {
+        ticking.current = false;
+        return;
+      }
       
       const { scrollTop, scrollHeight, clientHeight } = contentRef.current;
       const progress = (scrollTop / (scrollHeight - clientHeight)) * 100;
-      setScrollProgress(progress || 0);
 
-      const headings = Array.from(contentRef.current.querySelectorAll('h1, h2, h3'));
-      let currentActive = activeHeading;
+      // Direct DOM update for progress bar to avoid component-wide re-renders
+      if (progressBarRef.current) {
+        progressBarRef.current.style.width = `${progress || 0}%`;
+      }
+
+      const headings = headingsRef.current;
+      let currentActive = '';
       
       for (const h of headings) {
         const rect = h.getBoundingClientRect();
@@ -284,21 +305,32 @@ function App() {
         currentActive = headings[0].id;
       }
       
-      if (currentActive !== activeHeading) {
+      if (currentActive !== activeHeadingRef.current) {
+        activeHeadingRef.current = currentActive;
         setActiveHeading(currentActive);
+      }
+
+      ticking.current = false;
+    };
+
+    const handleScroll = () => {
+      if (!ticking.current) {
+        rafId = requestAnimationFrame(updateScrollState);
+        ticking.current = true;
       }
     };
 
     const scrollContainer = contentRef.current;
     if (scrollContainer) {
-      scrollContainer.addEventListener('scroll', handleScroll);
-      handleScroll(); // Initial check
+      scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
+      updateScrollState(); // Initial check
     }
 
     return () => {
       if (scrollContainer) scrollContainer.removeEventListener('scroll', handleScroll);
+      if (rafId) cancelAnimationFrame(rafId);
     };
-  }, [isViewing, fileContent, activeHeading]);
+  }, [isViewing, fileContent]); // Re-setup if viewing state or content changes to reset progress
 
   const handleUpdateAction = () => {
     if (updateAction === 'install') {
@@ -317,7 +349,7 @@ function App() {
         return;
       }
       setFileName(file.name);
-      setFilePath(file.path || null); // path is available in Electron via webkitRelativePath or path property
+      filePath.current = file.path || null; // path is available in Electron via webkitRelativePath or path property
       const reader = new FileReader();
       reader.onload = (e) => {
         const text = e.target.result;
@@ -347,7 +379,7 @@ function App() {
     <div className="app-container">
       {isViewing && (
         <div className="progress-bar-container">
-          <div className="progress-bar" style={{ width: `${scrollProgress}%` }} />
+          <div className="progress-bar" ref={progressBarRef} />
         </div>
       )}
 
