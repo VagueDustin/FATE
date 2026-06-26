@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
@@ -25,13 +25,12 @@ marked.use(markedKatex({ throwOnError: false, nonStandard: true }));
 function App() {
   const [fileContent, setFileContent] = useState('');
   const [fileName, setFileName] = useState('');
-  const [filePath, setFilePath] = useState(null);
+  const filePathRef = useRef(null);
   const [isViewing, setIsViewing] = useState(false);
   const [appVersion, setAppVersion] = useState('');
   const [updateStatus, setUpdateStatus] = useState('');
   const [updateAction, setUpdateAction] = useState(null);
   const [toc, setToc] = useState([]);
-  const [scrollProgress, setScrollProgress] = useState(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [activeHeading, setActiveHeading] = useState('');
   const [sidebarWidth, setSidebarWidth] = useState(300);
@@ -59,6 +58,10 @@ function App() {
   
   const [isLoading, setIsLoading] = useState(false);
   const contentRef = useRef(null);
+  const progressBarRef = useRef(null);
+  const headingsRef = useRef([]);
+  const activeHeadingRef = useRef('');
+  const requestRef = useRef(null);
   const isResizing = useRef(false);
 
   const startResizing = useCallback((e) => {
@@ -86,6 +89,7 @@ function App() {
   const processMarkdown = (content, fPath) => {
     setIsLoading(true);
     
+    /* eslint-disable no-control-regex */
     // Repair mathematically corrupted control-characters from unescaped markdown generators
     const repairedContent = content
       .replace(/\x09heta/g, '\\theta')
@@ -101,6 +105,7 @@ function App() {
       .replace(/\x0Dho/g, '\\rho')
       .replace(/\x0B/g, '\\v')
       .replace(/\\ /g, '\\\\ ');
+    /* eslint-enable no-control-regex */
 
     const rawHtml = marked.parse(repairedContent);
     const cleanHtml = DOMPurify.sanitize(rawHtml, {
@@ -182,16 +187,13 @@ function App() {
       });
       window.electronAPI.onOpenFile((content, name, path) => {
         setFileName(name);
-        setFilePath(path);
+        filePathRef.current = path;
         processMarkdown(content, path);
       });
 
       window.electronAPI.onFileChanged((content) => {
         // Keep the same path
-        setFilePath(prevPath => {
-          processMarkdown(content, prevPath);
-          return prevPath;
-        });
+        processMarkdown(content, filePathRef.current);
       });
 
       window.electronAPI.getAppVersion().then(version => setAppVersion(version));
@@ -259,34 +261,55 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isViewing, settings.shortcuts, activeShortcutRebind]);
 
+  // Cache headings when content changes to avoid expensive DOM queries during scroll
+  useEffect(() => {
+    if (contentRef.current && isViewing) {
+      headingsRef.current = Array.from(contentRef.current.querySelectorAll('h1, h2, h3'));
+    }
+  }, [fileContent, isViewing]);
+
   // Scroll Progress and Active Heading Tracking
   useEffect(() => {
     const handleScroll = () => {
-      if (!contentRef.current) return;
-      
-      const { scrollTop, scrollHeight, clientHeight } = contentRef.current;
-      const progress = (scrollTop / (scrollHeight - clientHeight)) * 100;
-      setScrollProgress(progress || 0);
+      if (requestRef.current) return;
 
-      const headings = Array.from(contentRef.current.querySelectorAll('h1, h2, h3'));
-      let currentActive = activeHeading;
-      
-      for (const h of headings) {
-        const rect = h.getBoundingClientRect();
-        if (rect.top <= window.innerHeight * 0.4) {
-          currentActive = h.id;
-        } else {
-          break;
+      requestRef.current = requestAnimationFrame(() => {
+        if (!contentRef.current) {
+          requestRef.current = null;
+          return;
         }
-      }
-      
-      if (headings.length > 0 && currentActive === '' && headings[0].getBoundingClientRect().top > window.innerHeight * 0.4) {
-        currentActive = headings[0].id;
-      }
-      
-      if (currentActive !== activeHeading) {
-        setActiveHeading(currentActive);
-      }
+
+        const { scrollTop, scrollHeight, clientHeight } = contentRef.current;
+        const progress = (scrollTop / (scrollHeight - clientHeight)) * 100;
+
+        // Directly update DOM to bypass React reconciliation for high-frequency progress bar updates
+        if (progressBarRef.current) {
+          progressBarRef.current.style.width = `${progress || 0}%`;
+        }
+
+        const headings = headingsRef.current;
+        let currentActive = activeHeadingRef.current;
+
+        for (const h of headings) {
+          const rect = h.getBoundingClientRect();
+          if (rect.top <= window.innerHeight * 0.4) {
+            currentActive = h.id;
+          } else {
+            break;
+          }
+        }
+
+        if (headings.length > 0 && currentActive === '' && headings[0].getBoundingClientRect().top > window.innerHeight * 0.4) {
+          currentActive = headings[0].id;
+        }
+
+        if (currentActive !== activeHeadingRef.current) {
+          activeHeadingRef.current = currentActive;
+          setActiveHeading(currentActive);
+        }
+
+        requestRef.current = null;
+      });
     };
 
     const scrollContainer = contentRef.current;
@@ -297,8 +320,9 @@ function App() {
 
     return () => {
       if (scrollContainer) scrollContainer.removeEventListener('scroll', handleScroll);
+      if (requestRef.current) cancelAnimationFrame(requestRef.current);
     };
-  }, [isViewing, fileContent, activeHeading]);
+  }, [isViewing]);
 
   const handleUpdateAction = () => {
     if (updateAction === 'install') {
@@ -317,7 +341,7 @@ function App() {
         return;
       }
       setFileName(file.name);
-      setFilePath(file.path || null); // path is available in Electron via webkitRelativePath or path property
+      filePathRef.current = file.path || null; // path is available in Electron via webkitRelativePath or path property
       const reader = new FileReader();
       reader.onload = (e) => {
         const text = e.target.result;
@@ -347,7 +371,7 @@ function App() {
     <div className="app-container">
       {isViewing && (
         <div className="progress-bar-container">
-          <div className="progress-bar" style={{ width: `${scrollProgress}%` }} />
+          <div className="progress-bar" ref={progressBarRef} />
         </div>
       )}
 

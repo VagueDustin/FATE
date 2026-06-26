@@ -1,0 +1,3 @@
+## 2025-05-14 - Optimized Scroll and Rendering performance
+**Learning:** High-frequency events like scrolling can cause significant performance degradation if they trigger React re-renders or expensive DOM queries (like `querySelectorAll`) on every event. Direct DOM manipulation for simple updates (like a progress bar) and caching DOM queries in a `useRef` (with updates only on content change) are effective strategies to mitigate this.
+**Action:** Use `requestAnimationFrame` to throttle high-frequency handlers, cache DOM queries in `useRef`, and update simple UI elements directly via refs to bypass React reconciliation.
