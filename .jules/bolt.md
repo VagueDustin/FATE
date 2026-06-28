@@ -1,0 +1,3 @@
+## 2025-05-14 - Scroll Performance Optimization in React
+**Learning:** High-frequency events like scrolling can cause severe performance degradation if they trigger React state updates on every event. Bypassing React's reconciliation cycle for visual updates (like progress bars) using `useRef` and direct DOM manipulation, combined with `requestAnimationFrame` for throttling, significantly reduces CPU overhead and eliminates redundant re-renders.
+**Action:** Use `useRef` for high-frequency UI updates and state-gating (comparing new values against a ref before calling `setState`) to maintain 60fps performance in document-heavy applications.
