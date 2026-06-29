@@ -1,0 +1,3 @@
+## 2025-05-15 - Optimizing high-frequency scroll events
+**Learning:** For high-frequency UI updates like scroll progress bars, bypassing React reconciliation by updating the DOM directly via refs (e.g., `ref.current.style.width`) significantly reduces CPU usage and eliminates redundant component-wide re-renders. Additionally, using `requestAnimationFrame` for throttling ensures updates stay synced with the browser's refresh rate.
+**Action:** Use `useRef` for direct DOM manipulation and `requestAnimationFrame` for throttling in all future high-frequency event handlers (scroll, resize, mousemove).
