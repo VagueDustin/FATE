@@ -8,7 +8,10 @@ const Store = require('electron-store');
 
 const store = new Store({
   defaults: {
-    theme: 'dark',
+    // 'fate' = VagueDustin Enterprises navy & gold (utility tier), the default since 1.5.0.
+    // Installs carrying the pre-1.5.0 'dark' value are migrated to 'fate' in the renderer — see
+    // resolveTheme() in src/App.jsx. 'dark' no longer has a token block, so it must not survive.
+    theme: 'fate',
     discordEnabled: false,
     autoUpdatesEnabled: true,
     sidebarWidth: 300,

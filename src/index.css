@@ -1,12 +1,20 @@
+/**
+ * index.css — document-level defaults.
+ *
+ * Colour comes from brand.css tokens. The one bootstrapping exception is the `html` background:
+ * that rule has to paint before React mounts and sets `data-theme` on <html>, so it cannot use a
+ * token. Without it there is a white flash on launch.
+ */
+
+html {
+  /* Pre-mount paint only. Kept in sync with [data-theme='fate'] --surface-base in brand.css. */
+  background-color: #070b1a;
+}
+
 :root {
-  font-family: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: var(--font-sans);
   line-height: 1.5;
   font-weight: 400;
-
-  color-scheme: dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #0d1117; /* sleek dark color */
-
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -15,13 +23,17 @@
 
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
   min-width: 320px;
   min-height: 100vh;
-  background-color: #0d1117;
+  background-color: var(--surface-base);
+  color: var(--text-primary);
 }
 
-h1, h2, h3, h4, h5, h6 {
-  color: #fff;
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  color: var(--text-primary);
 }

@@ -1,0 +1,227 @@
+/**
+ * brand.css — VagueDustin Enterprises design tokens.
+ *
+ * ── VENDORED, NOT A DEPENDENCY ─────────────────────────────────────────────────────────────────
+ * Derived from @vaguedustin/brand v1.0.0 (github.com/VagueDustin/vaguedustin-brand), theme
+ * `gold-navy` at the `utility` ornament tier.
+ *
+ * These values are COPIED rather than imported because that repo is private and FATE is public
+ * (MIT) — a private git dependency would make this project un-installable for anyone else. The
+ * canonical source of truth is still the brand repo:
+ *
+ *     brand repo  src/primitives.ts  +  src/themes/gold-navy.ts   →   dist/tokens.css
+ *     here        src/brand.css      (the gold-navy block, copied verbatim)
+ *
+ * To resync: run `npm run build` in the brand repo and copy the `[data-theme='gold-navy']` block
+ * plus the :root primitives below out of its `dist/tokens.css`.
+ *
+ * ── WHY UTILITY TIER ──────────────────────────────────────────────────────────────────────────
+ * The brand defines three ornament tiers. FATE is a document reader — density and scanning speed
+ * outrank atmosphere — so it sits at `utility`: gold behaves as MATERIAL (hairlines, accents, one
+ * gradient wordmark). No filigree, no corner brackets, no film grain, no ambient motion. Cinzel
+ * appears only on the app title; Inter carries everything else.
+ *
+ * ── RULE ──────────────────────────────────────────────────────────────────────────────────────
+ * This is the ONLY file in src/ allowed to contain a colour literal. Everything in App.css must
+ * reference these custom properties. That is what makes a theme a ~25-line block instead of a
+ * find-and-replace through 1000 lines of CSS.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* ── Type ────────────────────────────────────────────────────────────────────────────────── */
+  /* Cinzel + Inter are bundled locally via @fontsource (see main.jsx) — FATE is a fully offline
+     app, so webfont CDNs are not an option. */
+  --font-display: 'Cinzel', 'Georgia', serif;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Code', SFMono-Regular, Consolas, monospace;
+
+  --tracking-wordmark: 0.14em;
+  --tracking-label: 0.34em;
+  --tracking-display: 0.02em;
+
+  /* ── Geometry ────────────────────────────────────────────────────────────────────────────── */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+
+  /* ── Motion ──────────────────────────────────────────────────────────────────────────────── */
+  --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+  --spring: cubic-bezier(0.3, 1.5, 0.4, 1);
+}
+
+/* ════════════════════════════════════════════════════════════════════════════════════════════
+   FATE — the default theme. VagueDustin Enterprises navy & gold, utility tier.
+   Replaces the pre-1.5.0 dark-red default.
+   ════════════════════════════════════════════════════════════════════════════════════════════ */
+[data-theme='fate'] {
+  --surface-base: #070B1A;
+  --surface-raised: #101736;
+  --surface-overlay: #16213E;
+  --surface-sunken: #020617;
+  --surface-highest: #1E2A4A;
+
+  --border-subtle: rgba(212, 175, 55, 0.1);
+  --border-default: #22325C;
+  --border-emphasis: #D4AF37;
+
+  --text-primary: #E6EAF2;
+  --text-muted: #94A0BB;
+  /* Lifted from #5C6B8A upstream to clear WCAG AA (~3.8:1 → ~5:1) on --surface-base. Do not
+     darken this; the regression has been made once already. */
+  --text-faint: #76849F;
+  --text-inverse: #070B1A;
+  --text-accent: #F2C94C;
+
+  --accent-default: #D4AF37;
+  --accent-hover: #F2C94C;
+  --accent-pressed: #B8902B;
+  --accent-subtle: rgba(212, 175, 55, 0.12);
+  --accent-glow: rgba(212, 175, 55, 0.45);
+
+  --status-danger: #E8617A;
+  --status-success: #A6E26A;
+
+  /* Surfaces that need a gradient rather than a flat fill. A flat navy background is off-brand —
+     the depth wash is required. */
+  --gradient-depth:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(212, 175, 55, 0.06), transparent),
+    radial-gradient(1100px 700px at 15% -10%, rgba(42, 79, 150, 0.32), transparent 60%),
+    radial-gradient(900px 800px at 110% 8%, rgba(20, 42, 92, 0.55), transparent 55%);
+  --gradient-accent-text: linear-gradient(135deg, #FFE9A8 0%, #D4AF37 45%, #B8902B 70%, #F2C94C 100%);
+  --gradient-panel: linear-gradient(180deg, rgba(16, 23, 54, 0.92), rgba(7, 11, 26, 0.94));
+
+  --shadow-panel:
+    0 26px 60px -28px rgba(0, 0, 0, 0.85),
+    inset 0 1px 0 rgba(255, 233, 168, 0.08),
+    inset 0 0 0 1px rgba(212, 175, 55, 0.1);
+  --shadow-glow: 0 0 0 1px rgba(212, 175, 55, 0.35), 0 8px 30px -8px rgba(212, 175, 55, 0.45);
+
+  /* Code blocks: navy-tinted rather than the highlight.js default gray. */
+  --code-bg: #020617;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════════════════════
+   CRIMSON — the pre-1.5.0 look, kept as an explicit user choice.
+   Retained so nobody who liked the original red identity is forced off it by the rebrand. Not a
+   brand theme; it is a legacy preference, same status as Dracula.
+   ════════════════════════════════════════════════════════════════════════════════════════════ */
+[data-theme='crimson'] {
+  --surface-base: #0D1117;
+  --surface-raised: #161B22;
+  --surface-overlay: #1E1E1E;
+  --surface-sunken: #010409;
+  --surface-highest: #21262D;
+
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-default: rgba(255, 255, 255, 0.12);
+  --border-emphasis: #E53E3E;
+
+  --text-primary: #C9D1D9;
+  --text-muted: #9CA3AF;
+  --text-faint: #6E7681;
+  --text-inverse: #0D1117;
+  --text-accent: #FF4D4D;
+
+  --accent-default: #E53E3E;
+  --accent-hover: #FF4D4D;
+  --accent-pressed: #C53030;
+  --accent-subtle: rgba(229, 62, 62, 0.12);
+  --accent-glow: rgba(229, 62, 62, 0.45);
+
+  --status-danger: #F56565;
+  --status-success: #48BB78;
+
+  --gradient-depth: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(229, 62, 62, 0.07), transparent);
+  --gradient-accent-text: linear-gradient(135deg, #FF8A8A 0%, #E53E3E 50%, #C53030 100%);
+  --gradient-panel: linear-gradient(180deg, rgba(30, 30, 30, 0.7), rgba(13, 17, 23, 0.85));
+
+  --shadow-panel: 0 10px 40px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --shadow-glow: 0 0 0 1px rgba(229, 62, 62, 0.35), 0 8px 30px -8px rgba(229, 62, 62, 0.4);
+
+  --code-bg: #161B22;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════════════════════
+   LIGHT — GitHub-light surfaces with the house gold as the accent, so the brand still reads.
+   ════════════════════════════════════════════════════════════════════════════════════════════ */
+[data-theme='light'] {
+  color-scheme: light;
+
+  --surface-base: #FFFFFF;
+  --surface-raised: #F6F8FA;
+  --surface-overlay: #FFFFFF;
+  --surface-sunken: #F6F8FA;
+  --surface-highest: #EBECF0;
+
+  --border-subtle: #E4E7EB;
+  --border-default: #D0D7DE;
+  --border-emphasis: #B8902B;
+
+  --text-primary: #24292F;
+  --text-muted: #57606A;
+  --text-faint: #6E7781;
+  --text-inverse: #FFFFFF;
+  /* The darkest gold on the ramp — #D4AF37 fails contrast on white. */
+  --text-accent: #8C6A26;
+
+  --accent-default: #B8902B;
+  --accent-hover: #8C6A26;
+  --accent-pressed: #6B5120;
+  --accent-subtle: rgba(184, 144, 43, 0.12);
+  --accent-glow: rgba(184, 144, 43, 0.3);
+
+  --status-danger: #CF222E;
+  --status-success: #1A7F37;
+
+  --gradient-depth: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(184, 144, 43, 0.05), transparent);
+  --gradient-accent-text: linear-gradient(135deg, #B8902B 0%, #8C6A26 60%, #6B5120 100%);
+  --gradient-panel: linear-gradient(180deg, #FFFFFF, #F6F8FA);
+
+  --shadow-panel: 0 8px 24px -12px rgba(31, 35, 40, 0.2), inset 0 0 0 1px rgba(208, 215, 222, 0.9);
+  --shadow-glow: 0 0 0 1px rgba(184, 144, 43, 0.35), 0 8px 24px -10px rgba(184, 144, 43, 0.3);
+
+  --code-bg: #F6F8FA;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════════════════════
+   DRACULA — the standard Dracula palette. Not a brand theme; a recognised community palette
+   users expect to find in a developer tool.
+   ════════════════════════════════════════════════════════════════════════════════════════════ */
+[data-theme='dracula'] {
+  --surface-base: #282A36;
+  --surface-raised: #343746;
+  --surface-overlay: #44475A;
+  --surface-sunken: #21222C;
+  --surface-highest: #4D5066;
+
+  --border-subtle: rgba(98, 114, 164, 0.3);
+  --border-default: #6272A4;
+  --border-emphasis: #BD93F9;
+
+  --text-primary: #F8F8F2;
+  --text-muted: #C3C9E0;
+  --text-faint: #8B93B8;
+  --text-inverse: #282A36;
+  --text-accent: #BD93F9;
+
+  --accent-default: #BD93F9;
+  --accent-hover: #FF79C6;
+  --accent-pressed: #9A6DE0;
+  --accent-subtle: rgba(189, 147, 249, 0.15);
+  --accent-glow: rgba(189, 147, 249, 0.45);
+
+  --status-danger: #FF5555;
+  --status-success: #50FA7B;
+
+  --gradient-depth: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(189, 147, 249, 0.08), transparent);
+  --gradient-accent-text: linear-gradient(135deg, #FF79C6 0%, #BD93F9 50%, #FFB86C 100%);
+  --gradient-panel: linear-gradient(180deg, rgba(68, 71, 90, 0.8), rgba(40, 42, 54, 0.9));
+
+  --shadow-panel: 0 20px 50px -24px rgba(0, 0, 0, 0.7), inset 0 0 0 1px rgba(98, 114, 164, 0.35);
+  --shadow-glow: 0 0 0 1px rgba(189, 147, 249, 0.35), 0 8px 30px -8px rgba(189, 147, 249, 0.4);
+
+  --code-bg: #21222C;
+}

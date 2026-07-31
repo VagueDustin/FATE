@@ -8,8 +8,10 @@ FATE is a beautiful, elegant, and highly resilient Markdown viewer built specifi
 - **Deep LaTeX Math Support:** Perfectly renders complex inline and block mathematical equations, fractions, and multi-line matrices using KaTeX.
 - **Surgical Math Auto-Repair:** FATE includes a custom algorithmic layer that detects and dynamically heals corrupted backslash escapes (e.g., `\theta`, `\begin`, `\approx`) caused by poorly escaped markdown generators before they hit the screen.
 - **Interactive Table of Contents:** Automatically generates a sidebar table of contents. Headings containing math equations are flawlessly rendered directly in the sidebar!
-- **Premium Aesthetics:** Clean typography, glassmorphic UI elements, dynamic micro-animations, and a polished dark-theme design.
-- **Print to PDF:** Need a hard copy? Print your perfectly formatted documents directly to PDF with optimized page margins and scaling.
+- **Premium Aesthetics:** Deep navy surfaces with metallic gold accents, engraved Cinzel display type, and gilded hairlines — the VagueDustin Enterprises design language.
+- **Four Themes:** **FATE** (navy & gold, default), **Crimson** (the classic red look), **Light**, and **Dracula**. Each theme is a single block of design tokens, so the entire UI retunes together.
+- **Fully Offline:** Typefaces ship with the app. No webfont CDN, no network requests, no telemetry — see [PRIVACY.md](PRIVACY.md).
+- **Print to PDF:** Need a hard copy? Print your perfectly formatted documents directly to PDF with optimized page margins and scaling — on a clean white, ink-saving background whatever theme you read in.
 
 ## Keyboard Shortcuts
 
@@ -48,6 +50,22 @@ Don't want to use the pre-compiled releases? You can easily build FATE from sour
    The built installers will be output to the `dist-electron/` directory.
 
 ## Changelog
+
+### v1.5.0
+- **[Feature]** Rebuilt the interface on the **VagueDustin Enterprises design language** — deep navy surfaces, metallic gold accents, engraved Cinzel display type, gilded hairlines. Applied at the *utility* ornament tier, the tier intended for tools: no filigree, no ambient motion, density and scanning speed first.
+- **[Feature]** Document headings, table headers, and section labels now set in **Cinzel**, so rendered markdown reads as typeset rather than dumped.
+- **[Feature]** Added the **Crimson** theme — the pre-1.5.0 red identity, kept as an explicit choice so nobody is forced off it by the rebrand.
+- **[Feature]** New navy-and-gold application and document icons, including a purpose-drawn simplified mark at 16/24px rather than a downscale that turned to mush in Explorer.
+- **[Enhancement]** **Typefaces are now bundled with the app.** Cinzel and Inter ship as local assets and the Google Fonts request on every launch is gone — FATE is genuinely offline now, matching what `PRIVACY.md` already promised.
+- **[Enhancement]** Rewrote the stylesheet to be entirely token-driven. Themes were previously ~300 lines of per-theme override cascade that had to be touched for every change and had already drifted; each theme is now a ~25-line block of custom properties, and `src/App.css` contains no colour literals at all.
+- **[Performance]** Scrolling no longer re-renders the app. The progress bar is written straight to the DOM, the scroll handler is throttled with `requestAnimationFrame`, heading elements are cached per document instead of re-queried every frame, and listeners are registered `passive`. Scrolling a large document went from a full React commit per tick — re-rendering the whole markdown body and every KaTeX node in it — to none.
+- **[Performance]** Fixed the scroll effect depending on `activeHeading`, which tore down and re-registered the scroll listener on every heading change mid-scroll.
+- **[Bugfix]** Drag-and-dropped files resolve their path again, via `webUtils.getPathForFile`. Electron 32 removed `File.path`, which had silently broken relative image loading for dropped documents; files opened via the dialog or a file association were unaffected.
+- **[Bugfix]** Printing now actually produces the white, ink-saving output the docs described — the previous version printed the dark theme verbatim, background included.
+- **[Bugfix]** `Escape` inside the Settings modal closes the modal instead of closing the document behind it.
+- **[Bugfix]** Opening a new document resets scroll progress and the heading cache, so a stale table-of-contents highlight no longer carries over from the previous file.
+- **[Accessibility]** Visible focus rings on all interactive controls, and `prefers-reduced-motion` now disables every decorative animation.
+- **[Maintenance]** Icons are generated from vector sources via `npm run icons` instead of being hand-exported.
 
 ### v1.4.2
 - **[Bugfix]** Fixed missing Dracula theme hooks for interactive UI buttons and scrollbars.

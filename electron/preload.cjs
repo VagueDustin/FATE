@@ -1,6 +1,22 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  /**
+   * Resolve the absolute path of a drag-and-dropped File.
+   *
+   * Electron 32 removed the non-standard `File.path` property; `webUtils.getPathForFile` is the
+   * supported replacement. Without this, dropped documents had no path, so relative image
+   * references in them could not be rewritten to the `fate-local://` protocol and silently failed
+   * to load. Files opened via the dialog or file association were unaffected — they get their path
+   * from the main process.
+   */
+  getPathForFile: (file) => {
+    try {
+      return webUtils.getPathForFile(file) || null;
+    } catch {
+      return null;
+    }
+  },
   onOpenFile: (callback) => {
     ipcRenderer.removeAllListeners('open-file');
     ipcRenderer.on('open-file', (_event, content, name, path) => callback(content, name, path));

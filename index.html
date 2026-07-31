@@ -1,12 +1,18 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="fate">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&display=swap" rel="stylesheet">
+    <!--
+      No webfont CDN. Cinzel and Inter are bundled locally via @fontsource and imported in
+      src/main.jsx. FATE is a fully offline app with a no-telemetry posture (see PRIVACY.md), so
+      reaching fonts.googleapis.com on every launch would both break offline use and make a network
+      request the privacy policy says the app does not make.
+
+      `data-theme` is set here as well as by React so the first paint is already navy — otherwise
+      there is a flash of unstyled content before the store round-trip resolves.
+    -->
     <title>FATE - Markdown Viewer</title>
   </head>
   <body>
