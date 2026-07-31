@@ -9,14 +9,22 @@ import { createRoot } from 'react-dom/client'
  *
  * Cinzel  — the house display face (wordmark, headings, section labels).
  * Inter   — the house UI face (everything else).
- * Only the weights actually used are imported, to keep the bundle small.
+ *
+ * LATIN SUBSET ONLY, and only the weights actually used. The bare `@fontsource/<font>/400.css`
+ * entrypoints pull every subset the family ships — Cyrillic, Cyrillic-ext, Greek, Greek-ext,
+ * Vietnamese, Latin-ext — which came to 64 font files and roughly 3 MB in the bundle. FATE's chrome
+ * is English-only (there is no i18n layer), and document text renders in the reader's own system
+ * fonts via the fallback stack, so those subsets were dead weight shipped to every user on every
+ * auto-update. Latin-only cuts it to 12 files.
+ *
+ * If UI localisation is ever added, widen these imports to match the languages supported.
  */
-import '@fontsource/cinzel/400.css'
-import '@fontsource/cinzel/700.css'
-import '@fontsource/inter/400.css'
-import '@fontsource/inter/500.css'
-import '@fontsource/inter/600.css'
-import '@fontsource/inter/700.css'
+import '@fontsource/cinzel/latin-400.css'
+import '@fontsource/cinzel/latin-700.css'
+import '@fontsource/inter/latin-400.css'
+import '@fontsource/inter/latin-500.css'
+import '@fontsource/inter/latin-600.css'
+import '@fontsource/inter/latin-700.css'
 
 // brand.css MUST come before index.css and App.css — it defines the custom properties they consume.
 import './brand.css'
