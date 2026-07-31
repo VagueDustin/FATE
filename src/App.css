@@ -71,6 +71,26 @@ body,
   min-height: 0; /* see the layout note above — required for inner scrolling */
   display: flex;
   flex-direction: column;
+  /* Containing block for the starfield canvas. `.app-main` is used rather than `.home` because
+     `.home` scrolls — an absolutely positioned canvas inside it would scroll away. */
+  position: relative;
+}
+
+/* ── Ambient sky (home screen only) ──────────────────────────────────────────────────────────
+   Canvas painted by src/components/Starfield.jsx. Sits behind the home content and takes no
+   pointer events, so it can never intercept a click on the drop area. */
+.starfield {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  display: block;
+}
+
+/* Home content sits above the sky. Only a stacking context is needed — no z-index arms race. */
+.home {
+  position: relative;
+  z-index: 1;
 }
 
 ::selection {
@@ -270,6 +290,35 @@ kbd {
 .home-brand {
   text-align: center;
   flex-shrink: 0;
+  position: relative;
+}
+
+/* Slow gold halo behind the badge, breathing against the starfield. Lifted from the 702 Squad
+   portal's `.halo`. Purely decorative and behind everything in the brand block. */
+.home-brand::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: -14%;
+  width: min(420px, 78%);
+  aspect-ratio: 1;
+  transform: translateX(-50%);
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(
+    circle at 50% 42%,
+    var(--accent-glow),
+    transparent 62%
+  );
+  opacity: 0.5;
+  animation: halo-pulse 6s ease-in-out infinite;
+}
+
+@keyframes halo-pulse {
+  50% {
+    opacity: 0.28;
+    transform: translateX(-50%) scale(1.08);
+  }
 }
 
 /* The badge art already carries a gold frame, so it gets no border of its own — only a soft glow
@@ -280,6 +329,14 @@ kbd {
   display: block;
   margin: 0 auto 0.75rem;
   filter: drop-shadow(0 6px 18px var(--accent-glow));
+  animation: badge-float 9s ease-in-out infinite;
+}
+
+/* Barely-there drift, so the badge feels suspended in the sky rather than pasted on it. */
+@keyframes badge-float {
+  50% {
+    transform: translateY(-5px);
+  }
 }
 
 .brand-wordmark {
@@ -1409,7 +1466,9 @@ kbd {
   }
 }
 
-/* Every animation in this app is decorative. */
+/* Every animation in this app is decorative.
+   The starfield canvas honours this separately in JS — it renders a single static frame and never
+   starts its rAF loop, since a CSS rule cannot stop a canvas from redrawing itself. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -1418,5 +1477,15 @@ kbd {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+
+  /* Hold these at their resting state rather than wherever the 0.01ms animation happened to land. */
+  .home-brand::before {
+    opacity: 0.4;
+    transform: translateX(-50%);
+  }
+
+  .brand-badge {
+    transform: none;
   }
 }

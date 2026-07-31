@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Brand, naming, or trademark question
+    url: https://github.com/VagueDustin/FATE/blob/main/TRADEMARK.md
+    about: Forking, renaming, redistributing, or reusing the artwork — start here.
+  - name: Contributing guide
+    url: https://github.com/VagueDustin/FATE/blob/main/CONTRIBUTING.md
+    about: Setup, house rules, and what gets merged.
+  - name: Security issue
+    url: https://github.com/VagueDustin/FATE/security/advisories/new
+    about: Report privately. Please don't open a public issue for a vulnerability.

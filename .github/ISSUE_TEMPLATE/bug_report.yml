@@ -1,0 +1,75 @@
+name: Bug report
+description: Something in FATE is broken or behaving wrongly.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. If this is a **security** issue, please don't file it publicly — use
+        GitHub's private vulnerability reporting on this repository instead.
+
+  - type: input
+    id: version
+    attributes:
+      label: FATE version
+      description: Settings → About, or the status bar at the bottom of the home screen.
+      placeholder: "1.7.0"
+    validations:
+      required: true
+
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      description: Run `winver` if you're not sure.
+      placeholder: "Windows 11 Pro 24H2"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: theme
+    attributes:
+      label: Theme in use
+      description: Some issues only appear in one theme.
+      options:
+        - FATE (Navy & Gold)
+        - Crimson (Classic)
+        - Light
+        - Dracula
+        - Not theme-related / not sure
+    validations:
+      required: false
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you do, and what did FATE do?
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: sample
+    attributes:
+      label: Sample document
+      description: |
+        For anything render-related — maths, tables, images, headings — a sample `.md` file is by far
+        the most useful thing you can attach. Paste the relevant part, or drag the file in.
+      render: markdown
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Screenshots, window size when it happened, whether it's reproducible.
+    validations:
+      required: false

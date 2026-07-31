@@ -37,8 +37,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // `getDefaultAppStatus()` resolves { supported, isDefault, currentProgId }; `supported` is false
   // off Windows so the renderer can hide the control instead of offering something that cannot work.
   getDefaultAppStatus: () => ipcRenderer.invoke('get-default-app-status'),
-  openDefaultAppsSettings: () => ipcRenderer.invoke('open-default-apps-settings'),
-  setTitle: (title) => ipcRenderer.send('set-title', title),
+  requestDefaultApp: () => ipcRenderer.invoke('request-default-app'),
+  /**
+   * Set the window title from the open document's name, or `null` on the home screen.
+   * Pass a FILENAME, not a composed title — the main process prepends the app name so the taskbar
+   * label always starts with "FATE - Markdown Viewer".
+   */
+  setTitle: (docName) => ipcRenderer.send('set-title', docName),
   setDiscordActivity: (activity) => ipcRenderer.send('set-discord-activity', activity),
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),

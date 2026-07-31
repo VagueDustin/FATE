@@ -1,0 +1,44 @@
+name: Feature request
+description: Suggest something FATE should do.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        FATE is a Markdown **viewer** — deliberately not an editor, and deliberately offline. Requests
+        that fit that shape have the best odds.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the situation you're in, not the solution you have in mind. That comes next.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like FATE to do?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: offer
+    attributes:
+      label: Would you want to implement it?
+      description: No obligation either way — it just helps with planning.
+      options:
+        - "I'd like to open a PR for this"
+        - "I'd rather someone else built it"
+        - "Not sure yet"
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Mockups, prior art in other viewers, links.
+    validations:
+      required: false

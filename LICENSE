@@ -1,6 +1,24 @@
-MIT License
-
+FATE — Formatted Article & Text Explorer
 Copyright (c) 2026 VagueDustin Enterprises
+
+
+SCOPE OF THIS LICENCE
+---------------------
+
+The MIT licence below covers the SOURCE CODE of this project.
+
+It does NOT grant any right to the "FATE", "Formatted Article & Text Explorer",
+"VagueDustin Enterprises" or "VagueDustin" names, to the icon artwork in the
+brand/ directory or any icon derived from it, or to the VagueDustin Enterprises
+visual identity. Those are trademarks and artwork owned by VagueDustin
+Enterprises, and all rights in them are reserved.
+
+MIT is a copyright licence and is silent on trademarks. See TRADEMARK.md for
+what you may and may not do with the name and the artwork. In short: fork and
+reuse the code freely, but rename and re-skin before you distribute.
+
+
+MIT License
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

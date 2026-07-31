@@ -49,7 +49,35 @@ Don't want to use the pre-compiled releases? You can easily build FATE from sour
    ```
    The built installers will be output to the `dist-electron/` directory.
 
+## Contributing
+
+Pull requests are welcome — see **[CONTRIBUTING.md](CONTRIBUTING.md)** for setup and the house rules.
+For anything non-trivial, open an issue first.
+
+## Licence & brand
+
+The **code** is [MIT](LICENSE) — fork it, modify it, ship it, sell it.
+
+The **name and the artwork are not.** "FATE", "VagueDustin Enterprises", the gilded badge and the
+document mark are trademarks and artwork owned by VagueDustin Enterprises, and all rights in them are
+reserved. MIT is a copyright licence and says nothing about trademarks, which is exactly why
+**[TRADEMARK.md](TRADEMARK.md)** exists.
+
+In short: fork freely, but **rename and re-skin before you distribute.**
+
 ## Changelog
+
+### v1.7.0
+- **[Feature]** **Animated constellation sky** behind the home screen — twinkling starfield, larger constellation stars with cross glints, faint linking lines, the occasional meteor, and a slow gold halo breathing behind the badge. Ported from the [702 Squad](https://palworld.702squad.com) portal, the ceremonial-tier expression of the same brand.
+  - Home screen only. Nothing animates behind a document you're reading — the loop is torn down the instant one opens.
+  - Follows the active theme: gold in FATE, red in Crimson, violet in Dracula, dark gold on Light.
+  - Pauses entirely while the window is hidden, and honours `prefers-reduced-motion` by rendering one static frame.
+- **[Bugfix]** **Fixed the default-app check, which was always wrong.** FATE reported "no app is set for `.md` files yet" even when Windows plainly had FATE as the handler. Two causes: it read `HKCU\Software\Classes\.md\UserChoice`, a key that doesn't exist on Windows 10 or 11 — the real one lives under `Explorer\FileExts\.md` — and it compared against a ProgId (`FATEMarkdownViewer.md`) that was never registered. The actual ProgId is `Markdown Document`.
+- **[Enhancement]** Detection no longer trusts the ProgId name. "Markdown Document" is generic enough that another app could claim it, so FATE now resolves the ProgId's open command and checks it actually points at FATE's own executable — answering "would double-clicking a `.md` file open *me*?" rather than a proxy for it.
+- **[Enhancement]** **"Set as default" now opens the Windows Open-With dialog**, which has the "Always use this app" checkbox — one dialog, one tick, done. It previously deep-linked to the Default apps page with a parameter Windows ignored (there's no `RegisteredApplications` entry), so you landed on the full list and had to search `.md` by hand. The Settings page remains the fallback.
+- **[Bugfix]** **The window and taskbar now read "FATE - Markdown Viewer"** instead of a bare "FATE". Windows truncates the taskbar label from the *start* of the window title, so the app name has to lead it; title composition moved into the main process so the renderer can't set a wrong one. Pinned shortcuts get an explicit name too.
+- **[Feature]** Opened the repo to contributions: `CONTRIBUTING.md`, `TRADEMARK.md`, PR and issue templates. Code stays MIT; the name and artwork are explicitly reserved.
+- **[Bugfix]** The starfield's rebuild was debounced with `requestAnimationFrame`, which never fires while a window is hidden — a resize or theme change made while minimised was dropped and never applied. Debounced with a timer instead, and a `MutationObserver` on `data-theme` now repaints on theme switch rather than waiting for a resize.
 
 ### v1.6.0
 - **[Feature]** New **gilded badge artwork** across every surface — window and taskbar icon, installer, Add/Remove Programs entry, Microsoft Store tiles, the home screen, and the About panel. Matching document mark for `.md` file associations. All sizes are derived from two masters in `brand/` by `npm run icons`.

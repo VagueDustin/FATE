@@ -8,17 +8,41 @@ const DiscordRPC = require('discord-rpc');
 const Store = require('electron-store');
 
 /**
- * ProgId registered for `.md` / `.markdown` by the NSIS installer.
+ * ProgId that electron-builder's NSIS installer actually registers for `.md`.
  *
- * electron-builder derives this from `build.appx.applicationId` + the extension, and
- * `build/installer.nsh` deletes exactly these keys when the user declines the association during
- * install. If either of those changes, this constant has to change with them or the
- * "is FATE the default?" check silently reports false forever.
+ * This is taken from `build.fileAssociations[].name` in package.json — NOT from
+ * `build.appx.applicationId` as previously assumed. Verified against a real install:
+ *
+ *     HKLM\SOFTWARE\Classes\.md                       (default) = "Markdown Document"
+ *     HKLM\SOFTWARE\Classes\Markdown Document\shell\open\command
+ *         = "C:\Program Files\FATE\FATE - Markdown Viewer\FATE - Markdown Viewer.exe" "%1"
+ *
+ * It is only a HINT here. Because "Markdown Document" is a generic name that another application
+ * could plausibly claim, `getDefaultAppStatus()` does not trust it — it resolves the ProgId's open
+ * command and checks that the command actually points at THIS executable. See below.
  */
-const MD_PROG_ID = 'FATEMarkdownViewer.md';
+const MD_PROG_ID_HINT = 'Markdown Document';
 
 /** How many recent documents to remember. Eight fills the home-screen panel without scrolling. */
 const MAX_RECENT_FILES = 8;
+
+/**
+ * The window title, and therefore the taskbar label.
+ *
+ * Windows takes the taskbar button's text from the window title and truncates it, so the app name
+ * has to come FIRST — a title of "document.md — FATE" shows up in the taskbar as "document.md",
+ * which is why the taskbar previously just read "FATE": the renderer was calling
+ * `setTitle('FATE')` on close and `setTitle('FATE - <file>')` while reading.
+ *
+ * Composition now lives here rather than in the renderer so there is exactly one place that decides
+ * what the window is called.
+ */
+const APP_TITLE = 'FATE - Markdown Viewer';
+
+/** `docName` is a filename while a document is open, or null/undefined on the home screen. */
+function composeTitle(docName) {
+  return docName ? `${APP_TITLE} — ${docName}` : APP_TITLE;
+}
 
 const store = new Store({
   defaults: {
@@ -77,74 +101,171 @@ function readRecentFiles() {
    DEFAULT-APP ASSOCIATION (Windows)
    ════════════════════════════════════════════════════════════════════════════════════════════ */
 
+/** Promise wrapper around `reg query`. Resolves the raw stdout, or null on any failure. */
+function regQuery(args) {
+  return new Promise((resolve) => {
+    execFile('reg', ['query', ...args], { windowsHide: true }, (err, stdout) => {
+      resolve(err || !stdout ? null : stdout);
+    });
+  });
+}
+
 /**
  * Read the ProgId Windows currently uses to open a given extension.
  *
- * Reads HKCU\Software\Classes\<ext>\UserChoice. That key is the authoritative answer — it is what
- * Explorer actually consults, and it takes precedence over the machine-wide association the
- * installer writes.
+ * ── The key that matters ──────────────────────────────────────────────────────────────────────
+ * This reads:
+ *     HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\<ext>\UserChoice
  *
- * Resolves `null` when the key is absent (no explicit user choice yet) or unreadable.
+ * NOT `HKCU\Software\Classes\<ext>\UserChoice`, which is where an earlier version of this function
+ * looked. That key does not exist on Windows 10/11 — the result was that FATE reported "no app is
+ * set for .md files yet" even when Windows Settings plainly showed FATE as the handler. The
+ * FileExts location is the one Explorer actually consults and the one the Settings UI writes.
+ *
+ * Note the value is NOT quoted in `reg` output and the ProgId can contain spaces (ours is
+ * "Markdown Document"), so the capture runs to end-of-line rather than to the first whitespace.
+ *
+ * Resolves null when there is no explicit user choice yet.
  */
-function readUserChoiceProgId(ext) {
-  return new Promise((resolve) => {
-    if (process.platform !== 'win32') return resolve(null);
-    execFile(
-      'reg',
-      ['query', `HKCU\\Software\\Classes\\${ext}\\UserChoice`, '/v', 'ProgId'],
-      { windowsHide: true },
-      (err, stdout) => {
-        if (err || !stdout) return resolve(null);
-        // Output looks like:  "    ProgId    REG_SZ    FATEMarkdownViewer.md"
-        const match = stdout.match(/ProgId\s+REG_SZ\s+(\S+)/i);
-        resolve(match ? match[1] : null);
-      }
-    );
-  });
+async function readUserChoiceProgId(ext) {
+  if (process.platform !== 'win32') return null;
+  const stdout = await regQuery([
+    `HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\${ext}\\UserChoice`,
+    '/v',
+    'ProgId'
+  ]);
+  if (!stdout) return null;
+  // "    ProgId    REG_SZ    Markdown Document"
+  const match = stdout.match(/ProgId\s+REG_(?:SZ|EXPAND_SZ)\s+(.+?)\s*$/im);
+  return match ? match[1].trim() : null;
+}
+
+/**
+ * Resolve a ProgId to the command line Windows would run for it.
+ * Checks HKCU first (per-user registrations win), then HKLM.
+ */
+async function readProgIdCommand(progId) {
+  for (const root of ['HKCU\\Software\\Classes', 'HKLM\\SOFTWARE\\Classes']) {
+    const stdout = await regQuery([`${root}\\${progId}\\shell\\open\\command`, '/ve']);
+    if (stdout) {
+      const match = stdout.match(/REG_(?:SZ|EXPAND_SZ)\s+(.+?)\s*$/im);
+      if (match) return match[1].trim();
+    }
+  }
+  return null;
 }
 
 /**
  * Is FATE the current handler for `.md`?
  *
- * Returns `{ supported, isDefault, currentProgId }`. `supported: false` on non-Windows so the
- * renderer can hide the control entirely rather than showing something that cannot work.
+ * Deliberately does NOT just compare the ProgId string against a constant. Our ProgId is the
+ * generic "Markdown Document", which another application could plausibly register — a name match
+ * alone would report a false positive. Instead the ProgId is resolved to its open command and that
+ * command is checked against this process's own executable. That answers the real question
+ * ("would double-clicking a .md file launch *me*?") rather than a proxy for it.
+ *
+ * In development `process.execPath` is electron.exe, so the comparison falls back to the ProgId
+ * hint — there is no packaged exe to match against yet.
+ *
+ * Returns `{ supported, isDefault, currentProgId, currentCommand }`. `supported: false` off Windows
+ * so the renderer hides the control rather than offering something that cannot work.
  */
 async function getDefaultAppStatus() {
   if (process.platform !== 'win32') {
-    return { supported: false, isDefault: false, currentProgId: null };
+    return { supported: false, isDefault: false, currentProgId: null, currentCommand: null };
   }
+
   const progId = await readUserChoiceProgId('.md');
-  return {
-    supported: true,
-    isDefault: progId === MD_PROG_ID,
-    currentProgId: progId
-  };
+  if (!progId) {
+    return { supported: true, isDefault: false, currentProgId: null, currentCommand: null };
+  }
+
+  const command = await readProgIdCommand(progId);
+  let isDefault = false;
+
+  if (command) {
+    const ourExe = path.basename(process.execPath).toLowerCase();
+    const cmd = command.toLowerCase();
+    isDefault = isDev
+      // Dev builds run through electron.exe, so matching on the exe name is meaningless here.
+      ? progId === MD_PROG_ID_HINT
+      // Match on the full path when we can, falling back to the executable name. Both are checked
+      // because a per-user install and a per-machine install have different directories but the
+      // same exe name.
+      : cmd.includes(process.execPath.toLowerCase()) || cmd.includes(ourExe);
+  } else {
+    // ProgId exists but has no open command registered — fall back to the name.
+    isDefault = progId === MD_PROG_ID_HINT;
+  }
+
+  return { supported: true, isDefault, currentProgId: progId, currentCommand: command };
 }
 
 /**
- * Open the Windows "Default apps" page for FATE.
+ * Ask Windows to let the user make FATE the `.md` handler.
  *
- * There is deliberately no attempt to write the association directly. Since Windows 10, the
- * `UserChoice` key is protected by a per-user hash and any app that writes it is detected and reset
- * — by design, so applications cannot silently hijack file types. Deep-linking into Settings and
- * letting the user confirm is the only supported path, so the UI says so plainly instead of
- * pretending the button did it.
+ * ── Why this is not just a registry write ─────────────────────────────────────────────────────
+ * Since Windows 10 the `UserChoice` key carries a per-user hash (visible in the registry as a
+ * `Hash` value beside `ProgId`). Windows validates it, and any application that writes the key
+ * itself is detected and reset — deliberately, so apps cannot silently hijack a file type. The
+ * final confirmation has to come from the user through a Windows-owned UI.
  *
- * The `registeredAppUser` parameter jumps straight to FATE's own page on Windows 11; older builds
- * ignore the parameter and land on the Default apps list, which is still the right place.
+ * ── Why the shell dialog, not the Settings page ───────────────────────────────────────────────
+ * `ms-settings:defaultapps?registeredAppUser=<name>` only jumps to a specific app's page when that
+ * app has an entry under HKLM\SOFTWARE\RegisteredApplications. electron-builder does not create
+ * one, so the parameter was being ignored and the user landed on the generic Default apps list and
+ * had to search ".md" by hand.
+ *
+ * `rundll32 shell32.dll,OpenAs_RunDLL <file>` opens the shell's own "How do you want to open this
+ * file?" dialog, which includes the "Always use this app to open .md files" checkbox — one dialog,
+ * one checkbox, done. It needs a concrete file to act on, so it uses the currently-open document
+ * when there is one and otherwise writes a tiny scratch file to temp.
+ *
+ * The Settings page remains the fallback for any environment where the shell dialog will not open.
  */
-async function openDefaultAppsSettings() {
-  const appName = encodeURIComponent('FATE - Markdown Viewer');
-  try {
-    await shell.openExternal(`ms-settings:defaultapps?registeredAppUser=${appName}`);
-    return { ok: true };
-  } catch {
+async function requestDefaultAppAssociation() {
+  if (process.platform !== 'win32') return { ok: false, error: 'windows only' };
+
+  // Prefer a real document the user already has open; fall back to a scratch file.
+  let target = currentOpenedFilePath && /\.(md|markdown)$/i.test(currentOpenedFilePath)
+    ? currentOpenedFilePath
+    : null;
+
+  if (!target || !fs.existsSync(target)) {
     try {
-      await shell.openExternal('ms-settings:defaultapps');
-      return { ok: true };
+      target = path.join(app.getPath('temp'), 'Set FATE as default.md');
+      fs.writeFileSync(
+        target,
+        '# FATE is now your Markdown viewer\n\n' +
+          'If you ticked **"Always use this app to open .md files"**, you are all set — ' +
+          'double-clicking any `.md` file will open it here.\n\n' +
+          '_This scratch file was created only to give Windows something to ask about. ' +
+          'You can delete it._\n',
+        'utf-8'
+      );
     } catch (err) {
-      return { ok: false, error: err.message };
+      target = null;
     }
+  }
+
+  if (target) {
+    const opened = await new Promise((resolve) => {
+      execFile(
+        'rundll32.exe',
+        ['shell32.dll,OpenAs_RunDLL', target],
+        { windowsHide: true },
+        (err) => resolve(!err)
+      );
+    });
+    if (opened) return { ok: true, via: 'shell-dialog' };
+  }
+
+  // Fallback: the Default apps page. The user has to search for ".md" themselves there.
+  try {
+    await shell.openExternal('ms-settings:defaultapps');
+    return { ok: true, via: 'settings' };
+  } catch (err) {
+    return { ok: false, error: err.message };
   }
 }
 
@@ -198,7 +319,7 @@ function createWindow() {
     // so the window simply refuses to get smaller rather than degrading into overlap.
     minWidth: 680,
     minHeight: 520,
-    title: 'FATE - Markdown Viewer',
+    title: APP_TITLE,
     backgroundColor: '#070b1a', // avoids a white flash before the renderer paints
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -304,10 +425,14 @@ app.whenReady().then(() => {
   
   ipcMain.handle('get-app-version', () => app.getVersion());
   
-  ipcMain.on('set-title', (event, title) => {
-    const webContents = event.sender;
-    const win = BrowserWindow.fromWebContents(webContents);
-    if (win) win.setTitle(title);
+  /**
+   * The renderer sends the open document's filename (or null on the home screen) — never a full
+   * title string. Composition is owned by composeTitle() so the app name always leads and the
+   * taskbar label can never regress to a bare "FATE".
+   */
+  ipcMain.on('set-title', (event, docName) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win) win.setTitle(composeTitle(docName));
   });
 
   ipcMain.on('set-discord-activity', (event, activity) => {
@@ -359,7 +484,7 @@ app.whenReady().then(() => {
 
   // ── Default-app association ───────────────────────────────────────────────────────────────
   ipcMain.handle('get-default-app-status', () => getDefaultAppStatus());
-  ipcMain.handle('open-default-apps-settings', () => openDefaultAppsSettings());
+  ipcMain.handle('request-default-app', () => requestDefaultAppAssociation());
 
   ipcMain.handle('check-for-updates', () => {
     if (!isDev && store.get('autoUpdatesEnabled')) {

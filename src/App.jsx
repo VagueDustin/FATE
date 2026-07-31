@@ -11,6 +11,7 @@ import {
   Printer, FolderOpen, ClockCounterClockwise, CheckCircle, ArrowSquareOut, Trash
 } from '@phosphor-icons/react';
 import fateLogo from './assets/FATE-Square-Icon.png';
+import Starfield from './components/Starfield.jsx';
 import './App.css';
 
 // Configure marked to use highlight.js
@@ -236,7 +237,9 @@ function App() {
     setIsViewing(true);
 
     if (window.electronAPI) {
-      window.electronAPI.setTitle(`FATE - ${fPath ? fPath.split(/[/\\]/).pop() : 'Document'}`);
+      // Send only the document name — the main process composes the title so the app name always
+      // leads it, which is what the taskbar label is truncated from. See composeTitle in main.cjs.
+      window.electronAPI.setTitle(fPath ? fPath.split(/[/\\]/).pop() : 'Document');
     }
   };
 
@@ -511,7 +514,7 @@ function App() {
 
   function closeDocument() {
     setIsViewing(false);
-    if (window.electronAPI) window.electronAPI.setTitle('FATE');
+    if (window.electronAPI) window.electronAPI.setTitle(null);
   }
 
   const openRecent = (entry) => {
@@ -535,7 +538,20 @@ function App() {
       <div className="app-main">
         {!isViewing ? (
           /* ── HOME ─────────────────────────────────────────────────────────────────────── */
-          <div className="home">
+          <>
+            {/*
+              Ambient sky, home screen only.
+
+              Rendered as a sibling of `.home` rather than a child, because `.home` is the scroll
+              container — an absolutely-positioned canvas inside it would scroll away with the
+              content. `.app-main` does not scroll, so the sky stays put.
+
+              Mounting it here (instead of on the shell) also means its rAF loop is torn down the
+              instant a document opens. Nothing animates behind a document you are trying to read.
+            */}
+            <Starfield />
+
+            <div className="home">
             <header className="home-brand">
               <img src={fateLogo} alt="" className="brand-badge" />
               <h1 className="brand-wordmark">FATE</h1>
@@ -623,7 +639,8 @@ function App() {
                 )}
               </section>
             </div>
-          </div>
+            </div>
+          </>
         ) : (
           /* ── VIEWER ───────────────────────────────────────────────────────────────────── */
           <div className="viewer-layout">
@@ -806,7 +823,7 @@ function App() {
                     </div>
                     <button
                       className={`btn ${defaultAppStatus.isDefault ? 'btn-secondary' : 'btn-primary'}`}
-                      onClick={() => window.electronAPI?.openDefaultAppsSettings()}
+                      onClick={() => window.electronAPI?.requestDefaultApp()}
                     >
                       <ArrowSquareOut size={15} weight="bold" />
                       {defaultAppStatus.isDefault ? 'Manage' : 'Set as default'}
