@@ -1,10 +1,24 @@
 const { app, BrowserWindow, ipcMain, shell, protocol, dialog, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { execFile } = require('child_process');
 const { autoUpdater } = require('electron-updater');
 const { pathToFileURL } = require('url');
 const DiscordRPC = require('discord-rpc');
 const Store = require('electron-store');
+
+/**
+ * ProgId registered for `.md` / `.markdown` by the NSIS installer.
+ *
+ * electron-builder derives this from `build.appx.applicationId` + the extension, and
+ * `build/installer.nsh` deletes exactly these keys when the user declines the association during
+ * install. If either of those changes, this constant has to change with them or the
+ * "is FATE the default?" check silently reports false forever.
+ */
+const MD_PROG_ID = 'FATEMarkdownViewer.md';
+
+/** How many recent documents to remember. Eight fills the home-screen panel without scrolling. */
+const MAX_RECENT_FILES = 8;
 
 const store = new Store({
   defaults: {
@@ -19,9 +33,120 @@ const store = new Store({
       openFile: 'Control+O',
       print: 'Control+P',
       close: 'Escape'
-    }
+    },
+    recentFiles: []
   }
 });
+
+/* ════════════════════════════════════════════════════════════════════════════════════════════
+   RECENT DOCUMENTS
+   ════════════════════════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Record a document in the recents list: newest first, de-duplicated by path, capped.
+ * Stores only the path and a timestamp — the display name and existence check are derived on read,
+ * so a moved or renamed file cannot leave a stale name behind in the store.
+ */
+function rememberRecentFile(filePath) {
+  const existing = store.get('recentFiles') || [];
+  const normalized = path.normalize(filePath);
+  const deduped = existing.filter(
+    (entry) => path.normalize(entry.path || '').toLowerCase() !== normalized.toLowerCase()
+  );
+  deduped.unshift({ path: normalized, openedAt: Date.now() });
+  store.set('recentFiles', deduped.slice(0, MAX_RECENT_FILES));
+}
+
+/**
+ * Read the recents list, annotating each entry with its display name and whether it still exists.
+ * Missing files are returned rather than filtered out so the UI can show them greyed with a reason
+ * — silently dropping an entry looks like the app forgot the file.
+ */
+function readRecentFiles() {
+  const entries = store.get('recentFiles') || [];
+  return entries.map((entry) => ({
+    path: entry.path,
+    name: path.basename(entry.path),
+    dir: path.dirname(entry.path),
+    openedAt: entry.openedAt,
+    exists: fs.existsSync(entry.path)
+  }));
+}
+
+/* ════════════════════════════════════════════════════════════════════════════════════════════
+   DEFAULT-APP ASSOCIATION (Windows)
+   ════════════════════════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Read the ProgId Windows currently uses to open a given extension.
+ *
+ * Reads HKCU\Software\Classes\<ext>\UserChoice. That key is the authoritative answer — it is what
+ * Explorer actually consults, and it takes precedence over the machine-wide association the
+ * installer writes.
+ *
+ * Resolves `null` when the key is absent (no explicit user choice yet) or unreadable.
+ */
+function readUserChoiceProgId(ext) {
+  return new Promise((resolve) => {
+    if (process.platform !== 'win32') return resolve(null);
+    execFile(
+      'reg',
+      ['query', `HKCU\\Software\\Classes\\${ext}\\UserChoice`, '/v', 'ProgId'],
+      { windowsHide: true },
+      (err, stdout) => {
+        if (err || !stdout) return resolve(null);
+        // Output looks like:  "    ProgId    REG_SZ    FATEMarkdownViewer.md"
+        const match = stdout.match(/ProgId\s+REG_SZ\s+(\S+)/i);
+        resolve(match ? match[1] : null);
+      }
+    );
+  });
+}
+
+/**
+ * Is FATE the current handler for `.md`?
+ *
+ * Returns `{ supported, isDefault, currentProgId }`. `supported: false` on non-Windows so the
+ * renderer can hide the control entirely rather than showing something that cannot work.
+ */
+async function getDefaultAppStatus() {
+  if (process.platform !== 'win32') {
+    return { supported: false, isDefault: false, currentProgId: null };
+  }
+  const progId = await readUserChoiceProgId('.md');
+  return {
+    supported: true,
+    isDefault: progId === MD_PROG_ID,
+    currentProgId: progId
+  };
+}
+
+/**
+ * Open the Windows "Default apps" page for FATE.
+ *
+ * There is deliberately no attempt to write the association directly. Since Windows 10, the
+ * `UserChoice` key is protected by a per-user hash and any app that writes it is detected and reset
+ * — by design, so applications cannot silently hijack file types. Deep-linking into Settings and
+ * letting the user confirm is the only supported path, so the UI says so plainly instead of
+ * pretending the button did it.
+ *
+ * The `registeredAppUser` parameter jumps straight to FATE's own page on Windows 11; older builds
+ * ignore the parameter and land on the Default apps list, which is still the right place.
+ */
+async function openDefaultAppsSettings() {
+  const appName = encodeURIComponent('FATE - Markdown Viewer');
+  try {
+    await shell.openExternal(`ms-settings:defaultapps?registeredAppUser=${appName}`);
+    return { ok: true };
+  } catch {
+    try {
+      await shell.openExternal('ms-settings:defaultapps');
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  }
+}
 
 const discordClientId = '1513749770005381233';
 DiscordRPC.register(discordClientId);
@@ -68,7 +193,13 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    // Below roughly this size the two-column home layout has nowhere left to go and the viewer
+    // header starts colliding with itself. The layout is responsive down to here and no further,
+    // so the window simply refuses to get smaller rather than degrading into overlap.
+    minWidth: 680,
+    minHeight: 520,
     title: 'FATE - Markdown Viewer',
+    backgroundColor: '#070b1a', // avoids a white flash before the renderer paints
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
@@ -120,7 +251,8 @@ function openAndWatchFile(filePath) {
     const content = fs.readFileSync(filePath, 'utf-8');
     const name = path.basename(filePath);
     currentOpenedFilePath = filePath;
-    
+    rememberRecentFile(filePath);
+
     if (mainWindow) {
       mainWindow.webContents.send('open-file', content, name, filePath);
     }
@@ -202,6 +334,33 @@ app.whenReady().then(() => {
     }
   });
   
+  // ── Recent documents ──────────────────────────────────────────────────────────────────────
+  ipcMain.handle('get-recent-files', () => readRecentFiles());
+
+  ipcMain.handle('open-recent-file', (event, filePath) => {
+    // Re-check existence here rather than trusting the renderer's cached `exists` flag; the file
+    // may have been deleted since the list was rendered.
+    if (!filePath || !fs.existsSync(filePath)) {
+      // Drop the dead entry so the list self-heals instead of offering it again.
+      const remaining = (store.get('recentFiles') || []).filter(
+        (e) => path.normalize(e.path || '').toLowerCase() !== path.normalize(filePath || '').toLowerCase()
+      );
+      store.set('recentFiles', remaining);
+      return { ok: false, reason: 'missing' };
+    }
+    openAndWatchFile(filePath);
+    return { ok: true };
+  });
+
+  ipcMain.handle('clear-recent-files', () => {
+    store.set('recentFiles', []);
+    return { ok: true };
+  });
+
+  // ── Default-app association ───────────────────────────────────────────────────────────────
+  ipcMain.handle('get-default-app-status', () => getDefaultAppStatus());
+  ipcMain.handle('open-default-apps-settings', () => openDefaultAppsSettings());
+
   ipcMain.handle('check-for-updates', () => {
     if (!isDev && store.get('autoUpdatesEnabled')) {
       autoUpdater.checkForUpdates();

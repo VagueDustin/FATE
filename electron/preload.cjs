@@ -26,6 +26,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('file-changed', (_event, content) => callback(content));
   },
   openFileDialog: () => ipcRenderer.invoke('open-file-dialog'),
+
+  // Recent documents. `getRecentFiles` annotates each entry with `exists`, so the UI can grey out
+  // files that have since been moved or deleted rather than silently dropping them.
+  getRecentFiles: () => ipcRenderer.invoke('get-recent-files'),
+  openRecentFile: (filePath) => ipcRenderer.invoke('open-recent-file', filePath),
+  clearRecentFiles: () => ipcRenderer.invoke('clear-recent-files'),
+
+  // Windows default-app association for `.md`.
+  // `getDefaultAppStatus()` resolves { supported, isDefault, currentProgId }; `supported` is false
+  // off Windows so the renderer can hide the control instead of offering something that cannot work.
+  getDefaultAppStatus: () => ipcRenderer.invoke('get-default-app-status'),
+  openDefaultAppsSettings: () => ipcRenderer.invoke('open-default-apps-settings'),
   setTitle: (title) => ipcRenderer.send('set-title', title),
   setDiscordActivity: (activity) => ipcRenderer.send('set-discord-activity', activity),
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),

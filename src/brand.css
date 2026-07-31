@@ -98,6 +98,7 @@
     inset 0 1px 0 rgba(255, 233, 168, 0.08),
     inset 0 0 0 1px rgba(212, 175, 55, 0.1);
   --shadow-glow: 0 0 0 1px rgba(212, 175, 55, 0.35), 0 8px 30px -8px rgba(212, 175, 55, 0.45);
+  --shadow-glow-soft: 0 0 20px -6px rgba(212, 175, 55, 0.35);
 
   /* Code blocks: navy-tinted rather than the highlight.js default gray. */
   --code-bg: #020617;
@@ -140,6 +141,7 @@
 
   --shadow-panel: 0 10px 40px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.04);
   --shadow-glow: 0 0 0 1px rgba(229, 62, 62, 0.35), 0 8px 30px -8px rgba(229, 62, 62, 0.4);
+  --shadow-glow-soft: 0 0 20px -6px rgba(229, 62, 62, 0.32);
 
   --code-bg: #161B22;
 }
@@ -182,6 +184,7 @@
 
   --shadow-panel: 0 8px 24px -12px rgba(31, 35, 40, 0.2), inset 0 0 0 1px rgba(208, 215, 222, 0.9);
   --shadow-glow: 0 0 0 1px rgba(184, 144, 43, 0.35), 0 8px 24px -10px rgba(184, 144, 43, 0.3);
+  --shadow-glow-soft: 0 0 18px -8px rgba(184, 144, 43, 0.28);
 
   --code-bg: #F6F8FA;
 }
@@ -222,6 +225,7 @@
 
   --shadow-panel: 0 20px 50px -24px rgba(0, 0, 0, 0.7), inset 0 0 0 1px rgba(98, 114, 164, 0.35);
   --shadow-glow: 0 0 0 1px rgba(189, 147, 249, 0.35), 0 8px 30px -8px rgba(189, 147, 249, 0.4);
+  --shadow-glow-soft: 0 0 20px -6px rgba(189, 147, 249, 0.35);
 
   --code-bg: #21222C;
 }

@@ -1,6 +1,6 @@
 {
   "name": "fate-markdown-viewer",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "author": "VagueDustin Enterprises",
   "license": "MIT",
   "type": "module",
@@ -45,7 +45,10 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "include": "build/installer.nsh",
-      "warningsAsErrors": false
+      "warningsAsErrors": false,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico"
     },
     "appx": {
       "applicationId": "FATEMarkdownViewer",

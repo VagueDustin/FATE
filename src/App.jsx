@@ -6,7 +6,10 @@ import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css';
 import markedKatex from 'marked-katex-extension';
 import 'katex/dist/katex.min.css';
-import { UploadSimple, FileText, ArrowLeft, List, CircleNotch, Gear, X } from '@phosphor-icons/react';
+import {
+  UploadSimple, FileText, ArrowLeft, List, CircleNotch, Gear, X,
+  Printer, FolderOpen, ClockCounterClockwise, CheckCircle, ArrowSquareOut, Trash
+} from '@phosphor-icons/react';
 import fateLogo from './assets/FATE-Square-Icon.png';
 import './App.css';
 
@@ -25,9 +28,6 @@ marked.use(markedKatex({ throwOnError: false, nonStandard: true }));
 /**
  * Themes are defined as token blocks in brand.css. This list drives the Settings dropdown, so
  * adding a theme means adding a block there and one entry here.
- *
- * `fate` is the default as of 1.5.0 — VagueDustin Enterprises navy & gold at the utility ornament
- * tier. `crimson` is the pre-1.5.0 red look, kept so the rebrand doesn't force anyone off it.
  */
 const THEMES = [
   { value: 'fate', label: 'FATE (Navy & Gold)' },
@@ -44,11 +44,31 @@ const DEFAULT_THEME = 'fate';
  * Pre-1.5.0 the default was `'dark'`, whose styles lived in App.css's base rules. Those rules are
  * now token-driven and `'dark'` has no token block, so a stored `'dark'` would render the app with
  * every custom property unresolved — i.e. unstyled. Anyone upgrading needs to land on `fate`.
- * Unrecognised values fall back the same way rather than breaking the UI.
  */
 function resolveTheme(stored) {
   if (VALID_THEMES.includes(stored)) return stored;
   return DEFAULT_THEME; // covers legacy 'dark', null, and anything unexpected
+}
+
+/** Compact relative time for the recents list. Deliberately coarse — exact minutes aren't useful. */
+function relativeTime(ts) {
+  if (!ts) return '';
+  const mins = Math.floor((Date.now() - ts) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7) return `${days}d ago`;
+  const weeks = Math.floor(days / 7);
+  if (weeks < 5) return `${weeks}w ago`;
+  return `${Math.floor(days / 30)}mo ago`;
+}
+
+/** Shorten a directory path for display, keeping the tail (the informative end). */
+function shortenDir(dir, max = 38) {
+  if (!dir || dir.length <= max) return dir;
+  return '…' + dir.slice(-(max - 1));
 }
 
 function App() {
@@ -62,6 +82,8 @@ function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [activeHeading, setActiveHeading] = useState('');
   const [sidebarWidth, setSidebarWidth] = useState(300);
+  const [recentFiles, setRecentFiles] = useState([]);
+  const [defaultAppStatus, setDefaultAppStatus] = useState(null);
 
   const [showSettings, setShowSettings] = useState(false);
   const [settings, setSettings] = useState({
@@ -92,16 +114,20 @@ function App() {
    *
    * Scroll fires dozens of times a second. Routing any of this through useState re-rendered the
    * whole App component — including the `dangerouslySetInnerHTML` markdown body and every KaTeX
-   * node in it — on every tick. These four refs are what make scrolling free:
+   * node in it — on every tick. These refs are what make scrolling free:
    *
-   *   progressBarRef   the progress bar's width is written directly to the DOM, bypassing React
-   *   headingsRef      querySelectorAll('h1,h2,h3') is cached per document, not re-run per frame
-   *   activeHeadingRef the current heading is compared against a ref so setState only fires on
-   *                    an actual change (and so the effect need not depend on `activeHeading`)
-   *   scrollRafIdRef   one rAF in flight at a time = the handler runs at frame cadence, no more
-   *   filePathRef      never rendered, so it has no business being state
+   *   progressBarRef    the progress bar's width is written directly to the DOM, bypassing React
+   *   progressLabelRef  the "42%" readout in the status bar, written the same way. This is WHY the
+   *                     percentage is not state: a live number in the status bar would otherwise
+   *                     re-introduce exactly the per-tick re-render this design removes.
+   *   headingsRef       querySelectorAll('h1,h2,h3') is cached per document, not re-run per frame
+   *   activeHeadingRef  the current heading is compared against a ref so setState only fires on
+   *                     an actual change (and so the effect need not depend on `activeHeading`)
+   *   scrollRafIdRef    one rAF in flight at a time = the handler runs at frame cadence, no more
+   *   filePathRef       never rendered, so it has no business being state
    */
   const progressBarRef = useRef(null);
+  const progressLabelRef = useRef(null);
   const headingsRef = useRef([]);
   const activeHeadingRef = useRef('');
   const scrollRafIdRef = useRef(null);
@@ -129,6 +155,16 @@ function App() {
       if (newWidth > window.innerWidth * 0.5) newWidth = window.innerWidth * 0.5;
       setSidebarWidth(newWidth);
     }
+  }, []);
+
+  const refreshRecentFiles = useCallback(() => {
+    if (!window.electronAPI?.getRecentFiles) return;
+    window.electronAPI.getRecentFiles().then(setRecentFiles).catch(() => {});
+  }, []);
+
+  const refreshDefaultAppStatus = useCallback(() => {
+    if (!window.electronAPI?.getDefaultAppStatus) return;
+    window.electronAPI.getDefaultAppStatus().then(setDefaultAppStatus).catch(() => {});
   }, []);
 
   const processMarkdown = (content, fPath) => {
@@ -191,6 +227,7 @@ function App() {
     activeHeadingRef.current = '';
     setActiveHeading('');
     if (progressBarRef.current) progressBarRef.current.style.width = '0%';
+    if (progressLabelRef.current) progressLabelRef.current.textContent = '0%';
 
     setToc(tocData);
     setIsSidebarOpen(tocData.length > 0);
@@ -240,7 +277,7 @@ function App() {
         setSidebarWidth(newSettings.sidebarWidth);
         document.documentElement.setAttribute('data-theme', resolvedTheme);
 
-        // Persist the migration so the legacy value doesn't get re-resolved on every launch.
+        // Persist the migration so the legacy value isn't re-resolved on every launch.
         if (theme !== resolvedTheme) {
           window.electronAPI.store.set('theme', resolvedTheme);
         }
@@ -264,12 +301,31 @@ function App() {
         setUpdateAction(action);
       });
 
+      refreshRecentFiles();
+      refreshDefaultAppStatus();
       window.electronAPI.appReady();
     } else {
       // Browser dev mode (`npm run dev` without Electron): no store to read from.
       document.documentElement.setAttribute('data-theme', DEFAULT_THEME);
     }
-  }, []);
+  }, [refreshRecentFiles, refreshDefaultAppStatus]);
+
+  /*
+   * Re-check the default-app association when the window regains focus.
+   *
+   * The only way to change it is in the Windows Settings app, which means leaving FATE. Coming back
+   * is the exact moment the answer may have changed, and polling would be the wrong tool.
+   */
+  useEffect(() => {
+    const onFocus = () => refreshDefaultAppStatus();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [refreshDefaultAppStatus]);
+
+  /** Refresh recents whenever the home screen comes back into view. */
+  useEffect(() => {
+    if (!isViewing) refreshRecentFiles();
+  }, [isViewing, refreshRecentFiles]);
 
   // Keyboard Shortcuts
   const matchesShortcut = (e, shortcutString) => {
@@ -317,8 +373,7 @@ function App() {
       }
 
       if (matchesShortcut(e, settings.shortcuts.close)) {
-        setIsViewing(false);
-        if (window.electronAPI) window.electronAPI.setTitle('FATE');
+        closeDocument();
       } else if (matchesShortcut(e, settings.shortcuts.openFile)) {
         e.preventDefault();
         if (window.electronAPI) window.electronAPI.openFileDialog();
@@ -358,9 +413,12 @@ function App() {
         const totalScroll = scrollHeight - clientHeight;
         const progress = totalScroll > 0 ? (scrollTop / totalScroll) * 100 : 0;
 
-        // Written straight to the DOM — no setState, so no re-render of the markdown body.
+        // Both written straight to the DOM — no setState, so no re-render of the markdown body.
         if (progressBarRef.current) {
           progressBarRef.current.style.width = `${progress}%`;
+        }
+        if (progressLabelRef.current) {
+          progressLabelRef.current.textContent = `${Math.round(progress)}%`;
         }
 
         const headings = headingsRef.current;
@@ -403,6 +461,7 @@ function App() {
   }, [isViewing, fileContent]);
 
   const handleUpdateAction = () => {
+    if (!window.electronAPI) return;
     if (updateAction === 'install') {
       window.electronAPI.installUpdate();
     } else {
@@ -425,8 +484,7 @@ function App() {
       filePathRef.current = resolvedPath;
       const reader = new FileReader();
       reader.onload = (e) => {
-        const text = e.target.result;
-        processMarkdown(text, resolvedPath);
+        processMarkdown(e.target.result, resolvedPath);
       };
       reader.readAsText(file);
     }
@@ -437,7 +495,10 @@ function App() {
     accept: {
       'text/markdown': ['.md', '.markdown', '.txt']
     },
-    multiple: false
+    multiple: false,
+    // The dropzone is a large surface; clicking it should still open the picker, but the explicit
+    // "Open File" button below it is the discoverable path.
+    noKeyboard: true
   });
 
   const scrollToHeading = (id) => {
@@ -448,127 +509,262 @@ function App() {
     }
   };
 
-  const closeDocument = () => {
+  function closeDocument() {
     setIsViewing(false);
     if (window.electronAPI) window.electronAPI.setTitle('FATE');
+  }
+
+  const openRecent = (entry) => {
+    if (!window.electronAPI?.openRecentFile) return;
+    window.electronAPI.openRecentFile(entry.path).then((res) => {
+      // A file that vanished since the list rendered is dropped by the main process; reflect that.
+      if (!res?.ok) refreshRecentFiles();
+    });
   };
 
+  const isWindows = defaultAppStatus?.supported === true;
+
   return (
-    <div className="app-container">
+    <div className="app-shell">
       {isViewing && (
         <div className="progress-bar-container">
           <div className="progress-bar" ref={progressBarRef} />
         </div>
       )}
 
-      {!isViewing ? (
-        <div className="upload-view">
-          <div className="header">
-            <img src={fateLogo} alt="" className="fate-logo" />
-            <h1>FATE</h1>
-            <p className="subtitle">Formatted Article &amp; Text Explorer</p>
-            <p className="enterprise-text">Provided by VagueDustin Enterprises&trade;</p>
-          </div>
+      <div className="app-main">
+        {!isViewing ? (
+          /* ── HOME ─────────────────────────────────────────────────────────────────────── */
+          <div className="home">
+            <header className="home-brand">
+              <img src={fateLogo} alt="" className="brand-badge" />
+              <h1 className="brand-wordmark">FATE</h1>
+              <p className="brand-subtitle">Formatted Article &amp; Text Explorer</p>
+              <p className="brand-credit">Provided by VagueDustin Enterprises&trade;</p>
+            </header>
 
-          <div {...getRootProps()} className={`dropzone ${isDragActive ? 'active' : ''}`}>
-            <input {...getInputProps()} />
-            {isLoading ? (
+            <div className="home-panes">
+              <section className="pane pane-open" aria-label="Open a document">
+                <div {...getRootProps()} className={`dropzone ${isDragActive ? 'active' : ''}`}>
+                  <input {...getInputProps()} />
+                  {isLoading ? (
+                    <>
+                      <CircleNotch className="dz-icon spinner" weight="bold" />
+                      <p className="dz-title">Rendering document…</p>
+                    </>
+                  ) : (
+                    <>
+                      <UploadSimple className="dz-icon" weight="duotone" />
+                      <p className="dz-title">
+                        {isDragActive ? 'Release to open' : 'Drag & drop a markdown file'}
+                      </p>
+                      <span className="dz-sub">.md &middot; .markdown &middot; .txt</span>
+                    </>
+                  )}
+                </div>
+
+                <button
+                  className="btn btn-primary btn-open"
+                  onClick={() => window.electronAPI?.openFileDialog()}
+                >
+                  <FolderOpen size={17} weight="duotone" />
+                  Open File
+                  <span className="kbd-group">
+                    <kbd>Ctrl</kbd><kbd>O</kbd>
+                  </span>
+                </button>
+              </section>
+
+              <section className="pane pane-recent" aria-label="Recent documents">
+                <div className="pane-head">
+                  <h2 className="section-label">
+                    <ClockCounterClockwise size={13} weight="bold" />
+                    Recent
+                  </h2>
+                  {recentFiles.length > 0 && (
+                    <button
+                      className="link-btn"
+                      onClick={() => window.electronAPI?.clearRecentFiles().then(refreshRecentFiles)}
+                      title="Clear recent documents"
+                    >
+                      <Trash size={13} weight="bold" />
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                {recentFiles.length === 0 ? (
+                  <div className="pane-empty">
+                    <FileText size={26} weight="duotone" />
+                    <p>No documents yet</p>
+                    <span>Files you open will appear here</span>
+                  </div>
+                ) : (
+                  <ul className="recent-list">
+                    {recentFiles.map((entry) => (
+                      <li key={entry.path}>
+                        <button
+                          className={`recent-item ${entry.exists ? '' : 'missing'}`}
+                          onClick={() => openRecent(entry)}
+                          title={entry.exists ? entry.path : `${entry.path} — no longer exists`}
+                        >
+                          <FileText size={17} weight="duotone" className="recent-icon" />
+                          <span className="recent-text">
+                            <span className="recent-name">{entry.name}</span>
+                            <span className="recent-dir">
+                              {entry.exists ? shortenDir(entry.dir) : 'File not found'}
+                            </span>
+                          </span>
+                          <span className="recent-time">{relativeTime(entry.openedAt)}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            </div>
+          </div>
+        ) : (
+          /* ── VIEWER ───────────────────────────────────────────────────────────────────── */
+          <div className="viewer-layout">
+            {toc.length > 0 && isSidebarOpen && (
               <>
-                <CircleNotch className="icon spinner" weight="bold" />
-                <p>Rendering document...</p>
-              </>
-            ) : (
-              <>
-                <UploadSimple className="icon" weight="duotone" />
-                <p>{isDragActive ? "Drop the markdown file here" : "Drag & drop a markdown file"}</p>
-                <span className="sub-text">or click to select a file (.md, .markdown)</span>
+                <aside
+                  className="sidebar"
+                  style={{ width: `${sidebarWidth}px`, minWidth: `${sidebarWidth}px`, flexShrink: 0 }}
+                >
+                  <div className="sidebar-header">
+                    <h3 className="section-label">Contents</h3>
+                    <button
+                      className="icon-btn"
+                      onClick={() => setIsSidebarOpen(false)}
+                      title="Hide contents"
+                    >
+                      <List size={16} weight="bold" />
+                    </button>
+                  </div>
+                  <ul className="toc-list">
+                    {toc.map((item) => (
+                      <li
+                        key={item.id}
+                        className={`toc-level-${item.level} ${activeHeading === item.id ? 'active' : ''}`}
+                        onClick={() => scrollToHeading(item.id)}
+                        dangerouslySetInnerHTML={{ __html: item.html }}
+                      />
+                    ))}
+                  </ul>
+                </aside>
+                <div
+                  className="sidebar-resizer"
+                  onPointerDown={startResizing}
+                  onPointerMove={resize}
+                  onPointerUp={stopResizing}
+                  onPointerCancel={stopResizing}
+                />
               </>
             )}
-          </div>
-        </div>
-      ) : (
-        <div className="viewer-layout">
-          {toc.length > 0 && isSidebarOpen && (
-            <>
-              <aside className="sidebar" style={{ width: `${sidebarWidth}px`, minWidth: `${sidebarWidth}px`, flexShrink: 0 }}>
-                <div className="sidebar-header">
-                  <List size={18} weight="bold" className="menu-icon" onClick={() => setIsSidebarOpen(false)} />
-                  <h3>Contents</h3>
-                </div>
-                <ul className="toc-list">
-                  {toc.map((item) => (
-                    <li
-                      key={item.id}
-                      className={`toc-level-${item.level} ${activeHeading === item.id ? 'active' : ''}`}
-                      onClick={() => scrollToHeading(item.id)}
-                      dangerouslySetInnerHTML={{ __html: item.html }}
-                    />
-                  ))}
-                </ul>
-              </aside>
-              <div
-                className="sidebar-resizer"
-                onPointerDown={startResizing}
-                onPointerMove={resize}
-                onPointerUp={stopResizing}
-                onPointerCancel={stopResizing}
-              />
-            </>
-          )}
 
-          <main className="viewer-main">
-            <div className="viewer-header">
-              <div className="header-left">
-                {toc.length > 0 && !isSidebarOpen && (
-                  <List className="menu-icon" size={22} weight="bold" onClick={() => setIsSidebarOpen(true)} />
-                )}
-                <div className="file-info">
-                  <FileText className="file-icon" size={22} weight="duotone" />
-                  {fileName}
+            <main className="viewer-main">
+              <div className="viewer-header">
+                <div className="header-left">
+                  {toc.length > 0 && !isSidebarOpen && (
+                    <button
+                      className="icon-btn"
+                      onClick={() => setIsSidebarOpen(true)}
+                      title="Show contents"
+                    >
+                      <List size={18} weight="bold" />
+                    </button>
+                  )}
+                  <div className="file-info">
+                    <FileText className="file-icon" size={19} weight="duotone" />
+                    <span className="file-name">{fileName}</span>
+                  </div>
+                </div>
+
+                <div className="header-right">
+                  <button className="icon-btn" onClick={() => window.print()} title="Print / Export PDF">
+                    <Printer size={17} weight="duotone" />
+                  </button>
+                  <button className="icon-btn" onClick={() => setShowSettings(true)} title="Settings">
+                    <Gear size={17} weight="duotone" />
+                  </button>
+                  <button className="btn btn-secondary" onClick={closeDocument}>
+                    <ArrowLeft size={15} weight="bold" />
+                    Back
+                  </button>
                 </div>
               </div>
-              <button className="action-btn" onClick={closeDocument}>
-                <ArrowLeft size={16} weight="bold" />
-                Back
-              </button>
-            </div>
-            <div className="markdown-container" ref={contentRef}>
-              <div
-                className="markdown-body"
-                dangerouslySetInnerHTML={{ __html: fileContent }}
-              />
-            </div>
-          </main>
-        </div>
-      )}
 
-      {appVersion && !isViewing && (
-        <>
-          <div className="settings-trigger" onClick={() => setShowSettings(true)} title="Settings">
-            <Gear size={22} weight="duotone" />
+              <div className="markdown-container" ref={contentRef}>
+                <div
+                  className="markdown-body"
+                  dangerouslySetInnerHTML={{ __html: fileContent }}
+                />
+              </div>
+            </main>
           </div>
-          <div className="version-container">
-            <span className="version-text">v{appVersion}</span>
-            <button className="update-btn" onClick={handleUpdateAction}>
-              {updateStatus ? updateStatus : "Check for updates"}
-            </button>
-          </div>
-        </>
-      )}
+        )}
+      </div>
+
+      {/*
+        Status bar — in the layout flow, not floating.
+        The version readout, settings entry point and update control used to be absolutely
+        positioned in the bottom corners, which meant they overlapped the dropzone and each other
+        once the window got small. As a flex row at the bottom of the shell, overlap is structurally
+        impossible at any window size.
+      */}
+      <footer className="status-bar">
+        <button className="status-btn" onClick={() => setShowSettings(true)}>
+          <Gear size={15} weight="duotone" />
+          <span className="status-btn-label">Settings</span>
+        </button>
+
+        <span className="status-divider" />
+        <span className="status-version">v{appVersion || '—'}</span>
+
+        {isViewing && (
+          <>
+            <span className="status-divider" />
+            <span className="status-read">
+              <span ref={progressLabelRef}>0%</span> read
+            </span>
+          </>
+        )}
+
+        <span className="status-spacer" />
+
+        {isWindows && defaultAppStatus?.isDefault && (
+          <span className="status-badge" title="FATE opens .md files by default">
+            <CheckCircle size={13} weight="fill" />
+            Default for .md
+          </span>
+        )}
+
+        <button
+          className={`status-btn ${updateAction === 'install' ? 'accent' : ''}`}
+          onClick={handleUpdateAction}
+          title="Check for updates"
+        >
+          {updateStatus || 'Check for updates'}
+        </button>
+      </footer>
 
       {showSettings && (
         <div className="settings-modal-backdrop" onClick={() => setShowSettings(false)}>
-          <div className="settings-modal" onClick={e => e.stopPropagation()}>
+          <div className="settings-modal" onClick={e => e.stopPropagation()} role="dialog" aria-label="Settings">
             <div className="settings-header">
               <h2>Settings</h2>
-              <X size={22} className="close-icon" onClick={() => setShowSettings(false)} />
+              <button className="icon-btn" onClick={() => setShowSettings(false)} title="Close">
+                <X size={18} weight="bold" />
+              </button>
             </div>
 
             <div className="settings-body">
               <div className="setting-group">
-                <h3>Appearance</h3>
+                <h3 className="section-label">Appearance</h3>
                 <div className="setting-item">
-                  <span>Theme</span>
+                  <span className="setting-label">Theme</span>
                   <select value={settings.theme} onChange={e => updateSetting('theme', e.target.value)}>
                     {THEMES.map(t => (
                       <option key={t.value} value={t.value}>{t.label}</option>
@@ -576,7 +772,7 @@ function App() {
                   </select>
                 </div>
                 <div className="setting-item">
-                  <span>Default Sidebar Width (px)</span>
+                  <span className="setting-label">Default sidebar width</span>
                   <input type="number" min="150" max="800" value={settings.sidebarWidth} onChange={e => {
                     const val = parseInt(e.target.value);
                     updateSetting('sidebarWidth', val);
@@ -585,48 +781,87 @@ function App() {
                 </div>
               </div>
 
+              {isWindows && (
+                <div className="setting-group">
+                  <h3 className="section-label">Windows Integration</h3>
+                  <div className="setting-item setting-item-stacked">
+                    <div className="setting-label-block">
+                      <span className="setting-label">Default app for Markdown files</span>
+                      <span className="setting-hint">
+                        {defaultAppStatus.isDefault ? (
+                          <>
+                            <CheckCircle size={12} weight="fill" className="hint-ok" />
+                            {' '}FATE currently opens <code>.md</code> files.
+                          </>
+                        ) : (
+                          <>
+                            {defaultAppStatus.currentProgId
+                              ? <>Another app currently opens <code>.md</code> files. </>
+                              : <>No app is set for <code>.md</code> files yet. </>}
+                            Windows requires you to confirm this change itself — apps aren&apos;t
+                            allowed to claim a file type silently.
+                          </>
+                        )}
+                      </span>
+                    </div>
+                    <button
+                      className={`btn ${defaultAppStatus.isDefault ? 'btn-secondary' : 'btn-primary'}`}
+                      onClick={() => window.electronAPI?.openDefaultAppsSettings()}
+                    >
+                      <ArrowSquareOut size={15} weight="bold" />
+                      {defaultAppStatus.isDefault ? 'Manage' : 'Set as default'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="setting-group">
-                <h3>Integrations &amp; Updates</h3>
+                <h3 className="section-label">Integrations &amp; Updates</h3>
                 <div className="setting-item">
-                  <span>Show filename on Discord RPC</span>
+                  <span className="setting-label">Show filename on Discord</span>
                   <label className="switch">
                     <input type="checkbox" checked={settings.discordEnabled} onChange={e => updateSetting('discordEnabled', e.target.checked)} />
-                    <span className="slider round"></span>
+                    <span className="slider"></span>
                   </label>
                 </div>
                 <div className="setting-item">
-                  <span>Automatic Updates</span>
+                  <span className="setting-label">Automatic updates</span>
                   <label className="switch">
                     <input type="checkbox" checked={settings.autoUpdatesEnabled} onChange={e => updateSetting('autoUpdatesEnabled', e.target.checked)} />
-                    <span className="slider round"></span>
+                    <span className="slider"></span>
                   </label>
                 </div>
               </div>
 
               <div className="setting-group">
-                <h3>Keyboard Shortcuts</h3>
+                <h3 className="section-label">Keyboard Shortcuts</h3>
                 {['openFile', 'print', 'close'].map(action => (
                   <div className="setting-item" key={action}>
-                    <span>{action === 'openFile' ? 'Open File' : action === 'print' ? 'Print / Export PDF' : 'Close File / Return Home'}</span>
+                    <span className="setting-label">
+                      {action === 'openFile' ? 'Open file' : action === 'print' ? 'Print / export PDF' : 'Close file'}
+                    </span>
                     <button
                       className={`shortcut-btn ${activeShortcutRebind === action ? 'recording' : ''}`}
                       onClick={() => setActiveShortcutRebind(activeShortcutRebind === action ? null : action)}
                     >
-                      {activeShortcutRebind === action ? 'Press keys...' : settings.shortcuts[action]}
+                      {activeShortcutRebind === action ? 'Press keys…' : settings.shortcuts[action]}
                     </button>
                   </div>
                 ))}
               </div>
 
-              <div className="setting-group">
-                <h3>About</h3>
-                <div className="setting-item">
-                  <span>FATE — Formatted Article &amp; Text Explorer</span>
-                  <span className="version-text">v{appVersion}</span>
+              <div className="setting-group setting-group-about">
+                <h3 className="section-label">About</h3>
+                <div className="about-row">
+                  <img src={fateLogo} alt="" className="about-badge" />
+                  <div className="about-text">
+                    <span className="about-name">FATE <span className="about-version">v{appVersion}</span></span>
+                    <span className="about-sub">Formatted Article &amp; Text Explorer</span>
+                    <span className="about-credit">
+                      Provided by VagueDustin Enterprises&trade; &middot; &copy; {new Date().getFullYear()} FATE
+                    </span>
+                  </div>
                 </div>
-                <p className="enterprise-text" style={{ marginTop: '0.5rem', textAlign: 'left' }}>
-                  Provided by VagueDustin Enterprises&trade; &middot; &copy; {new Date().getFullYear()} FATE. All rights reserved.
-                </p>
               </div>
             </div>
           </div>
