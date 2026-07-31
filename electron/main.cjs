@@ -219,71 +219,53 @@ async function getDefaultAppStatus() {
 }
 
 /**
- * Ask Windows to let the user make FATE the `.md` handler.
+ * Open the Windows UI where the user can review or change the `.md` handler.
  *
  * ── Why this is not just a registry write ─────────────────────────────────────────────────────
  * Since Windows 10 the `UserChoice` key carries a per-user hash (visible in the registry as a
  * `Hash` value beside `ProgId`). Windows validates it, and any application that writes the key
  * itself is detected and reset — deliberately, so apps cannot silently hijack a file type. The
- * final confirmation has to come from the user through a Windows-owned UI.
+ * final confirmation has to come from a Windows-owned UI.
  *
- * ── Why the shell dialog, not the Settings page ───────────────────────────────────────────────
- * `ms-settings:defaultapps?registeredAppUser=<name>` only jumps to a specific app's page when that
- * app has an entry under HKLM\SOFTWARE\RegisteredApplications. electron-builder does not create
- * one, so the parameter was being ignored and the user landed on the generic Default apps list and
- * had to search ".md" by hand.
+ * ── Why NOT `rundll32 shell32.dll,OpenAs_RunDLL` ──────────────────────────────────────────────
+ * 1.8.0 and 1.8.1 shelled out to that, on the theory that its "How do you want to open this file?"
+ * dialog carries an "Always use this app" checkbox. On Windows 11 it does not — the only button is
+ * **"Just once"**, so it can never actually set a default there. It merely looked like it worked.
  *
- * `rundll32 shell32.dll,OpenAs_RunDLL <file>` opens the shell's own "How do you want to open this
- * file?" dialog, which includes the "Always use this app to open .md files" checkbox — one dialog,
- * one checkbox, done. It needs a concrete file to act on, so it uses the currently-open document
- * when there is one and otherwise writes a tiny scratch file to temp.
+ * Worse, it is not even reliable as a picker: Windows suppresses the dialog entirely once the
+ * extension has a confirmed `UserChoice`. So the moment FATE genuinely became the default, the
+ * button silently did nothing at all — invoked correctly, valid file, rundll32 present, no dialog.
+ * A control whose behaviour inverts once it succeeds is the wrong control.
  *
- * The Settings page remains the fallback for any environment where the shell dialog will not open.
+ * ── What this does instead ────────────────────────────────────────────────────────────────────
+ * Deep-links into Settings, which always opens something and is the only surface that can actually
+ * change a default on Windows 11. `registeredAppUser` jumps straight to FATE's own page — that works
+ * because the installer now registers FATE under HKLM\SOFTWARE\RegisteredApplications with a
+ * Capabilities key (see build/installer.nsh). Without that registration Windows ignores the
+ * parameter, which is why earlier versions dumped the user on the full alphabetical list; the plain
+ * page is kept as the fallback for exactly that case.
  */
 async function requestDefaultAppAssociation() {
-  if (process.platform !== 'win32') return { ok: false, error: 'windows only' };
+  if (process.platform !== 'win32') return { ok: false, error: 'Windows only' };
 
-  // Prefer a real document the user already has open; fall back to a scratch file.
-  let target = currentOpenedFilePath && /\.(md|markdown)$/i.test(currentOpenedFilePath)
-    ? currentOpenedFilePath
-    : null;
+  const candidates = [
+    // FATE's own page in Default apps, where `.md` can be reassigned in one click.
+    `ms-settings:defaultapps?registeredAppUser=${encodeURIComponent(APP_TITLE)}`,
+    // Fallback: the Default apps list. The user searches ".md" themselves.
+    'ms-settings:defaultapps'
+  ];
 
-  if (!target || !fs.existsSync(target)) {
+  for (const uri of candidates) {
     try {
-      target = path.join(app.getPath('temp'), 'Set FATE as default.md');
-      fs.writeFileSync(
-        target,
-        '# FATE is now your Markdown viewer\n\n' +
-          'If you ticked **"Always use this app to open .md files"**, you are all set — ' +
-          'double-clicking any `.md` file will open it here.\n\n' +
-          '_This scratch file was created only to give Windows something to ask about. ' +
-          'You can delete it._\n',
-        'utf-8'
-      );
-    } catch (err) {
-      target = null;
+      await shell.openExternal(uri);
+      return { ok: true, via: uri.includes('?') ? 'app-page' : 'settings-list' };
+    } catch {
+      /* try the next one */
     }
   }
 
-  if (target) {
-    const opened = await new Promise((resolve) => {
-      execFile(
-        'rundll32.exe',
-        ['shell32.dll,OpenAs_RunDLL', target],
-        { windowsHide: true },
-        (err) => resolve(!err)
-      );
-    });
-    if (opened) return { ok: true, via: 'shell-dialog' };
-  }
-
-  // Fallback: the Default apps page. The user has to search for ".md" themselves there.
-  try {
-    await shell.openExternal('ms-settings:defaultapps');
-    return { ok: true, via: 'settings' };
-  } catch (err) {
-    return { ok: false, error: err.message };
-  }
+  // Never fail silently — the renderer surfaces this in the status bar.
+  return { ok: false, error: 'Could not open Windows Settings' };
 }
 
 /* ════════════════════════════════════════════════════════════════════════════════════════════

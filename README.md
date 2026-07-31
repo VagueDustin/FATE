@@ -81,6 +81,12 @@ In short: fork freely, but **rename and re-skin before you distribute.**
 
 ## Changelog
 
+### v1.8.2
+- **[Bugfix]** **"Manage" / "Set as default" did nothing when clicked.** It shelled out to the Windows shell's Open-With dialog (`rundll32 shell32.dll,OpenAs_RunDLL`), and Windows *suppresses that dialog entirely* once a file type already has a confirmed handler — so the moment FATE genuinely became the default for `.md`, the button became a silent no-op. Correct invocation, valid file, no dialog, no error.
+- **[Bugfix]** That dialog was the wrong tool regardless: on Windows 11 its only button is **"Just once"**, so it could never actually set a default. The button now opens Windows Settings, which is the only surface on Windows 11 that can.
+- **[Feature]** **FATE is now a properly registered Windows application.** The installer writes a `Capabilities` key and a `RegisteredApplications` entry — the documented mechanism electron-builder omits. That gives FATE its own page in Settings → Default apps, and makes "Set as default" deep-link straight to it instead of dumping you on the full alphabetical list. Registered regardless of the install checkbox, since declaring that FATE *can* open Markdown is not the same as claiming the extension.
+- **[Bugfix]** A failure to open Windows Settings now surfaces in the status bar. Nothing in this path is allowed to fail silently any more.
+
 ### v1.8.1
 - **[Bugfix]** **Exported PDFs printed table rows in navy on white paper.** The print stylesheet reset colours element by element and had missed `table tr` (which uses the app's dark surface tokens), the table cell borders, `hr`, and the blockquote tint — so black text landed on a near-black background. Confirmed by decompressing the PDF content stream: rows were being filled `#070B1A`. The reset is now a blanket one — every background inside the document is zeroed and only deliberate light values are added back, so anything added in future is print-safe by default.
 - **[Bugfix]** `printBackground` was set to `false` on the reasoning that the stylesheet forces white paper anyway. It was doing nothing: the stylesheet also sets `print-color-adjust: exact`, which overrides that flag and forces backgrounds to paint. The flag is now `true` and honest about it, with the stylesheet as the single source of truth — which means tables keep light zebra striping and code blocks a grey background, both of which help on paper.

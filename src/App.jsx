@@ -103,7 +103,7 @@ function App() {
   const [recentFiles, setRecentFiles] = useState([]);
   const [defaultAppStatus, setDefaultAppStatus] = useState(null);
   const [isPrinting, setIsPrinting] = useState(false);
-  const [printError, setPrintError] = useState('');
+  const [statusError, setStatusError] = useState('');
 
   const [showSettings, setShowSettings] = useState(false);
   const [settings, setSettings] = useState({
@@ -186,6 +186,25 @@ function App() {
   const refreshDefaultAppStatus = useCallback(() => {
     if (!window.electronAPI?.getDefaultAppStatus) return;
     window.electronAPI.getDefaultAppStatus().then(setDefaultAppStatus).catch(() => {});
+  }, []);
+
+  /**
+   * Open the Windows Default apps UI.
+   *
+   * Reports failure rather than doing nothing visible. The previous implementation shelled out to
+   * the shell's Open-With dialog, which Windows silently suppresses once the extension already has a
+   * confirmed handler — so once FATE actually became the default, this button did nothing at all and
+   * said nothing about it.
+   */
+  const requestDefaultApp = useCallback(() => {
+    if (!window.electronAPI?.requestDefaultApp) return;
+    setStatusError('');
+    window.electronAPI
+      .requestDefaultApp()
+      .then((res) => {
+        if (res && res.ok === false) setStatusError(res.error || 'Could not open Windows Settings');
+      })
+      .catch((err) => setStatusError(err?.message || 'Could not open Windows Settings'));
   }, []);
 
   const processMarkdown = (content, fPath) => {
@@ -376,12 +395,12 @@ function App() {
     (invoke, label) => {
       if (typeof invoke !== 'function' || isPrinting) return;
       setIsPrinting(true);
-      setPrintError('');
+      setStatusError('');
       invoke(fileName || 'Document')
         .then((res) => {
-          if (res && res.ok === false && !res.canceled) setPrintError(res.error || `${label} failed`);
+          if (res && res.ok === false && !res.canceled) setStatusError(res.error || `${label} failed`);
         })
-        .catch((err) => setPrintError(err?.message || `${label} failed`))
+        .catch((err) => setStatusError(err?.message || `${label} failed`))
         .finally(() => setIsPrinting(false));
     },
     [fileName, isPrinting]
@@ -834,14 +853,14 @@ function App() {
         <span className="status-spacer" />
 
         {/* A failed render must not vanish silently. Click to dismiss. */}
-        {printError && (
+        {statusError && (
           <button
             className="status-badge status-badge-error"
-            onClick={() => setPrintError('')}
-            title={`${printError} — click to dismiss`}
+            onClick={() => setStatusError('')}
+            title={`${statusError} — click to dismiss`}
           >
             <Warning size={13} weight="fill" />
-            {printError}
+            {statusError}
           </button>
         )}
 
@@ -902,22 +921,24 @@ function App() {
                         {defaultAppStatus.isDefault ? (
                           <>
                             <CheckCircle size={12} weight="fill" className="hint-ok" />
-                            {' '}FATE currently opens <code>.md</code> files.
+                            {' '}FATE currently opens <code>.md</code> files. Manage opens Windows
+                            Settings if you want to change it.
                           </>
                         ) : (
                           <>
                             {defaultAppStatus.currentProgId
                               ? <>Another app currently opens <code>.md</code> files. </>
                               : <>No app is set for <code>.md</code> files yet. </>}
-                            Windows requires you to confirm this change itself — apps aren&apos;t
-                            allowed to claim a file type silently.
+                            Opens Windows Settings, where you pick FATE for <code>.md</code>.
+                            Windows requires you to confirm this itself — apps aren&apos;t allowed to
+                            claim a file type silently.
                           </>
                         )}
                       </span>
                     </div>
                     <button
                       className={`btn ${defaultAppStatus.isDefault ? 'btn-secondary' : 'btn-primary'}`}
-                      onClick={() => window.electronAPI?.requestDefaultApp()}
+                      onClick={requestDefaultApp}
                     >
                       <ArrowSquareOut size={15} weight="bold" />
                       {defaultAppStatus.isDefault ? 'Manage' : 'Set as default'}
