@@ -206,10 +206,14 @@ async function getDefaultAppStatus() {
       // because a per-user install and a per-machine install have different directories but the
       // same exe name.
       : cmd.includes(process.execPath.toLowerCase()) || cmd.includes(ourExe);
-  } else {
-    // ProgId exists but has no open command registered — fall back to the name.
-    isDefault = progId === MD_PROG_ID_HINT;
   }
+  // No resolvable command => NOT default, regardless of what the ProgId is called.
+  //
+  // This used to fall back to `progId === MD_PROG_ID_HINT`, and that fallback was wrong in exactly
+  // the case that matters. A broken install could leave UserChoice still naming "Markdown Document"
+  // while the ProgId's command key had been deleted — so Windows fell back to another handler, but
+  // FATE cheerfully reported "FATE currently opens .md files". A ProgId with nothing to run is not
+  // a default; if the command cannot be resolved, the honest answer is no.
 
   return { supported: true, isDefault, currentProgId: progId, currentCommand: command };
 }
@@ -334,14 +338,25 @@ const FOOTER_TEMPLATE = `<div style="font-family:Georgia,serif;font-size:8px;col
  * Render the currently open document to PDF bytes.
  *
  * Options that matter and why:
- *   printBackground: false     — the print stylesheet already forces white paper and black ink;
- *                                painting backgrounds would waste toner reproducing a navy page.
+ *   printBackground: true      — see the long note below. Set true DELIBERATELY.
  *   generateDocumentOutline    — turns the document's headings into real PDF bookmarks. For a
  *                                Markdown viewer whose whole sidebar is a table of contents, this
  *                                is the single highest-value option available.
  *   generateTaggedPDF          — emits structure tags, so screen readers can navigate the export.
  *   preferCSSPageSize: false   — the requested pageSize wins over any `@page` rule, so the Settings
  *                                choice is authoritative.
+ *
+ * ── Why printBackground is true ───────────────────────────────────────────────────────────────
+ * It was false in 1.8.0, on the reasoning that the print stylesheet forces white paper anyway. That
+ * reasoning was wrong, and the flag was doing nothing: the stylesheet also sets
+ * `print-color-adjust: exact` on the document container, which OVERRIDES printBackground and forces
+ * backgrounds to paint regardless. So `false` bought no safety while quietly implying it did — and
+ * the dark table-row backgrounds the stylesheet had failed to reset went to paper.
+ *
+ * Setting it true makes the actual behaviour explicit and leaves the print stylesheet as the single
+ * source of truth for print appearance. The stylesheet now zeroes every background inside
+ * `.markdown-body` and adds back only light values, so backgrounds printing is wanted: light zebra
+ * striping on tables, grey code blocks, a tinted blockquote — all of which aid readability on paper.
  */
 async function renderDocumentPdf({ landscape = false, pageSize = 'Letter', docName = 'Document' } = {}) {
   if (!mainWindow) throw new Error('no window to print from');
@@ -349,7 +364,7 @@ async function renderDocumentPdf({ landscape = false, pageSize = 'Letter', docNa
     landscape,
     pageSize,
     margins: PDF_MARGINS,
-    printBackground: false,
+    printBackground: true,
     displayHeaderFooter: true,
     headerTemplate: headerTemplate(docName),
     footerTemplate: FOOTER_TEMPLATE,

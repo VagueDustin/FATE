@@ -1454,39 +1454,111 @@ kbd {
     font-size: 11pt;
   }
 
+  /*
+   * BLANKET RESET — this is the important one.
+   *
+   * The previous version listed individual elements to recolour and inevitably missed some. What
+   * shipped in 1.8.0 printed table rows in NAVY on white paper (`table tr` uses --surface-base and
+   * --surface-raised, neither of which was reset) with #111 text on top, plus navy table-cell
+   * borders, a navy `hr`, and a gold-tinted blockquote. Confirmed by decompressing the PDF content
+   * stream: rows were being filled `.0275 .0431 .102` = #070B1A.
+   *
+   * `print-color-adjust: exact` on the container made it worse, not better — it overrides
+   * `printBackground` and forces every background to paint, so the un-reset dark values were
+   * guaranteed to hit paper.
+   *
+   * Enumerating what to fix cannot be made reliable. Zeroing everything and then adding back the
+   * few light values that are wanted can. Anything new added to the markdown body is print-safe by
+   * default from here on.
+   *
+   * NOTE: `border-color` is deliberately NOT in the blanket. KaTeX draws fraction bars and radicals
+   * with borders inheriting `currentColor`; forcing them grey would wash out the maths. They pick up
+   * #111 from the `color` reset instead, which is what they should be.
+   */
+  .markdown-body,
+  .markdown-body * {
+    background-color: transparent !important;
+    background-image: none !important;
+    color: #111 !important;
+    /* Undoes any gradient-clipped text, which would otherwise print invisible. */
+    -webkit-text-fill-color: #111 !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  /* ── Light values added back, deliberately ─────────────────────────────────────────────── */
+
   .markdown-body h1,
   .markdown-body h2,
   .markdown-body h3,
   .markdown-body h4,
   .markdown-body h5,
   .markdown-body h6 {
-    color: #111 !important;
     border-color: #ccc !important;
     page-break-after: avoid;
+    break-after: avoid;
   }
 
   .markdown-body a {
-    color: #111 !important;
     border-bottom: 0 !important;
   }
 
-  .markdown-body pre,
-  .markdown-body code {
-    background: #f4f4f4 !important;
-    color: #111 !important;
+  /* `hr` is drawn as a 1px background fill, so the blanket transparent above erases it. */
+  .markdown-body hr {
+    background-color: #ccc !important;
+    height: 1px !important;
+  }
+
+  .markdown-body pre {
+    background-color: #f6f6f6 !important;
     border-color: #ddd !important;
+  }
+
+  .markdown-body code {
+    background-color: #f2f2f2 !important;
+  }
+
+  .markdown-body pre code {
+    background-color: transparent !important;
+  }
+
+  .markdown-body blockquote {
+    background-color: #f7f7f7 !important;
+    border-left-color: #999 !important;
+  }
+
+  .markdown-body table th,
+  .markdown-body table td {
+    border-color: #bbb !important;
+  }
+
+  .markdown-body table th {
+    background-color: #eaeaea !important;
+  }
+
+  /* Zebra striping survives, just light enough to read black text on. */
+  .markdown-body table tr:nth-child(2n) {
+    background-color: #fafafa !important;
   }
 
   .markdown-body pre,
   .markdown-body blockquote,
   .markdown-body table,
-  .markdown-body img {
+  .markdown-body img,
+  .markdown-body .katex-display {
     page-break-inside: avoid;
+    break-inside: avoid;
   }
 
-  .markdown-body table th {
-    color: #111 !important;
-    background: #eee !important;
+  /* A wide table or long equation must shrink to the page rather than being cropped at the margin. */
+  .markdown-body table,
+  .markdown-body pre {
+    max-width: 100% !important;
+    overflow: visible !important;
+  }
+
+  .markdown-body .katex-display {
+    overflow: visible !important;
   }
 }
 
