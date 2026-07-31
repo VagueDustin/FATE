@@ -33,6 +33,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openRecentFile: (filePath) => ipcRenderer.invoke('open-recent-file', filePath),
   clearRecentFiles: () => ipcRenderer.invoke('clear-recent-files'),
 
+  /**
+   * Printing and PDF export.
+   *
+   * NOT `window.print()`. Electron ships Chromium without the print-preview UI, so the Windows
+   * print dialog shows "This app doesn't support print preview". Both of these instead render the
+   * document through `printToPDF` (same `@media print` stylesheet) — `printPreview` opens the result
+   * in a viewer window, `exportPdf` writes it wherever the user picks. What you preview is what
+   * prints.
+   *
+   * Pass the open document's filename; it becomes the page header and the default export name.
+   */
+  printPreview: (docName) => ipcRenderer.invoke('print-preview', docName),
+  exportPdf: (docName) => ipcRenderer.invoke('export-pdf', docName),
+
   // Windows default-app association for `.md`.
   // `getDefaultAppStatus()` resolves { supported, isDefault, currentProgId }; `supported` is false
   // off Windows so the renderer can hide the control instead of offering something that cannot work.

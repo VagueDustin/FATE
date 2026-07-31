@@ -8,7 +8,8 @@ import markedKatex from 'marked-katex-extension';
 import 'katex/dist/katex.min.css';
 import {
   UploadSimple, FileText, ArrowLeft, List, CircleNotch, Gear, X,
-  Printer, FolderOpen, ClockCounterClockwise, CheckCircle, ArrowSquareOut, Trash
+  Printer, FilePdf, FolderOpen, ClockCounterClockwise, CheckCircle, ArrowSquareOut, Trash,
+  Warning
 } from '@phosphor-icons/react';
 import fateLogo from './assets/FATE-Square-Icon.png';
 import Starfield from './components/Starfield.jsx';
@@ -38,6 +39,22 @@ const THEMES = [
 ];
 const VALID_THEMES = THEMES.map(t => t.value);
 const DEFAULT_THEME = 'fate';
+
+/**
+ * Paper sizes offered for print preview and PDF export.
+ *
+ * These strings are passed straight to Electron's `printToPDF` `pageSize` option, so they must match
+ * the names Chromium recognises. Letter leads because FATE is Windows-only and Letter is the more
+ * common default there.
+ */
+const PAGE_SIZES = [
+  { value: 'Letter', label: 'Letter (8.5 × 11 in)' },
+  { value: 'A4', label: 'A4 (210 × 297 mm)' },
+  { value: 'Legal', label: 'Legal (8.5 × 14 in)' },
+  { value: 'Tabloid', label: 'Tabloid (11 × 17 in)' },
+  { value: 'A3', label: 'A3 (297 × 420 mm)' },
+  { value: 'A5', label: 'A5 (148 × 210 mm)' }
+];
 
 /**
  * Map a stored theme value onto one that still exists.
@@ -85,13 +102,16 @@ function App() {
   const [sidebarWidth, setSidebarWidth] = useState(300);
   const [recentFiles, setRecentFiles] = useState([]);
   const [defaultAppStatus, setDefaultAppStatus] = useState(null);
+  const [isPrinting, setIsPrinting] = useState(false);
+  const [printError, setPrintError] = useState('');
 
   const [showSettings, setShowSettings] = useState(false);
   const [settings, setSettings] = useState({
     theme: DEFAULT_THEME,
-    discordEnabled: false,
     autoUpdatesEnabled: true,
     sidebarWidth: 300,
+    printPageSize: 'Letter',
+    printLandscape: false,
     shortcuts: { openFile: 'Control+O', print: 'Control+P', close: 'Escape' }
   });
   const [activeShortcutRebind, setActiveShortcutRebind] = useState(null);
@@ -245,35 +265,38 @@ function App() {
 
   useEffect(() => {
     if (window.electronAPI) {
-      if (isViewing && fileName) {
-        window.electronAPI.setDiscordActivity({
-          details: 'Reading Markdown',
-          state: `Viewing: ${fileName}`
-        });
-      } else {
-        window.electronAPI.setDiscordActivity({
-          details: 'Idling on the home screen',
-          state: 'Exploring Markdown'
-        });
-      }
+      /*
+       * Rich Presence is generic by design — the open document's name is never sent.
+       *
+       * Removed in 1.8.0 along with the "Show filename on Discord" toggle. The filename does not
+       * even cross the IPC boundary now, so there is nothing for a future edit here to accidentally
+       * leak. The main process ignores `state` regardless (see setDiscordActivity in main.cjs).
+       */
+      window.electronAPI.setDiscordActivity({
+        details: isViewing ? 'Reading Markdown' : 'Idling on the home screen'
+      });
     }
-  }, [isViewing, fileName]);
+    // `fileName` is intentionally absent from the dependency list: presence does not depend on which
+    // document is open, only on whether one is.
+  }, [isViewing]);
 
   useEffect(() => {
     if (window.electronAPI) {
       Promise.all([
         window.electronAPI.store.get('theme'),
-        window.electronAPI.store.get('discordEnabled'),
         window.electronAPI.store.get('autoUpdatesEnabled'),
         window.electronAPI.store.get('sidebarWidth'),
-        window.electronAPI.store.get('shortcuts')
-      ]).then(([theme, discordEnabled, autoUpdatesEnabled, savedSidebarWidth, shortcuts]) => {
+        window.electronAPI.store.get('shortcuts'),
+        window.electronAPI.store.get('printPageSize'),
+        window.electronAPI.store.get('printLandscape')
+      ]).then(([theme, autoUpdatesEnabled, savedSidebarWidth, shortcuts, printPageSize, printLandscape]) => {
         const resolvedTheme = resolveTheme(theme);
         const newSettings = {
           theme: resolvedTheme,
-          discordEnabled: discordEnabled || false,
           autoUpdatesEnabled: autoUpdatesEnabled !== false,
           sidebarWidth: savedSidebarWidth || 300,
+          printPageSize: printPageSize || 'Letter',
+          printLandscape: !!printLandscape,
           shortcuts: shortcuts || { openFile: 'Control+O', print: 'Control+P', close: 'Escape' }
         };
         setSettings(newSettings);
@@ -330,6 +353,50 @@ function App() {
     if (!isViewing) refreshRecentFiles();
   }, [isViewing, refreshRecentFiles]);
 
+  /*
+   * Print and export both go through the main process, which renders the document to a PDF using the
+   * `@media print` stylesheet. `window.print()` is deliberately NOT used: Electron ships Chromium
+   * without the print-preview UI, so the Windows dialog reports "This app doesn't support print
+   * preview" and the user prints blind.
+   *
+   * `isPrinting` gates the buttons — a large document takes a moment to render, and a second click
+   * would queue a redundant render.
+   *
+   * These are `useCallback` rather than plain functions because the keyboard-shortcut effect below
+   * depends on `openPrintPreview`. Opening a second document while already viewing does not change
+   * `isViewing`, so that effect would not re-run, and a plain function would leave it holding a
+   * stale `fileName` — printing the new document under the previous one's header.
+   *
+   * They must also be declared ABOVE that effect. `const` bindings are in the temporal dead zone
+   * until evaluated, and naming one in a dependency array before its declaration throws
+   * "Cannot access 'openPrintPreview' before initialization" on every render — which blanks the
+   * entire app, not just the shortcut.
+   */
+  const runPrintJob = useCallback(
+    (invoke, label) => {
+      if (typeof invoke !== 'function' || isPrinting) return;
+      setIsPrinting(true);
+      setPrintError('');
+      invoke(fileName || 'Document')
+        .then((res) => {
+          if (res && res.ok === false && !res.canceled) setPrintError(res.error || `${label} failed`);
+        })
+        .catch((err) => setPrintError(err?.message || `${label} failed`))
+        .finally(() => setIsPrinting(false));
+    },
+    [fileName, isPrinting]
+  );
+
+  const openPrintPreview = useCallback(
+    () => runPrintJob(window.electronAPI?.printPreview, 'Preview'),
+    [runPrintJob]
+  );
+
+  const exportPdf = useCallback(
+    () => runPrintJob(window.electronAPI?.exportPdf, 'Export'),
+    [runPrintJob]
+  );
+
   // Keyboard Shortcuts
   const matchesShortcut = (e, shortcutString) => {
     if (!shortcutString) return false;
@@ -382,12 +449,12 @@ function App() {
         if (window.electronAPI) window.electronAPI.openFileDialog();
       } else if (matchesShortcut(e, settings.shortcuts.print) && isViewing) {
         e.preventDefault();
-        window.print();
+        openPrintPreview();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isViewing, settings.shortcuts, activeShortcutRebind, showSettings]);
+  }, [isViewing, settings.shortcuts, activeShortcutRebind, showSettings, openPrintPreview]);
 
   /*
    * Scroll progress + active-heading tracking.
@@ -700,8 +767,23 @@ function App() {
                 </div>
 
                 <div className="header-right">
-                  <button className="icon-btn" onClick={() => window.print()} title="Print / Export PDF">
-                    <Printer size={17} weight="duotone" />
+                  <button
+                    className="icon-btn"
+                    onClick={exportPdf}
+                    disabled={isPrinting}
+                    title="Export as PDF"
+                  >
+                    <FilePdf size={17} weight="duotone" />
+                  </button>
+                  <button
+                    className="icon-btn"
+                    onClick={openPrintPreview}
+                    disabled={isPrinting}
+                    title={`Print preview (${settings.shortcuts.print.replace('Control', 'Ctrl')})`}
+                  >
+                    {isPrinting
+                      ? <CircleNotch size={17} weight="bold" className="spinner" />
+                      : <Printer size={17} weight="duotone" />}
                   </button>
                   <button className="icon-btn" onClick={() => setShowSettings(true)} title="Settings">
                     <Gear size={17} weight="duotone" />
@@ -750,6 +832,18 @@ function App() {
         )}
 
         <span className="status-spacer" />
+
+        {/* A failed render must not vanish silently. Click to dismiss. */}
+        {printError && (
+          <button
+            className="status-badge status-badge-error"
+            onClick={() => setPrintError('')}
+            title={`${printError} — click to dismiss`}
+          >
+            <Warning size={13} weight="fill" />
+            {printError}
+          </button>
+        )}
 
         {isWindows && defaultAppStatus?.isDefault && (
           <span className="status-badge" title="FATE opens .md files by default">
@@ -833,20 +927,57 @@ function App() {
               )}
 
               <div className="setting-group">
-                <h3 className="section-label">Integrations &amp; Updates</h3>
+                <h3 className="section-label">Printing</h3>
                 <div className="setting-item">
-                  <span className="setting-label">Show filename on Discord</span>
+                  <span className="setting-label">Paper size</span>
+                  <select
+                    value={settings.printPageSize}
+                    onChange={e => updateSetting('printPageSize', e.target.value)}
+                  >
+                    {PAGE_SIZES.map(p => (
+                      <option key={p.value} value={p.value}>{p.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="setting-item">
+                  <span className="setting-label">Landscape</span>
                   <label className="switch">
-                    <input type="checkbox" checked={settings.discordEnabled} onChange={e => updateSetting('discordEnabled', e.target.checked)} />
+                    <input
+                      type="checkbox"
+                      checked={settings.printLandscape}
+                      onChange={e => updateSetting('printLandscape', e.target.checked)}
+                    />
                     <span className="slider"></span>
                   </label>
                 </div>
+                <div className="setting-item setting-item-stacked">
+                  <div className="setting-label-block">
+                    <span className="setting-label">Preview &amp; export</span>
+                    <span className="setting-hint">
+                      Printing opens a page-by-page preview. Exports carry heading bookmarks and
+                      page numbers, and always print on white regardless of your theme.
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="setting-group">
+                <h3 className="section-label">Updates</h3>
                 <div className="setting-item">
                   <span className="setting-label">Automatic updates</span>
                   <label className="switch">
                     <input type="checkbox" checked={settings.autoUpdatesEnabled} onChange={e => updateSetting('autoUpdatesEnabled', e.target.checked)} />
                     <span className="slider"></span>
                   </label>
+                </div>
+                <div className="setting-item setting-item-stacked">
+                  <div className="setting-label-block">
+                    <span className="setting-label">Discord Rich Presence</span>
+                    <span className="setting-hint">
+                      FATE shows only whether you&apos;re reading or idle. Document names are never
+                      sent — the option that shared them was removed in 1.8.0.
+                    </span>
+                  </div>
                 </div>
               </div>
 

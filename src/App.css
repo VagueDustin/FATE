@@ -693,6 +693,30 @@ kbd {
   font-weight: 600;
   white-space: nowrap;
   flex-shrink: 0;
+  font-family: var(--font-sans);
+}
+
+/* A failed print/export render. Dismissible, and truncates rather than pushing the bar wider. */
+.status-badge-error {
+  background: color-mix(in srgb, var(--status-danger) 16%, transparent);
+  border-color: color-mix(in srgb, var(--status-danger) 50%, transparent);
+  color: var(--status-danger);
+  cursor: pointer;
+  max-width: 38%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Disabled icon buttons (print/export while a render is in flight). */
+.icon-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.icon-btn:disabled:hover {
+  color: var(--text-muted);
+  background: transparent;
+  border-color: transparent;
 }
 
 /* Below this the "Settings" word and the .md badge are the first things to go — the icon and the

@@ -49,6 +49,20 @@ Don't want to use the pre-compiled releases? You can easily build FATE from sour
    ```
    The built installers will be output to the `dist-electron/` directory.
 
+## Printing & PDF export
+
+`Ctrl`+`P` opens a real **page-by-page preview** — actual paginated output, not a printer picker with
+"This app doesn't support print preview". A separate button exports straight to PDF.
+
+Both render through the same print stylesheet, so what you preview is what prints:
+
+- **White paper, black ink** whatever theme you read in
+- **Heading bookmarks** in exported PDFs, built from the document's own structure
+- **Page numbers** and the document name in the header
+- **Tagged PDF** output, so screen readers can navigate the export
+- Code blocks, tables, images and block equations avoid being split across pages
+- Paper size and orientation in Settings → Printing
+
 ## Contributing
 
 Pull requests are welcome — see **[CONTRIBUTING.md](CONTRIBUTING.md)** for setup and the house rules.
@@ -66,6 +80,17 @@ reserved. MIT is a copyright licence and says nothing about trademarks, which is
 In short: fork freely, but **rename and re-skin before you distribute.**
 
 ## Changelog
+
+### v1.8.0
+- **[Feature]** **Print preview actually works.** `Ctrl`+`P` now opens a real page-by-page preview instead of the Windows dialog reporting *"This app doesn't support print preview"* — Electron ships Chromium without the print-preview UI, and no flag turns it on. FATE now renders the document to a PDF through its own print stylesheet and previews that, so what you see is exactly what prints.
+- **[Feature]** **Export as PDF** — a dedicated button in the document header, saving wherever you choose.
+- **[Feature]** Exported PDFs carry **heading bookmarks** generated from the document's own structure, **page numbers**, the document name in the header, and **tagged-PDF** structure so screen readers can navigate them.
+- **[Feature]** **Paper size and orientation** in Settings → Printing: Letter, A4, Legal, Tabloid, A3, A5, portrait or landscape. Applies to both preview and export.
+- **[Removed]** **The "Show filename on Discord" option is gone.** Broadcasting the name of whatever file you have open to your entire friends list is a poor default for a documents app and not something worth a setting. Rich Presence is unchanged otherwise — it still shows that you're reading or idle, exactly as it did with the option switched off. The filename no longer even crosses the internal IPC boundary, and the stale setting is cleaned out of existing configs on upgrade.
+- **[Bugfix]** Print and export are gated while a render is in flight, and a failed render now surfaces in the status bar instead of failing silently.
+- **[Bugfix]** If Chromium's embedded PDF viewer is unavailable in a given build, the preview falls back to the system PDF handler rather than opening an empty window.
+- **[Bugfix]** Fixed a temporal-dead-zone crash introduced while wiring the print shortcut: the keyboard effect named a `const` callback declared further down the component, which threw on every render and blanked the entire app. Caught before release.
+- **[Bugfix]** The print shortcut could print under the *previous* document's header. Opening a second document while already reading doesn't change the viewing state, so the shortcut's effect never re-ran and held a stale filename.
 
 ### v1.7.0
 - **[Feature]** **Animated constellation sky** behind the home screen — twinkling starfield, larger constellation stars with cross glints, faint linking lines, the occasional meteor, and a slow gold halo breathing behind the badge. Ported from the [702 Squad](https://palworld.702squad.com) portal, the ceremonial-tier expression of the same brand.
