@@ -980,19 +980,42 @@ function watchFile(filePath) {
   const key = watchKey(filePath);
   if (fileWatchers.has(key)) return; // already watching (e.g. the same file reopened)
 
+  const readAndNotify = () => {
+    try {
+      const updatedContent = fs.readFileSync(filePath, 'utf-8');
+      // Our own save just landing back on us — not an external change. See lastSavedByApp.
+      if (updatedContent === lastSavedByApp.get(key)) return;
+      if (mainWindow) {
+        // The path rides along so the renderer can route the update to the right tab.
+        mainWindow.webContents.send('file-changed', updatedContent, filePath);
+      }
+    } catch (err) {
+      console.error('Error reading updated file:', err);
+    }
+  };
+
   const watcher = fs.watch(filePath, (eventType) => {
     if (eventType === 'change') {
-      try {
-        const updatedContent = fs.readFileSync(filePath, 'utf-8');
-        // Our own save just landing back on us — not an external change. See lastSavedByApp.
-        if (updatedContent === lastSavedByApp.get(key)) return;
-        if (mainWindow) {
-          // The path rides along so the renderer can route the update to the right tab.
-          mainWindow.webContents.send('file-changed', updatedContent, filePath);
+      readAndNotify();
+    } else if (eventType === 'rename') {
+      /*
+       * ATOMIC SAVES arrive as 'rename', not 'change': most editors (VS Code among them) write a
+       * temp file and rename it over the original, which replaces the inode this watcher is bound
+       * to. Ignoring 'rename' meant edits from such editors never live-reloaded. Re-attach to the
+       * new inode (after a beat — the rename may still be mid-flight) and read it.
+       */
+      setTimeout(() => {
+        if (!fileWatchers.has(key)) return; // tab closed in the meantime
+        if (!fs.existsSync(filePath)) return; // genuinely deleted/moved away
+        try {
+          fileWatchers.get(key)?.close();
+        } catch {
+          /* already dead */
         }
-      } catch (err) {
-        console.error('Error reading updated file:', err);
-      }
+        fileWatchers.delete(key);
+        watchFile(filePath);
+        readAndNotify();
+      }, 100);
     }
   });
 

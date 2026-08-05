@@ -423,6 +423,7 @@ function App() {
         const editor = editorRefs.current[doc.id];
         if (editor) {
           // Code tab, or a markdown tab in edit mode.
+          if (content === editor.getContent()) return; // spurious watch event — nothing changed
           if (editor.isDirty()) {
             setStatusError(`${doc.name} changed on disk — your unsaved edits were kept`);
           } else {
@@ -432,6 +433,12 @@ function App() {
             }
           }
         } else if (doc.kind === 'markdown') {
+          /*
+           * Identical content is a NO-OP, not a refresh. Windows fires watch events for more than
+           * real writes (Defender scans, indexing touch the file); re-rendering on those visibly
+           * resets post-render DOM work like mermaid diagrams for no reason.
+           */
+          if (content === doc.source) return;
           setDocs((ds) =>
             ds.map((d) => (d.id === doc.id ? { ...d, source: content, ...renderMarkdown(content, doc.path) } : d))
           );

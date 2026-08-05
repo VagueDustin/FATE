@@ -145,12 +145,19 @@ function MarkdownView({ doc, isActive, sidebarWidth, onSidebarWidthChange, progr
 
   /*
    * Mermaid diagrams. ```mermaid fences arrive as <pre><code class="language-mermaid"> — this
-   * effect lazily imports the mermaid renderer (its own ~1 MB chunk, loaded only when a document
-   * actually contains a diagram, and still fully offline) and swaps each fence for its SVG.
-   * The `data-mermaid-done` guard makes the pass idempotent under StrictMode's double-invoke.
+   * effect lazily imports the mermaid renderer (its own chunk, loaded only when a document
+   * actually contains a diagram, still fully offline) and swaps each fence for its SVG.
+   *
+   * TWO HARD-WON RULES:
+   *   1. Only render while the pane is VISIBLE (`isActive` gates and re-triggers the pass).
+   *      Mermaid measures text with getBBox(), which returns zeros inside display:none — a
+   *      background tab's diagrams failed silently and stayed as fences.
+   *   2. Mark a fence done only AFTER its SVG lands (and mark failures separately). The pass
+   *      mutates DOM that React owns via dangerouslySetInnerHTML; any re-render that restores the
+   *      original html brings the fences back, and this pass must then happily run again.
    */
   useEffect(() => {
-    if (!doc.hasMermaid || !contentRef.current) return;
+    if (!doc.hasMermaid || !isActive || !contentRef.current) return;
     let cancelled = false;
 
     (async () => {
@@ -166,20 +173,21 @@ function MarkdownView({ doc, isActive, sidebarWidth, onSidebarWidthChange, progr
       });
 
       const fences = contentRef.current.querySelectorAll(
-        'code.language-mermaid:not([data-mermaid-done])'
+        'code.language-mermaid:not([data-mermaid-done]):not([data-mermaid-failed])'
       );
       for (const [i, code] of [...fences].entries()) {
-        code.setAttribute('data-mermaid-done', '1');
         const source = code.textContent;
         try {
-          const { svg } = await mermaid.render(`fate-mermaid-${doc.id}-${i}-${Date.now()}`, source);
+          const { svg } = await mermaid.render(`fate-mermaid-${doc.id}-${i}-${Math.floor(performance.now())}`, source);
           if (cancelled) return;
           const holder = document.createElement('div');
           holder.className = 'mermaid-diagram';
           holder.innerHTML = svg;
+          code.setAttribute('data-mermaid-done', '1');
           code.closest('pre')?.replaceWith(holder);
         } catch (err) {
-          // Invalid diagram source: leave the fence as highlighted text rather than erroring out.
+          // Invalid diagram source: keep the fence as highlighted text, don't retry it forever.
+          code.setAttribute('data-mermaid-failed', '1');
           console.error('Mermaid diagram failed to render:', err?.message || err);
         }
       }
@@ -191,7 +199,7 @@ function MarkdownView({ doc, isActive, sidebarWidth, onSidebarWidthChange, progr
     return () => {
       cancelled = true;
     };
-  }, [doc.html, doc.hasMermaid, doc.id]);
+  }, [doc.html, doc.hasMermaid, doc.id, isActive]);
 
   return (
     <div className="viewer-layout">

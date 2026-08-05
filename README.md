@@ -95,6 +95,11 @@ In short: fork freely, but **rename and re-skin before you distribute.**
 
 ## Changelog
 
+### v1.11.2
+- **[Bugfix]** **Mermaid diagrams now render reliably.** Two causes fixed: rendering was attempted inside hidden (backgrounded) tabs, where SVG text measurement returns zeros and mermaid fails — the pass now runs when the tab is visible and re-runs on activation; and fences are only marked processed after their SVG actually lands, so a re-render can no longer strand them.
+- **[Bugfix]** **Live reload now catches atomic saves.** Most editors (VS Code included) save by writing a temp file and renaming it over the original, which arrives as a `rename` event the watcher used to ignore — FATE now re-attaches to the new file and reloads.
+- **[Bugfix]** Spurious file-watch events (antivirus scans, indexing) no longer trigger pointless re-renders — a change notification with identical content is ignored, which also stops rendered diagrams from flickering back to source.
+
 ### v1.11.1
 - **[Feature]** **"Edit in FATE" on the right-click menu** for every file — a classic shell verb with the FATE badge, written by both the installer and the runtime self-heal. On Windows 11 it lives under *Show more options* (the top-level modern menu requires a packaged `IExplorerCommand`, which an NSIS install cannot provide — that's why Notepad++ ships a companion MSIX for theirs).
 - **[Feature]** **Settings → Windows → "Always show full context menus"**: the practical route to top-level placement — an opt-in, fully reversible per-user switch that restores Windows 11's classic right-click menu everywhere (where Edit in FATE sits at the top level), with a one-click Explorer restart to apply.
