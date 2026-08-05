@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useDropzone } from 'react-dropzone';
 import {
   UploadSimple, FileText, FileCode, CircleNotch, Gear, X, Plus, House, FilePlus,
   Printer, FilePdf, FloppyDisk, FolderOpen, ClockCounterClockwise, CheckCircle, Trash,
@@ -89,6 +88,7 @@ function MarkdownEditView({ doc, isActive, tabSize, cursorLabelRef, onDirtyChang
           }}
           fileName={doc.name}
           initialContent={doc.source}
+          lint={false /* markdown has no syntax errors; skip the empty lint gutter */}
           wrap={true /* prose: unwrapped markdown source is unreadable */}
           tabSize={tabSize}
           isActive={isActive}
@@ -149,6 +149,7 @@ function App() {
     printLandscape: false,
     editorWrap: false,
     editorTabSize: 4,
+    editorLint: true,
     fonts: DEFAULT_FONTS,
     restoreSession: true,
     customTheme: null,
@@ -362,11 +363,12 @@ function App() {
         window.electronAPI.store.get('printLandscape'),
         window.electronAPI.store.get('editorWrap'),
         window.electronAPI.store.get('editorTabSize'),
+        window.electronAPI.store.get('editorLint'),
         window.electronAPI.store.get('fonts'),
         window.electronAPI.store.get('restoreSession'),
         window.electronAPI.store.get('customTheme'),
         window.electronAPI.store.get('session')
-      ]).then(([theme, autoUpdatesEnabled, savedSidebarWidth, shortcuts, printPageSize, printLandscape, editorWrap, editorTabSize, fonts, restoreSession, customTheme, session]) => {
+      ]).then(([theme, autoUpdatesEnabled, savedSidebarWidth, shortcuts, printPageSize, printLandscape, editorWrap, editorTabSize, editorLint, fonts, restoreSession, customTheme, session]) => {
         const resolvedCustom = resolveCustomTheme(customTheme);
         const resolvedTheme = resolveTheme(theme, !!resolvedCustom);
         const resolvedFonts = resolveFonts(fonts);
@@ -378,6 +380,7 @@ function App() {
           printLandscape: !!printLandscape,
           editorWrap: !!editorWrap,
           editorTabSize: [2, 4, 8].includes(editorTabSize) ? editorTabSize : 4,
+          editorLint: editorLint !== false,
           fonts: resolvedFonts,
           restoreSession: restoreSession !== false,
           customTheme: resolvedCustom,
@@ -862,12 +865,22 @@ function App() {
     }
   };
 
-  const onDrop = (acceptedFiles) => {
-    for (const file of acceptedFiles) {
+  /*
+   * ── Drag & drop, hand-rolled ────────────────────────────────────────────────────────────────
+   * The WHOLE WINDOW is the drop target (drop onto the editor, a tab, anywhere — like any
+   * desktop editor), not just the home-screen box. react-dropzone is gone: its FileSystemHandle
+   * path broke webUtils.getPathForFile under Electron, and a drop that missed its zone fell
+   * through to Chromium's default behaviour — NAVIGATING the app to the dropped file, which
+   * looked exactly like "drag & drop doesn't work". Native DataTransfer.files keeps real paths,
+   * and preventDefault() on window dragover/drop kills the navigation fallthrough for good (the
+   * main process also refuses stray navigations now, as a second line of defence).
+   */
+  const handleDroppedFiles = (files) => {
+    for (const file of files) {
       if (!file || !file.name) continue;
 
       if (file.size === 0 && file.type === '') {
-        console.error('Dropped item appears to be a folder or empty file.');
+        setStatusError(`Can't open ${file.name} — it looks like a folder`);
         continue;
       }
 
@@ -892,12 +905,53 @@ function App() {
       reader.readAsText(file);
     }
   };
-
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
-    multiple: true,
-    noKeyboard: true
+  const handleDroppedFilesRef = useRef(handleDroppedFiles);
+  useEffect(() => {
+    handleDroppedFilesRef.current = handleDroppedFiles;
   });
+
+  const [isDragActive, setIsDragActive] = useState(false);
+
+  useEffect(() => {
+    // Depth counter because dragenter/dragleave fire for every child element crossed.
+    let depth = 0;
+    const hasFiles = (e) => Array.from(e.dataTransfer?.types || []).includes('Files');
+
+    const onDragEnter = (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth++;
+      setIsDragActive(true);
+    };
+    const onDragOver = (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault(); // REQUIRED, or the drop event never fires and Chromium navigates
+      e.dataTransfer.dropEffect = 'copy';
+    };
+    const onDragLeave = (e) => {
+      if (!hasFiles(e)) return;
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) setIsDragActive(false);
+    };
+    const onDrop = (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth = 0;
+      setIsDragActive(false);
+      handleDroppedFilesRef.current(Array.from(e.dataTransfer.files));
+    };
+
+    window.addEventListener('dragenter', onDragEnter);
+    window.addEventListener('dragover', onDragOver);
+    window.addEventListener('dragleave', onDragLeave);
+    window.addEventListener('drop', onDrop);
+    return () => {
+      window.removeEventListener('dragenter', onDragEnter);
+      window.removeEventListener('dragover', onDragOver);
+      window.removeEventListener('dragleave', onDragLeave);
+      window.removeEventListener('drop', onDrop);
+    };
+  }, []);
 
   const openRecent = (entry) => {
     if (!window.electronAPI?.openRecentFile) return;
@@ -1031,6 +1085,7 @@ function App() {
             initialContent={d.codeContent}
             wrap={settings.editorWrap}
             tabSize={settings.editorTabSize}
+            lint={settings.editorLint}
             isActive={active}
             onDirtyChange={(dirty) => handleDirtyChange(d.id, dirty)}
             onSave={() => saveDoc(d.id)}
@@ -1138,8 +1193,12 @@ function App() {
 
               <div className="home-panes">
                 <section className="pane pane-open" aria-label="Open a document">
-                  <div {...getRootProps()} className={`dropzone ${isDragActive ? 'active' : ''}`}>
-                    <input {...getInputProps()} />
+                  <div
+                    className={`dropzone ${isDragActive ? 'active' : ''}`}
+                    onClick={() => window.electronAPI?.openFileDialog()}
+                    role="button"
+                    tabIndex={-1}
+                  >
                     {isLoading ? (
                       <>
                         <CircleNotch className="dz-icon spinner" weight="bold" />
@@ -1385,6 +1444,16 @@ function App() {
           {runtimeInfo.windowsStore ? 'Store build · updates via Microsoft Store' : (updateStatus || 'Check for updates')}
         </button>
       </footer>
+
+      {/* Whole-window drop affordance — visible whenever files are dragged over the app. */}
+      {isDragActive && (
+        <div className="drop-overlay" aria-hidden="true">
+          <div className="drop-overlay-badge">
+            <UploadSimple size={28} weight="duotone" />
+            Release to open
+          </div>
+        </div>
+      )}
 
       {showPalette && <CommandPalette items={paletteItems} onClose={() => setShowPalette(false)} />}
 

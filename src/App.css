@@ -2620,6 +2620,71 @@ kbd {
   display: none;
 }
 
+/* ── Whole-window drop affordance ────────────────────────────────────────────────────────── */
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  pointer-events: none; /* the drop lands on the window handlers, not this overlay */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--surface-sunken) 55%, transparent);
+  outline: 2px dashed var(--accent-default);
+  outline-offset: -12px;
+  border-radius: var(--radius-lg);
+}
+
+.drop-overlay-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.9rem 1.5rem;
+  background: var(--surface-overlay);
+  border: 1px solid var(--border-emphasis);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-glow);
+  color: var(--text-accent);
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: var(--tracking-display);
+}
+
+/* ── Syntax diagnostics (lint) ───────────────────────────────────────────────────────────── */
+.code-editor .cm-lintRange-error {
+  background-image: none;
+  border-bottom: 2px dotted var(--status-danger);
+  padding-bottom: 1px;
+}
+
+.code-editor .cm-lint-marker-error {
+  content: '';
+  color: var(--status-danger);
+}
+
+.code-editor .cm-gutter-lint {
+  width: 0.9em;
+}
+
+.code-editor .cm-gutter-lint .cm-gutterElement {
+  padding: 0.1em;
+}
+
+.cm-tooltip.cm-tooltip-lint {
+  background: var(--surface-overlay);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-panel);
+}
+
+.cm-tooltip-lint .cm-diagnostic-error {
+  border-left: 3px solid var(--status-danger);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+}
+
 /* ── Mermaid diagrams ────────────────────────────────────────────────────────────────────── */
 .mermaid-diagram {
   margin: 1rem 0 1.4rem;

@@ -568,6 +568,26 @@ function SettingsModal({
                 </div>
                 <div className="setting-item setting-item-stacked">
                   <div className="setting-label-block">
+                    <span className="setting-label">Highlight syntax errors</span>
+                    <span className="setting-hint">
+                      Underlines code the language parser can&apos;t make sense of — missing
+                      brackets, unclosed strings, stray tokens — with a marker in the gutter.
+                      Works for languages with structural parsers (JavaScript, TypeScript, HTML,
+                      CSS, JSON, Python and most others); shell-style languages report nothing
+                      rather than guessing.
+                    </span>
+                  </div>
+                  <label className="switch">
+                    <input
+                      type="checkbox"
+                      checked={settings.editorLint}
+                      onChange={(e) => updateSetting('editorLint', e.target.checked)}
+                    />
+                    <span className="slider"></span>
+                  </label>
+                </div>
+                <div className="setting-item setting-item-stacked">
+                  <div className="setting-label-block">
                     <span className="setting-label">Editing</span>
                     <span className="setting-hint">
                       Code files open straight into the editor; markdown opens in the reading view

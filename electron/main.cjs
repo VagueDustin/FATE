@@ -952,8 +952,20 @@ function createWindow() {
   });
 
   mainWindow.webContents.on('will-navigate', async (event, url) => {
-    if (!url.startsWith('http://localhost:5173') && !url.startsWith('file://') && !url.startsWith('devtools://')) {
-      event.preventDefault();
+    /*
+     * The window may only ever navigate to ITSELF (dev server or the packaged dist). The old
+     * check allowed any file:// URL, which meant a file dropped outside a drop handler made
+     * Chromium NAVIGATE the whole app to that file — the "drag & drop doesn't work" bug. The
+     * renderer now preventDefault()s all drops; this is the second line of defence.
+     */
+    const appOrigin = isDev
+      ? 'http://localhost:5173'
+      : pathToFileURL(path.join(__dirname, '..', 'dist')).toString();
+    if (url.startsWith(appOrigin) || url.startsWith('devtools://')) return;
+
+    event.preventDefault();
+
+    if (url.startsWith('http://') || url.startsWith('https://')) {
       const { response } = await dialog.showMessageBox(mainWindow, {
         type: 'warning',
         buttons: ['Cancel', 'Open Browser'],
@@ -966,6 +978,7 @@ function createWindow() {
         shell.openExternal(url);
       }
     }
+    // Anything else (stray file:// navigations included) is silently refused.
   });
 
   if (isDev) {

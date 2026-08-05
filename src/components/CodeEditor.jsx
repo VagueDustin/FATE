@@ -7,8 +7,9 @@ import { EditorState, Compartment } from '@codemirror/state';
 import { history, defaultKeymap, historyKeymap, indentWithTab } from '@codemirror/commands';
 import {
   foldGutter, indentOnInput, bracketMatching, foldKeymap,
-  syntaxHighlighting, indentUnit
+  syntaxHighlighting, indentUnit, syntaxTree
 } from '@codemirror/language';
+import { linter, lintGutter } from '@codemirror/lint';
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { detectLanguage } from '../languageDetect.js';
@@ -49,8 +50,42 @@ import { tokenHighlightStyle } from '../editorTheme.js';
  * straight to a status-bar DOM node, following the same rule as the scroll progress bar.
  */
 
+/**
+ * Structural syntax diagnostics from the language parser itself.
+ *
+ * Lezer grammars mark unparseable regions with error nodes — a missing bracket, an unclosed
+ * string, a stray token all surface there. Walking the tree for those gives real "your code is
+ * broken HERE" underlines for every tree-based language (JavaScript, TypeScript, HTML, CSS,
+ * JSON, Python, …) with zero per-language lint dependencies. Stream-parsed legacy modes
+ * (PowerShell, shell, batch) never produce error nodes, so they simply report nothing — no false
+ * positives.
+ *
+ * Zero-length error nodes (very common: "something is missing here") are widened by a character
+ * so the underline has somewhere to live.
+ */
+const syntaxErrorLinter = linter(
+  (view) => {
+    const diagnostics = [];
+    syntaxTree(view.state)
+      .cursor()
+      .iterate((node) => {
+        if (!node.type.isError || diagnostics.length >= 200) return;
+        const from = node.from === node.to ? Math.max(0, node.from - 1) : node.from;
+        const to = node.from === node.to ? Math.min(view.state.doc.length, node.to + 1) : node.to;
+        diagnostics.push({
+          from,
+          to,
+          severity: 'error',
+          message: 'Syntax error — unexpected or missing token'
+        });
+      });
+    return diagnostics;
+  },
+  { delay: 400 }
+);
+
 const CodeEditor = forwardRef(function CodeEditor(
-  { fileName, initialContent, wrap, tabSize, onDirtyChange, onSave, onDocChanged, cursorLabelRef, isActive = true },
+  { fileName, initialContent, wrap, tabSize, onDirtyChange, onSave, onDocChanged, cursorLabelRef, isActive = true, lint = true },
   ref
 ) {
   const hostRef = useRef(null);
@@ -79,6 +114,7 @@ const CodeEditor = forwardRef(function CodeEditor(
   const languageCompartment = useRef(new Compartment()).current;
   const wrapCompartment = useRef(new Compartment()).current;
   const tabSizeCompartment = useRef(new Compartment()).current;
+  const lintCompartment = useRef(new Compartment()).current;
 
   const setDirty = (dirty) => {
     if (dirty !== dirtyRef.current) {
@@ -137,6 +173,7 @@ const CodeEditor = forwardRef(function CodeEditor(
         highlightActiveLine(),
         highlightSelectionMatches(),
         languageCompartment.of([]),
+        lintCompartment.of(lint ? [syntaxErrorLinter, lintGutter()] : []),
         wrapCompartment.of(wrap ? EditorView.lineWrapping : []),
         tabSizeCompartment.of([
           EditorState.tabSize.of(tabSize),
@@ -215,6 +252,12 @@ const CodeEditor = forwardRef(function CodeEditor(
       ])
     });
   }, [tabSize, tabSizeCompartment]);
+
+  useEffect(() => {
+    viewRef.current?.dispatch({
+      effects: lintCompartment.reconfigure(lint ? [syntaxErrorLinter, lintGutter()] : [])
+    });
+  }, [lint, lintCompartment]);
 
   useImperativeHandle(
     ref,

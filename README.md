@@ -95,6 +95,10 @@ In short: fork freely, but **rename and re-skin before you distribute.**
 
 ## Changelog
 
+### v1.11.4
+- **[Bugfix]** **Drag & drop actually works now — anywhere in the window.** Two root causes fixed: the drop library's file handles broke Electron's path resolution, and a drop landing outside the drop zone fell through to Chromium's default behaviour, *navigating the whole app to the dropped file*. Drops are now handled natively across the entire window (home screen, editor, tab strip — anywhere), with a gold "Release to open" overlay while dragging, and stray navigations are refused by the main process as a second line of defence.
+- **[Feature]** **Broken code gets flagged as you type.** The editor now underlines regions the language parser cannot make sense of — missing brackets, unclosed strings, stray tokens — with a marker in the gutter and a tooltip on hover. Powered by each language's real parse tree, so there are no per-language lint configs and no false-positive guessing; structural parsers (JavaScript, TypeScript, HTML, CSS, JSON, Python, and most others) report precisely, and shell-style languages report nothing rather than noise. Toggle under Settings → Code Editor.
+
 ### v1.11.3
 - **[Feature]** **Use any font installed on your PC.** Every font picker (interface, markdown documents, code, and per-file-type overrides) now offers the fonts installed on your system alongside the bundled library — with a search box, each candidate previewed in its own typeface, and Enter to take the top match. Selections persist as `system:<Family>` and degrade gracefully through the standard fallback stack if a font is later uninstalled. Enumeration is one local query, cached per run; nothing leaves your machine.
 - **[Maintenance]** Dev/test instances can run beside an installed FATE via the `FATE_USER_DATA` environment variable (separate profile, separate single-instance lock).
