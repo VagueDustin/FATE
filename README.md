@@ -114,13 +114,26 @@ In short: fork freely, keep it open, and **rename and re-skin before you distrib
 
 ## Changelog
 
-### Unreleased
+### v1.11.5
+- **[Bugfix]** **A custom install directory no longer gets reset on upgrade.** The installer's
+  `preInit` unconditionally reseeded the remembered install location to the default publisher folder,
+  so anyone who chose their own directory would be moved back to the default on every update —
+  including silent auto-updates, which trust that remembered value. It now seeds the default only on
+  a first install, or immediately after removing a pre-rename install.
+- **[Bugfix]** **The rename migration could silently skip.** It read the remembered install location
+  through `SHCTX`, which isn't reliably settled that early in `preInit`; if it resolved to HKCU while
+  the old install was recorded in HKLM, the read came back empty and a pre-rename "FATE - Markdown
+  Viewer" install would quietly survive beside the new one. Now reads HKLM explicitly, with an HKCU
+  fallback.
 - **[Licence]** FATE is now **AGPL-3.0**. Fork it, learn from it, improve it — anything you distribute
   or serve over a network ships its complete source under the same licence.
 - **[Docs]** `TRADEMARK.md` is now **[BRAND.md](BRAND.md)**, rewritten to say what's actually true:
   no registered trademarks, just a brand and an alias, with artwork protected by copyright. The
   fork-and-rename checklist is current again (executable name, per-type ProgIds, the shell verb,
   store art). Contribution terms, PR and issue templates updated to match.
+- **[Maintenance]** `build/installer.nsh` is now tracked in the repository — it's hand-authored build
+  source, and without it a clone can't produce an installer at all. Generated icons and Store art stay
+  ignored.
 
 ### v1.11.4
 - **[Bugfix]** **Drag & drop actually works now — anywhere in the window.** Two root causes fixed: the drop library's file handles broke Electron's path resolution, and a drop landing outside the drop zone fell through to Chromium's default behaviour, *navigating the whole app to the dropped file*. Drops are now handled natively across the entire window (home screen, editor, tab strip — anywhere), with a gold "Release to open" overlay while dragging, and stray navigations are refused by the main process as a second line of defence.
