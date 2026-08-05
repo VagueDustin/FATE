@@ -2,6 +2,23 @@
 
 FATE is a beautiful, elegant, and highly resilient Markdown viewer **and code editor** built for technical documents, research papers, and the files around them. Powered by Electron, Vite, and React, FATE delivers an instant reading experience for complex documents — and a full editing surface when you need to change them.
 
+![Markdown as a typeset document — KaTeX math, Mermaid diagrams, and a live table of contents](docs/screenshots/02-markdown-reading.png)
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/03-markdown-edit-mode.png" alt="Markdown edit mode with live preview"/><br/><sub><b>Edit markdown with a live side-by-side preview</b></sub></td>
+    <td width="50%"><img src="docs/screenshots/04-code-editor.png" alt="Code editor with syntax highlighting"/><br/><sub><b>A real code editor for 80+ file types</b></sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/05-split-view.png" alt="Split view with two documents side by side"/><br/><sub><b>Split view — built for wide monitors, with diff modes</b></sub></td>
+    <td width="50%"><img src="docs/screenshots/07-command-palette.png" alt="Command palette"/><br/><sub><b>Everything one keystroke away — Ctrl+K</b></sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/08-settings-themes.png" alt="Theme cards in Settings"/><br/><sub><b>Nine themes plus a custom theme builder</b></sub></td>
+    <td width="50%"><img src="docs/screenshots/01-home.png" alt="The FATE home screen"/><br/><sub><b>The gilded home screen with its constellation sky</b></sub></td>
+  </tr>
+</table>
+
 ## Features & Capabilities
 
 - **Instant Viewing:** Drag & drop any `.md` or `.markdown` file directly into the app, or set FATE as your default markdown viewer.
