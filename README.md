@@ -1,10 +1,14 @@
-# FATE (Formatted Article & Text Explorer)
+# FATE (Formatted Article & Text Editor)
 
-FATE is a beautiful, elegant, and highly resilient Markdown viewer built specifically for technical documents, research papers, and advanced documentation. Powered by Electron, Vite, and React, FATE delivers an instant and seamless reading experience for complex files.
+FATE is a beautiful, elegant, and highly resilient Markdown viewer **and code editor** built for technical documents, research papers, and the files around them. Powered by Electron, Vite, and React, FATE delivers an instant reading experience for complex documents — and a full editing surface when you need to change them.
 
 ## Features & Capabilities
 
 - **Instant Viewing:** Drag & drop any `.md` or `.markdown` file directly into the app, or set FATE as your default markdown viewer.
+- **Full Code Editor:** Open and *edit* code files — `.ps1`, `.html`, `.py`, `.js`, `.json`, `.css`, `.yaml` and 80+ more — in a real editor with syntax highlighting, line numbers, code folding, search (`Ctrl`+`F`), multiple cursors and undo history. Save with `Ctrl`+`S`; unsaved changes are guarded everywhere (closing the file, opening another, closing the window).
+- **Tabs:** Open any number of files side by side, Notepad++-style — mixed markdown and code, per-tab unsaved-changes tracking, middle-click to close, `Ctrl`+`Tab` to cycle, `Ctrl`+`1`–`9` to jump. Every tab keeps its scroll position, cursor and undo history while backgrounded.
+- **Bundled Font Library:** JetBrains Mono, Fira Code, Cascadia Code, Source Code Pro, IBM Plex Mono, Roboto Mono for code; Inter, IBM Plex Sans, Source Serif 4, Lora, Merriweather for prose — all shipped inside the app, fully offline. Pick fonts for the interface, markdown documents, and code separately, override the font *per file type*, and tune sizes and ligatures — all previewed live in the font picker.
+- **Live Reload That Respects Your Edits:** Files changed on disk reload in place while your buffer is clean — and never clobber unsaved edits.
 - **Deep LaTeX Math Support:** Perfectly renders complex inline and block mathematical equations, fractions, and multi-line matrices using KaTeX.
 - **Surgical Math Auto-Repair:** FATE includes a custom algorithmic layer that detects and dynamically heals corrupted backslash escapes (e.g., `\theta`, `\begin`, `\approx`) caused by poorly escaped markdown generators before they hit the screen.
 - **Interactive Table of Contents:** Automatically generates a sidebar table of contents. Headings containing math equations are flawlessly rendered directly in the sidebar!
@@ -17,14 +21,24 @@ FATE is a beautiful, elegant, and highly resilient Markdown viewer built specifi
 
 FATE supports standard accessibility shortcuts to improve your reading experience:
 
+Every shortcut below (except `Ctrl`+`1`–`9` and zoom) is rebindable in **Settings → Shortcuts**. Defaults:
+
 | Action | Shortcut |
 | --- | --- |
+| **Command palette** | `Ctrl` + `K` |
+| **New File** | `Ctrl` + `N` |
 | **Open File** | `Ctrl` + `O` |
-| **Close File / Return Home** | `Escape` |
-| **Zoom In** | `Ctrl` + `+` |
-| **Zoom Out** | `Ctrl` + `-` |
-| **Reset Zoom** | `Ctrl` + `0` |
-| **Print / Export PDF** | `Ctrl` + `P` |
+| **Save / Save As** | `Ctrl` + `S` / `Ctrl` + `Shift` + `S` |
+| **Find in file (editor)** | `Ctrl` + `F` |
+| **Edit / view markdown** | `Ctrl` + `E` |
+| **Split view** | `Ctrl` + `\` |
+| **Focus mode** | `Ctrl` + `Shift` + `F` |
+| **Next / previous tab** | `Ctrl` + `Tab` / `Ctrl` + `Shift` + `Tab` |
+| **Jump to tab** | `Ctrl` + `1`–`9` (9 = last) |
+| **Close tab** | `Ctrl` + `W` or `Escape` |
+| **Go home / Settings** | `Alt` + `Home` / `Ctrl` + `,` |
+| **Zoom In / Out / Reset** | `Ctrl` + `+` / `-` / `0` |
+| **Print preview / Export PDF** | `Ctrl` + `P` / `Ctrl` + `Shift` + `E` |
 
 ## How to Build from Source
 
@@ -80,6 +94,55 @@ reserved. MIT is a copyright licence and says nothing about trademarks, which is
 In short: fork freely, but **rename and re-skin before you distribute.**
 
 ## Changelog
+
+### v1.11.1
+- **[Feature]** **"Edit in FATE" on the right-click menu** for every file — a classic shell verb with the FATE badge, written by both the installer and the runtime self-heal. On Windows 11 it lives under *Show more options* (the top-level modern menu requires a packaged `IExplorerCommand`, which an NSIS install cannot provide — that's why Notepad++ ships a companion MSIX for theirs).
+- **[Feature]** **Settings → Windows → "Always show full context menus"**: the practical route to top-level placement — an opt-in, fully reversible per-user switch that restores Windows 11's classic right-click menu everywhere (where Edit in FATE sits at the top level), with a one-click Explorer restart to apply.
+- **[Bugfix]** Every shortcut shown in a tooltip or keycap chip (tab strip, home screen, header buttons) now renders the **live binding** instead of a hardcoded default — rebind an action and its hints follow.
+- **[Feature]** **Diff your unsaved changes.** The header's diff button (and `Ctrl+K` → "Diff unsaved changes") with no split open compares the current buffer against the last-saved state — side by side, chunk-aligned. With a split open it diffs the two panes as before. `Escape` exits a diff.
+- **[Enhancement]** New file default shortcut is now `Ctrl`+`T` (browser-style; rebindable as ever).
+- **[Bugfix]** The font picker opens upward when it sits near the bottom of the Settings pane instead of clipping into the modal edge.
+- **[Bugfix]** The registry self-heal now gates on `app.isPackaged` rather than `NODE_ENV`, so a production-mode dev run can never register ProgIds pointing at the development toolchain's electron.exe.
+- **[Fixed]** About-page copyright now credits VagueDustin Enterprises.
+
+### v1.11.0
+- **[Feature]** **Every file type gets its own gilded icon.** All 83 code extensions now carry a document icon derived from the same master artwork as the markdown mark — the navy sheet, gold border and folded corner are pixel-identical; the M↓ gives way to the extension set in gold (`PS1`, `PY`, `JS`, `GRAPHQL`, …). Generated by script from the master (`npm run icons`), shipped in `resources\fileicons\`, and wired through one ProgId per type (`FATE.py`, `FATE.ps1`, …) so Explorer shows the right icon the moment FATE becomes a type's default. Existing associations made on earlier builds keep working via the legacy shared ProgId.
+- **[Rebrand]** **FATE is now the *Formatted Article & Text Editor*.** The window title, taskbar, installer, Windows registration and Store metadata all carry the new name. Open documents title the window with **just the filename** (plus the unsaved `•`); the full name shows on the home screen. The app now installs to `C:\Program Files\VagueDustin Enterprises\FATE`, and the installer silently removes any pre-rename install first (cleaning up its directory), so the two never coexist.
+- **[Feature]** **New files.** `Ctrl`+`N` (or the tab-strip/home buttons) opens an untitled buffer; saving offers **every supported format**, and the editor re-detects its language from the extension you choose — buffer, cursor and undo history survive the naming.
+- **[Feature]** **Command palette** (`Ctrl`+`K`): one fuzzy search across open tabs, recent files, every command, and every theme.
+- **[Feature]** **Markdown edit mode.** A labelled **Edit** button (and `Ctrl`+`E`) switches a markdown tab from the reading view to a split source editor with **live preview**; save with `Ctrl`+`S`, switch back to **View** and the reading view reflects your edits instantly.
+- **[Feature]** **Split view** (`Ctrl`+`\`): any two open tabs side by side — built for ultrawides. The right pane has its own document selector, and a **Diff** toggle renders a chunk-aligned, syntax-highlighted comparison of the two panes (CodeMirror merge view, read-only snapshots).
+- **[Feature]** **Every shortcut is rebindable** in Settings → Shortcuts — sixteen actions with conflict detection and one-click reset. `Ctrl`+`1`–`9` stays fixed.
+- **[Feature]** **Four new themes** — Nord, Gruvbox, One Dark, Rosé Pine, each with its full syntax palette — plus a **custom theme builder**: pick seven colours, FATE derives the other ~30 tokens (borders, glows, gradients, syntax colours) and can export the generated CSS block.
+- **[Feature]** **Mermaid diagrams** render inside markdown (```mermaid fences), fully offline, theme-aware, loaded lazily only when a document contains one.
+- **[Feature]** **Session restore** (Settings → Appearance): reopen last session's tabs on launch. **Focus mode** (`Ctrl`+`Shift`+`F`): nothing but the document. **Reading time** joins the % read readout.
+- **[Feature]** **Microsoft Store builds now handle updates honestly.** electron-updater cannot update an AppX, so the Store build never starts it — the update button routes to the Store's own downloads page and Settings says so, instead of a check that pretends and fails.
+- **[Bugfix]** **The file-type coverage counter now counts the way Explorer decides** — user choice, then class default, then sole registered handler — instead of user choice alone, which under-reported (3 vs the real 22 on the author's machine; the sole-handler rule also exposed a classic PowerShell one-element-array unwrap bug, fixed). **Claim file types** takes every extension no app owns (per-user, one click, fully reversible from the same page); types owned by another app deep-link to FATE's page in Windows Settings — which now actually opens on FATE's page (the deep link needed `registeredAppMachine`, not `registeredAppUser`, for a per-machine registration).
+- **[Bugfix]** **Registration self-heals.** The app asserts its per-user file-type registration at launch (ProgIds pointing at the running executable), so a raced upgrade, a moved install directory, or a vanished HKLM key can no longer leave "Open with FATE" broken. Discovered after an uninstall/reinstall cycle left ProgIds referenced by UserChoice with no command.
+- **[Bugfix]** The installer's ".md default" checkbox is gone — defaults are managed from Settings → Windows, which is the only place that can actually set them on Windows 11 anyway.
+- **[Bugfix]** KaTeX's stylesheet import was lost in the 1.10.0 refactor, which made every equation render twice (once as maths, once as raw MathML text). Restored, with a comment explaining why it is load-bearing.
+
+### v1.10.0
+- **[Feature]** **Tabs.** Open any number of files at once, Notepad++-style — markdown and code mixed freely. Every pane stays alive while backgrounded, so scroll position, cursor, selection and undo history survive tab switches. `Ctrl`+`Tab`/`Ctrl`+`Shift`+`Tab` cycles, `Ctrl`+`1`–`9` jumps (9 = last), `Ctrl`+`W` or `Escape` closes, middle-click closes, and the badge button returns to the home screen without closing anything. Opening an already-open file activates its tab instead of duplicating it. Per-tab dirty dots; the window guard arms if *any* tab has unsaved edits.
+- **[Feature]** **A bundled font library, and font settings done properly.** Six code faces (JetBrains Mono — the new default, Fira Code, Cascadia Code, Source Code Pro, IBM Plex Mono, Roboto Mono) and five prose faces (Inter, IBM Plex Sans, Source Serif 4, Lora, Merriweather) ship inside the app — latin subsets only, fully offline, no CDN. Separate choices for interface, markdown documents, and code; text-size sliders for documents and the editor; a ligatures toggle; and **per-file-type overrides** so `.ps1` can render in Cascadia while `.py` uses Fira Code, per tab, live.
+- **[Feature]** **Settings, redesigned.** A navigation rail with seven sections replaces the single scrolling column. Theme cards render each theme *from its own design tokens* (`data-theme` scoping) rather than hand-kept swatches; the font picker renders every face in itself with a live sample line — ligatures visible before you commit.
+- **[Feature]** **Windows file associations for every supported type.** The installer registers a `FATE.CodeFile` ProgId and adds it to each of the 83 code extensions' "Open with" lists — *politely*: no extension's default handler is touched at install time. All types are declared on FATE's page in Windows Settings → Default apps, where you assign them yourself; Settings → Windows shows live coverage ("N of 86 file types currently open with FATE").
+- **[Bugfix]** **Markdown code fences hadn't been syntax-highlighted since the marked v5 upgrade.** The `highlight` option FATE passed was removed from marked years ago — it parsed fine and did nothing, while a hard-coded dark stylesheet shipped for markup that never existed (and would have been unreadable in the Light theme if it had). Fences now highlight through `marked-highlight`, and the colours come from the same `--syn-*` theme tokens the code editor uses — a ```powershell fence and an open `.ps1` tab are coloured identically, in every theme.
+- **[Performance]** The renderer bundle dropped ~720 KB by importing highlight.js's common-languages build instead of all ~190 languages.
+- **[Enhancement]** Multiple files can be dropped onto the home screen at once — each opens in its own tab.
+- **[Bugfix]** Print/PDF export with multiple tabs open renders only the active tab, never a concatenation.
+
+### v1.9.0
+- **[Feature]** **Full code viewing and editing.** FATE now opens code files — `.ps1`, `.html`, `.py`, `.js`, `.ts`, `.json`, `.css`, `.yaml`, `.sql`, `.sh`, `.bat` and 80+ more, plus extensionless standards like `Dockerfile` and `.gitignore` — in a real editor built on CodeMirror 6: syntax highlighting, line numbers, code folding, bracket matching, search & replace (`Ctrl`+`F`), multiple cursors, and full undo history. Markdown keeps its reading view; the two never mix.
+- **[Feature]** **Languages load lazily and entirely offline.** Each language ships inside the app as its own chunk and is loaded only the first time a file of that type is opened. No CDN, no network — the PRIVACY.md promise holds.
+- **[Feature]** **Saving, done carefully.** `Ctrl`+`S` (or the header button) writes back to disk; the window title carries the standard `•` unsaved marker. Unsaved changes are guarded at every exit: closing the file, opening another (from any path — dialog, recents, drag & drop, file association, a second instance), and closing the window all confirm first. A failed save keeps the guards armed.
+- **[Feature]** **Live reload that respects your edits.** An external change reloads a clean editor in place (cursor and undo history preserved). If the buffer is dirty, your edits win and the change is noted in the status bar instead. FATE's own saves are filtered out of the watcher entirely, so saving never bounces back as a fake external change.
+- **[Feature]** **Syntax colours are theme tokens.** Each of the four themes defines its own `--syn-*` palette — gold-led for FATE, GitHub-dark for Crimson, GitHub-light for Light, the official spec palette for Dracula — so switching themes retunes the highlighted code instantly, like every other surface.
+- **[Feature]** **Printing and PDF export work for code too.** The editor virtualises long files (only visible lines exist in the DOM), so printing renders the full buffer through a print-only path instead — black monospace on white, wrapped long lines, same headers, footers and page setup as markdown.
+- **[Feature]** The status bar shows the detected language and a live `Ln, Col` readout (written straight to the DOM, per the house scroll-performance rule). New Settings → Code Editor group: wrap long lines, indent size.
+- **[Enhancement]** The open dialog gains proper filters (All supported / Markdown / Code / All files), the dropzone accepts code files, recents show a code icon for code files, and the command line / "Open with" accepts every supported extension — previously it was hard-wired to `.md`.
+- **[Enhancement]** Dropped files with a resolvable path now route through the main process like every other open, so drag & drop gets live reload, recents, and the unsaved-changes guard too.
+- **[Bugfix]** Binary files and files over 25 MB are refused with a clear error instead of being fed to the renderer as garbage.
 
 ### v1.8.2
 - **[Bugfix]** **"Manage" / "Set as default" did nothing when clicked.** It shelled out to the Windows shell's Open-With dialog (`rundll32 shell32.dll,OpenAs_RunDLL`), and Windows *suppresses that dialog entirely* once a file type already has a confirmed handler — so the moment FATE genuinely became the default for `.md`, the button became a silent no-op. Correct invocation, valid file, no dialog, no error.

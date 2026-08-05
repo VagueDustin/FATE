@@ -729,8 +729,174 @@ kbd {
 }
 
 /* ════════════════════════════════════════════════════════════════════════════════════════════
+   TAB STRIP (1.10.0)
+   Visible whenever at least one document is open — including over the home screen, which shows
+   when no tab is active. Sits above the progress bar in the shell column.
+   ════════════════════════════════════════════════════════════════════════════════════════════ */
+
+.tab-strip {
+  flex-shrink: 0;
+  display: flex;
+  align-items: stretch;
+  height: 37px;
+  background: var(--surface-sunken);
+  border-bottom: 1px solid var(--border-default);
+  padding-right: 0.3rem;
+}
+
+/* The badge button: back to the home screen WITHOUT closing anything. */
+.tab-home {
+  width: 42px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-right: 1px solid var(--border-subtle);
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.16s var(--ease), background 0.16s var(--ease);
+}
+
+.tab-home svg {
+  color: var(--accent-default);
+}
+
+.tab-home:hover {
+  opacity: 1;
+  background: var(--accent-subtle);
+}
+
+.tab-home.active {
+  opacity: 1;
+  box-shadow: inset 0 -2px 0 var(--accent-default);
+}
+
+.tab-home:focus-visible,
+.tab:focus-visible {
+  outline: 2px solid var(--border-emphasis);
+  outline-offset: -2px;
+}
+
+.tab-scroll {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 1px;
+  padding: 4px 0.25rem 0;
+  overflow-x: auto;
+  /* A crowded strip scrolls; a fat scrollbar under the tabs would eat the row. */
+  scrollbar-width: none;
+}
+
+.tab-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0 0.4rem 0 0.7rem;
+  min-width: 96px;
+  max-width: 200px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.14s var(--ease), color 0.14s var(--ease);
+}
+
+.tab:hover {
+  background: var(--accent-subtle);
+  color: var(--text-primary);
+}
+
+/* The active tab fuses with the document surface below it — same background, gold keyline on top. */
+.tab.active {
+  background: var(--surface-base);
+  border-color: var(--border-default);
+  color: var(--text-primary);
+  box-shadow: inset 0 2px 0 var(--accent-default);
+}
+
+.tab-icon {
+  color: var(--accent-default);
+  flex-shrink: 0;
+}
+
+.tab-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.tab .dirty-dot {
+  width: 7px;
+  height: 7px;
+}
+
+.tab-close {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: background 0.14s var(--ease), color 0.14s var(--ease);
+}
+
+.tab-close:hover {
+  background: color-mix(in srgb, var(--status-danger) 18%, transparent);
+  color: var(--status-danger);
+}
+
+.tab-add {
+  align-self: center;
+  margin-left: 0.15rem;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════════════════════
    VIEWER
    ════════════════════════════════════════════════════════════════════════════════════════════ */
+
+/* Header row + pane stack for the open documents. */
+.viewer-shell {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.doc-panes {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/*
+ * One pane per open tab, ALL mounted; the inactive ones are display:none (inline style). Keeping
+ * them in the DOM is what preserves scroll position, cursor, selection and undo history across
+ * tab switches. The print stylesheet prints only .doc-pane-active.
+ */
+.doc-pane {
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
 
 .viewer-layout {
   flex: 1;
@@ -838,6 +1004,18 @@ kbd {
   display: flex;
   flex-direction: column;
   background: var(--surface-base);
+  position: relative; /* anchors .sidebar-reveal */
+}
+
+/* "Show contents" affordance when the TOC sidebar is hidden — floats over the document corner. */
+.sidebar-reveal {
+  position: absolute;
+  top: 0.6rem;
+  left: 0.6rem;
+  z-index: 5;
+  background: var(--surface-overlay);
+  border-color: var(--border-default);
+  box-shadow: var(--shadow-panel);
 }
 
 .viewer-header {
@@ -903,9 +1081,10 @@ kbd {
   max-width: 900px;
   margin: 0 auto;
   color: var(--text-primary);
-  font-family: var(--font-sans);
+  /* Both driven by Settings → Fonts (applyFonts in src/fonts.js writes the custom properties). */
+  font-family: var(--font-doc, var(--font-sans));
   line-height: 1.72;
-  font-size: 1.03rem;
+  font-size: var(--doc-font-size, 1.03rem);
 }
 
 /* Document headings use Cinzel. This is the one place the ceremonial register earns its keep in a
@@ -1080,6 +1259,95 @@ kbd {
   padding: 0.35rem 0;
 }
 
+/* ── Fenced code blocks (highlight.js) ───────────────────────────────────────────────────────
+   The .hljs-* classes map onto the SAME --syn-* tokens the code editor uses, so a ```powershell
+   block in a markdown document and an open .ps1 tab are coloured identically, and both follow the
+   active theme. (Replaces the bundled github-dark.css, which hard-coded one dark palette and was
+   unreadable in the Light theme.) */
+.markdown-body .hljs-keyword,
+.markdown-body .hljs-selector-tag,
+.markdown-body .hljs-doctag {
+  color: var(--syn-keyword);
+}
+
+.markdown-body .hljs-string,
+.markdown-body .hljs-quote,
+.markdown-body .hljs-addition {
+  color: var(--syn-string);
+}
+
+.markdown-body .hljs-comment {
+  color: var(--syn-comment);
+  font-style: italic;
+}
+
+.markdown-body .hljs-number,
+.markdown-body .hljs-literal {
+  color: var(--syn-number);
+}
+
+.markdown-body .hljs-title,
+.markdown-body .hljs-title.function_,
+.markdown-body .hljs-section {
+  color: var(--syn-function);
+}
+
+.markdown-body .hljs-type,
+.markdown-body .hljs-class .hljs-title,
+.markdown-body .hljs-title.class_,
+.markdown-body .hljs-built_in {
+  color: var(--syn-type);
+}
+
+.markdown-body .hljs-attr,
+.markdown-body .hljs-attribute,
+.markdown-body .hljs-property,
+.markdown-body .hljs-selector-attr,
+.markdown-body .hljs-selector-class,
+.markdown-body .hljs-selector-id,
+.markdown-body .hljs-variable.language_ {
+  color: var(--syn-attribute);
+}
+
+.markdown-body .hljs-tag .hljs-name,
+.markdown-body .hljs-name {
+  color: var(--syn-tag);
+}
+
+.markdown-body .hljs-variable,
+.markdown-body .hljs-template-variable,
+.markdown-body .hljs-params {
+  color: var(--syn-variable);
+}
+
+.markdown-body .hljs-meta,
+.markdown-body .hljs-meta .hljs-keyword {
+  color: var(--syn-meta);
+}
+
+.markdown-body .hljs-regexp,
+.markdown-body .hljs-char.escape_ {
+  color: var(--syn-regex);
+}
+
+.markdown-body .hljs-symbol,
+.markdown-body .hljs-bullet,
+.markdown-body .hljs-link {
+  color: var(--syn-constant);
+}
+
+.markdown-body .hljs-deletion {
+  color: var(--syn-invalid);
+}
+
+.markdown-body .hljs-emphasis {
+  font-style: italic;
+}
+
+.markdown-body .hljs-strong {
+  font-weight: 700;
+}
+
 /* ════════════════════════════════════════════════════════════════════════════════════════════
    SETTINGS MODAL
    ════════════════════════════════════════════════════════════════════════════════════════════ */
@@ -1096,12 +1364,12 @@ kbd {
   padding: 1.5rem;
 }
 
+/* Two-column shell: navigation rail + content pane (1.10.0 redesign). */
 .settings-modal {
-  width: 540px;
-  max-width: 100%;
-  max-height: 84vh;
-  display: flex;
-  flex-direction: column;
+  width: min(880px, 94vw);
+  height: min(620px, 90vh);
+  display: grid;
+  grid-template-columns: 188px minmax(0, 1fr);
   background: var(--surface-overlay);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
@@ -1109,42 +1377,450 @@ kbd {
   overflow: hidden;
 }
 
-.settings-header {
+/* ── Navigation rail ─────────────────────────────────────────────────────────────────────── */
+.settings-nav {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1rem 1rem 1rem 1.5rem;
-  border-bottom: 1px solid var(--border-default);
-  flex-shrink: 0;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.9rem 0.6rem;
+  background: var(--surface-sunken);
+  border-right: 1px solid var(--border-default);
+  min-height: 0;
 }
 
-.settings-header h2 {
-  margin: 0;
+.settings-nav-title h2 {
+  margin: 0 0 0.85rem;
+  padding: 0 0.55rem;
   font-family: var(--font-display);
-  font-size: 1.2rem;
+  font-size: 1.05rem;
   font-weight: 700;
   letter-spacing: var(--tracking-display);
   color: var(--text-primary);
 }
 
+.settings-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: 0.84rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+
+.settings-nav-item:hover {
+  background: var(--accent-subtle);
+  color: var(--text-primary);
+}
+
+.settings-nav-item.active {
+  background: var(--accent-subtle);
+  border-color: var(--border-default);
+  color: var(--text-accent);
+  font-weight: 600;
+}
+
+.settings-nav-item:focus-visible {
+  outline: 2px solid var(--border-emphasis);
+  outline-offset: -2px;
+}
+
+.settings-nav-foot {
+  margin-top: auto;
+  padding: 0.5rem 0.65rem 0;
+}
+
+.settings-nav-version {
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  color: var(--text-faint);
+}
+
+/* ── Content pane ────────────────────────────────────────────────────────────────────────── */
+.settings-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.settings-content-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.85rem 0.9rem 0.85rem 1.4rem;
+  border-bottom: 1px solid var(--border-default);
+  flex-shrink: 0;
+}
+
 .settings-body {
   overflow-y: auto;
   min-height: 0;
-  padding: 1.35rem 1.5rem 1.6rem;
+  padding: 1.25rem 1.4rem 1.6rem;
 }
 
 .setting-group {
-  margin-bottom: 1.6rem;
+  margin-bottom: 1.7rem;
 }
 
 .setting-group:last-child {
   margin-bottom: 0;
 }
 
-.setting-group > .section-label {
-  margin-bottom: 0.85rem;
-  padding-bottom: 0.5rem;
+/* Gilded group caption — the small-caps label treatment, scoped to the settings pane. */
+.group-caption {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  color: var(--text-accent);
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.45rem;
   border-bottom: 1px solid var(--border-subtle);
+}
+
+.group-hint {
+  display: block;
+  margin: 0 0 0.8rem;
+}
+
+.btn-compact {
+  padding: 0.4rem 0.8rem;
+  font-size: 0.8rem;
+}
+
+/* ── Theme cards ─────────────────────────────────────────────────────────────────────────────
+   Each card carries data-theme="<value>", so every custom property inside it resolves to THAT
+   theme's tokens: the preview is drawn from the theme's real values, not hand-kept swatches. */
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 0.7rem;
+}
+
+.theme-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.55rem 0.6rem 0.6rem;
+  background: var(--surface-base);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-sans);
+  transition: border-color 0.16s var(--ease), box-shadow 0.16s var(--ease), transform 0.12s var(--ease);
+}
+
+.theme-card:hover {
+  border-color: var(--border-emphasis);
+  transform: translateY(-1px);
+}
+
+.theme-card.selected {
+  border-color: var(--accent-default);
+  box-shadow: var(--shadow-glow-soft);
+}
+
+.theme-card:focus-visible {
+  outline: 2px solid var(--border-emphasis);
+  outline-offset: 2px;
+}
+
+.tc-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0.55rem;
+  margin-bottom: 0.45rem;
+  border-radius: var(--radius-sm);
+  background-color: var(--surface-base);
+  background-image: var(--gradient-depth);
+  border: 1px solid var(--border-subtle);
+}
+
+.tc-chrome {
+  height: 6px;
+  border-radius: 2px;
+  background: var(--surface-highest);
+}
+
+.tc-line {
+  height: 4px;
+  width: 88%;
+  border-radius: 2px;
+  background: var(--text-faint);
+  opacity: 0.55;
+}
+
+.tc-line.wide {
+  width: 100%;
+}
+
+.tc-line.narrow {
+  width: 58%;
+}
+
+.tc-accent {
+  height: 5px;
+  width: 38%;
+  border-radius: 2px;
+  background: var(--accent-default);
+}
+
+.tc-label {
+  font-size: 0.83rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.tc-sub {
+  font-size: 0.66rem;
+  color: var(--text-faint);
+}
+
+.tc-check {
+  position: absolute;
+  top: 0.55rem;
+  right: 0.55rem;
+  color: var(--accent-default);
+}
+
+/* ── Font picker ─────────────────────────────────────────────────────────────────────────────
+   Custom listbox: a native <select> cannot render each option in its own typeface, and seeing
+   the face is the point. */
+.font-picker {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.font-picker-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-width: 196px;
+  padding: 0.45rem 0.6rem;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: border-color 0.16s var(--ease);
+}
+
+.font-picker-btn:hover,
+.font-picker-btn:focus-visible {
+  border-color: var(--border-emphasis);
+  outline: none;
+}
+
+.fp-caret {
+  color: var(--text-faint);
+  transition: transform 0.18s var(--ease);
+}
+
+.fp-caret.up {
+  transform: rotate(180deg);
+}
+
+.font-picker-list.up {
+  top: auto;
+  bottom: calc(100% + 4px);
+}
+
+.font-picker-list {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 40;
+  width: 305px;
+  max-height: 290px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0.3rem;
+  list-style: none;
+  background: var(--surface-overlay);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-panel);
+}
+
+.fp-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.12s var(--ease);
+}
+
+.fp-option:hover,
+.fp-option.selected {
+  background: var(--accent-subtle);
+}
+
+.fp-texts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.fp-name {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+}
+
+.fp-tag {
+  font-family: var(--font-sans);
+  font-size: 0.56rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 0.08rem 0.32rem;
+  border-radius: var(--radius-pill);
+  background: var(--accent-subtle);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-accent);
+}
+
+.fp-sample {
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fp-check {
+  color: var(--accent-default);
+  flex-shrink: 0;
+}
+
+/* ── Size sliders ────────────────────────────────────────────────────────────────────────── */
+.size-slider {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-shrink: 0;
+}
+
+.size-slider input[type='range'] {
+  width: 150px;
+  accent-color: var(--accent-default);
+}
+
+.size-readout {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  min-width: 40px;
+  text-align: right;
+}
+
+/* ── Per-file-type font overrides ────────────────────────────────────────────────────────── */
+.override-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-bottom: 0.55rem;
+}
+
+.override-ext {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--text-accent);
+  background: var(--accent-subtle);
+  border: 1px solid var(--border-subtle);
+  padding: 0.3rem 0.5rem;
+  border-radius: var(--radius-sm);
+  min-width: 64px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.override-row .font-picker {
+  flex: 1;
+  min-width: 0;
+}
+
+.override-row .font-picker-btn {
+  width: 100%;
+  min-width: 0;
+}
+
+.override-remove:hover {
+  color: var(--status-danger);
+  background: color-mix(in srgb, var(--status-danger) 14%, transparent);
+}
+
+.override-add select {
+  flex: 1;
+  min-width: 0;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-default);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--radius-sm);
+  outline: none;
+}
+
+.override-add select:focus-visible {
+  border-color: var(--border-emphasis);
+}
+
+/* ── Association coverage (Windows section) ──────────────────────────────────────────────── */
+.coverage-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1.05rem;
+  margin-bottom: 0.7rem;
+  background: var(--gradient-panel);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+}
+
+.coverage-count {
+  font-family: var(--font-display);
+  font-size: 1.65rem;
+  font-weight: 700;
+  color: var(--text-accent);
+  line-height: 1.1;
+}
+
+.coverage-total {
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  font-weight: 400;
+  color: var(--text-faint);
+}
+
+.coverage-caption {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-top: 0.15rem;
 }
 
 .setting-item {
@@ -1411,6 +2087,610 @@ kbd {
   }
 }
 
+/* ════════════════════════════════════════════════════════════════════════════════════════════
+   CODE EDITOR (CodeMirror)
+   All chrome colour comes from the theme tokens; syntax colours come from the --syn-* tokens via
+   the HighlightStyle in CodeEditor.jsx. There is deliberately no per-theme CSS here — switching
+   themes retunes the editor exactly like the rest of the app.
+   ════════════════════════════════════════════════════════════════════════════════════════════ */
+
+.code-editor {
+  flex: 1;
+  min-height: 0; /* load-bearing: without it the editor refuses to shrink and pushes the status bar off-screen */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface-base);
+}
+
+.code-editor .cm-editor {
+  flex: 1;
+  min-height: 0;
+  background: transparent;
+  color: var(--text-primary);
+}
+
+.code-editor .cm-editor.cm-focused {
+  outline: none; /* the window edge is not a form control; focus is evident from the cursor */
+}
+
+.code-editor .cm-scroller {
+  /* --editor-font is set per TAB (per-file-type font overrides); the size and ligature toggles
+     are global, all from Settings → Fonts. */
+  font-family: var(--editor-font, var(--font-mono));
+  font-size: var(--editor-font-size, 0.875rem);
+  font-variant-ligatures: var(--editor-liga, normal);
+  line-height: 1.6;
+  overflow: auto;
+}
+
+.code-editor .cm-content {
+  padding: 0.75rem 0;
+  caret-color: var(--accent-hover);
+}
+
+.code-editor .cm-cursor,
+.code-editor .cm-dropCursor {
+  border-left-color: var(--accent-hover);
+}
+
+.code-editor .cm-gutters {
+  background: var(--surface-base);
+  color: var(--text-faint);
+  border-right: 1px solid var(--border-subtle);
+  padding-right: 0.25rem;
+}
+
+.code-editor .cm-activeLineGutter {
+  background: var(--accent-subtle);
+  color: var(--text-accent);
+}
+
+.code-editor .cm-activeLine {
+  background: var(--accent-subtle);
+}
+
+.code-editor .cm-selectionBackground,
+.code-editor .cm-content ::selection {
+  background: var(--surface-highest);
+}
+
+.code-editor .cm-focused .cm-selectionBackground {
+  background: var(--surface-highest);
+}
+
+.code-editor .cm-selectionMatch {
+  background: var(--accent-subtle);
+}
+
+.code-editor .cm-matchingBracket,
+.code-editor .cm-focused .cm-matchingBracket {
+  background: var(--accent-subtle);
+  outline: 1px solid var(--border-emphasis);
+}
+
+.code-editor .cm-nonmatchingBracket,
+.code-editor .cm-focused .cm-nonmatchingBracket {
+  background: var(--accent-subtle);
+  outline: 1px solid var(--status-danger);
+}
+
+.code-editor .cm-searchMatch {
+  background: var(--accent-subtle);
+  outline: 1px solid var(--border-default);
+}
+
+.code-editor .cm-searchMatch-selected {
+  background: var(--accent-subtle);
+  outline: 1px solid var(--border-emphasis);
+}
+
+.code-editor .cm-foldPlaceholder {
+  background: var(--surface-overlay);
+  border: 1px solid var(--border-default);
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  padding: 0 0.4rem;
+}
+
+/* Search panel (Ctrl+F) and any other CodeMirror panels. */
+.code-editor .cm-panels {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+.code-editor .cm-panels.cm-panels-top {
+  border-bottom: 1px solid var(--border-default);
+}
+
+.code-editor .cm-panel.cm-search {
+  padding: 0.45rem 0.7rem;
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+}
+
+.code-editor .cm-panel.cm-search input,
+.code-editor .cm-panel.cm-search button,
+.code-editor .cm-panel.cm-search label {
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  color: var(--text-primary);
+}
+
+.code-editor .cm-panel.cm-search input {
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: 0.25rem 0.5rem;
+  outline: none;
+}
+
+.code-editor .cm-panel.cm-search input:focus {
+  border-color: var(--border-emphasis);
+}
+
+.code-editor .cm-panel.cm-search button {
+  background: var(--surface-overlay);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: 0.22rem 0.55rem;
+  cursor: pointer;
+  text-transform: none;
+}
+
+.code-editor .cm-panel.cm-search button:hover {
+  background: var(--surface-highest);
+  border-color: var(--border-emphasis);
+}
+
+.code-editor .cm-panel.cm-search [name='close'] {
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  font-size: 1rem;
+}
+
+/* Autocomplete and hover tooltips. */
+.cm-tooltip {
+  background: var(--surface-overlay);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-panel);
+}
+
+.cm-tooltip.cm-tooltip-autocomplete > ul {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+}
+
+.cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected] {
+  background: var(--accent-subtle);
+  color: var(--text-accent);
+}
+
+/* Unsaved-changes dot beside the filename in the viewer header. */
+.dirty-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-default);
+  box-shadow: var(--shadow-glow-soft);
+  flex-shrink: 0;
+}
+
+/* Language + Ln/Col readouts in the status bar (code mode). */
+.status-lang,
+.status-cursor {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+/* The print-only snapshot of the code buffer. Never visible on screen — see @media print. */
+.code-print-body {
+  display: none;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════════════════════
+   1.11.0 SURFACES — palette, split view, diff, markdown edit mode, focus mode, custom themes
+   ════════════════════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Command palette (Ctrl+K) ────────────────────────────────────────────────────────────── */
+.palette-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgb(2 6 23 / 55%);
+  backdrop-filter: blur(4px);
+  z-index: 1100;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+}
+
+.palette {
+  width: min(600px, 92vw);
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-overlay);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-panel);
+  overflow: hidden;
+}
+
+.palette-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.75rem 0.9rem;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.palette-glass {
+  color: var(--accent-default);
+  flex-shrink: 0;
+}
+
+.palette-input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+}
+
+.palette-input::placeholder {
+  color: var(--text-faint);
+}
+
+.palette-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.35rem;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.palette-item {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.86rem;
+  color: var(--text-primary);
+}
+
+.palette-item.selected {
+  background: var(--accent-subtle);
+  color: var(--text-accent);
+}
+
+.palette-icon {
+  color: var(--accent-default);
+  flex-shrink: 0;
+}
+
+.palette-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.palette-section {
+  font-size: 0.64rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.palette-empty {
+  padding: 1rem;
+  text-align: center;
+  color: var(--text-faint);
+  font-size: 0.85rem;
+}
+
+/* ── Split view ──────────────────────────────────────────────────────────────────────────── */
+/* Layout is CSS-only so the panes never re-parent — re-parenting would remount the editors and
+   lose their state. Active pane left (order 0), split pane right (order 1). */
+.doc-panes.split {
+  flex-direction: row;
+}
+
+.doc-panes.split .doc-pane {
+  flex: 1 1 50%;
+  min-width: 0;
+}
+
+.doc-panes.split .doc-pane-active {
+  order: 0;
+  border-right: 1px solid var(--border-default);
+}
+
+.doc-panes.split .doc-pane-split-right {
+  order: 1;
+}
+
+.split-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.45rem;
+  background: var(--surface-raised);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.split-bar select {
+  flex: 1;
+  min-width: 0;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-default);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  padding: 0.25rem 0.4rem;
+  border-radius: var(--radius-sm);
+  outline: none;
+}
+
+.icon-btn.toggled {
+  color: var(--text-accent);
+  background: var(--accent-subtle);
+  border-color: var(--border-default);
+}
+
+/* ── Diff view ───────────────────────────────────────────────────────────────────────────── */
+.diff-view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-base);
+}
+
+.diff-titles {
+  flex-shrink: 0;
+  display: flex;
+  border-bottom: 1px solid var(--border-default);
+  background: var(--surface-raised);
+}
+
+.diff-title {
+  flex: 1;
+  min-width: 0;
+  padding: 0.4rem 0.8rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.diff-title + .diff-title {
+  border-left: 1px solid var(--border-default);
+}
+
+.diff-host {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.diff-host .cm-mergeView {
+  height: 100%;
+}
+
+.diff-host .cm-editor {
+  background: transparent;
+  color: var(--text-primary);
+}
+
+.diff-host .cm-scroller {
+  font-family: var(--font-mono);
+  font-size: var(--editor-font-size, 0.875rem);
+  line-height: 1.6;
+}
+
+.diff-host .cm-gutters {
+  background: var(--surface-base);
+  color: var(--text-faint);
+  border-right: 1px solid var(--border-subtle);
+}
+
+/* Change highlighting from the status tokens, softened for area fills. */
+.diff-host .cm-changedLine,
+.diff-host .cm-deletedChunk {
+  background: color-mix(in srgb, var(--status-danger) 12%, transparent);
+}
+
+.diff-host .cm-mergeView .cm-changedLine {
+  background: color-mix(in srgb, var(--status-success) 10%, transparent);
+}
+
+.diff-host .cm-changedText {
+  background: color-mix(in srgb, var(--accent-default) 26%, transparent);
+}
+
+.diff-host .cm-collapsedLines {
+  background: var(--surface-raised);
+  color: var(--text-faint);
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+/* ── Markdown edit mode (source + live preview) ──────────────────────────────────────────── */
+.md-edit-split {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.md-edit-editor {
+  flex: 1 1 50%;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border-default);
+}
+
+.md-edit-editor .code-editor {
+  flex: 1;
+  min-height: 0;
+}
+
+.md-edit-preview {
+  flex: 1 1 50%;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 2rem 1.75rem 3rem;
+  background: var(--surface-base);
+}
+
+.edit-toggle {
+  gap: 0.35rem;
+}
+
+/* ── Focus mode: nothing but the document ────────────────────────────────────────────────── */
+.app-shell.focus-mode .tab-strip,
+.app-shell.focus-mode .viewer-header,
+.app-shell.focus-mode .status-bar,
+.app-shell.focus-mode .sidebar,
+.app-shell.focus-mode .sidebar-resizer,
+.app-shell.focus-mode .sidebar-reveal,
+.app-shell.focus-mode .progress-bar-container {
+  display: none;
+}
+
+/* ── Mermaid diagrams ────────────────────────────────────────────────────────────────────── */
+.mermaid-diagram {
+  margin: 1rem 0 1.4rem;
+  padding: 1rem;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+  text-align: center;
+}
+
+.mermaid-diagram svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ── Custom theme builder ────────────────────────────────────────────────────────────────── */
+.custom-theme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 0.55rem;
+  margin-bottom: 0.8rem;
+}
+
+.custom-color {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.4rem 0.55rem;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.custom-color input[type='color'] {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: none;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.custom-color-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.75rem;
+  color: var(--text-primary);
+}
+
+.custom-color-hex {
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  color: var(--text-faint);
+}
+
+.custom-theme-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* ── Shortcut conflicts & layout bits ────────────────────────────────────────────────────── */
+.shortcuts-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.shortcuts-head .group-caption {
+  flex: 1;
+  margin-bottom: 0;
+  border-bottom: 0;
+}
+
+.shortcuts-head + .setting-item,
+.shortcuts-head + .shortcut-conflict {
+  margin-top: 0.75rem;
+}
+
+.setting-label.conflicted,
+.shortcut-conflict {
+  color: var(--status-danger);
+}
+
+.shortcut-btn.conflicted {
+  border-color: var(--status-danger);
+}
+
+.shortcut-btn .kbd-group {
+  margin-left: 0;
+}
+
+.coverage-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  align-items: stretch;
+}
+
+.home-actions {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.home-actions .btn-open {
+  flex: 1;
+}
+
 /* Print: force light-on-white regardless of the active theme. Printing a navy page wastes ink and
    reads badly — before 1.5.0 this rule printed the dark theme verbatim. */
 @media print {
@@ -1424,6 +2704,8 @@ kbd {
   body,
   .app-shell,
   .app-main,
+  .viewer-shell,
+  .doc-panes,
   .viewer-layout,
   .viewer-main,
   .markdown-container,
@@ -1439,12 +2721,35 @@ kbd {
     print-color-adjust: exact !important;
   }
 
+  /*
+   * Tabs: ONLY the active pane prints. Inactive panes are display:none via inline style, which
+   * nothing here overrides — but the active pane's inline flex must be flattened and unclipped
+   * like the containers above, or the export clips to one viewport.
+   */
+  .doc-pane-active {
+    display: block !important;
+    background: #fff !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  .tab-strip,
+  .sidebar-reveal,
   .sidebar,
   .sidebar-resizer,
   .viewer-header,
   .progress-bar-container,
   .status-bar,
-  .settings-modal-backdrop {
+  .settings-modal-backdrop,
+  .palette-backdrop,
+  .split-bar,
+  .diff-view,
+  .md-edit-split {
+    display: none !important;
+  }
+
+  /* A split prints only the active pane, full width. */
+  .doc-panes.split .doc-pane-split-right {
     display: none !important;
   }
 
@@ -1558,6 +2863,34 @@ kbd {
   }
 
   .markdown-body .katex-display {
+    overflow: visible !important;
+  }
+
+  /*
+   * ── Code files ────────────────────────────────────────────────────────────────────────────
+   * The live editor is HIDDEN in print: CodeMirror virtualises long documents, so only the
+   * visible lines exist as DOM nodes — printing it would yield one truncated page. The
+   * .code-print-body <pre> (populated with the full buffer by runPrintJob just before the job,
+   * display:none on screen) is what actually reaches paper. Plain black on white, deliberately:
+   * screen syntax colours are theme ink, not print ink.
+   */
+  .code-editor {
+    display: none !important;
+  }
+
+  .code-print-body {
+    display: block !important;
+    background: #fff !important;
+    color: #111 !important;
+    font-family: var(--font-mono);
+    font-size: 9pt;
+    line-height: 1.5;
+    margin: 0;
+    /* Long lines wrap rather than being cropped at the page margin. `anywhere` because code has
+       long unbroken tokens (URLs, base64, minified fragments) that would otherwise overflow. */
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    max-width: 100% !important;
     overflow: visible !important;
   }
 }

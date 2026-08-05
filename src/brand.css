@@ -102,6 +102,23 @@
 
   /* Code blocks: navy-tinted rather than the highlight.js default gray. */
   --code-bg: #020617;
+
+  /* Syntax highlighting (code editor). Gold carries keywords — the brand accent doing the work —
+     with cool navy-adjacent hues for everything else so the gold stays the loudest voice. */
+  --syn-keyword: #F2C94C;
+  --syn-string: #A6E26A;
+  --syn-comment: #76849F;
+  --syn-number: #7FD6E0;
+  --syn-function: #FFE9A8;
+  --syn-variable: #E6EAF2;
+  --syn-attribute: #B9C7F2;
+  --syn-type: #F0A868;
+  --syn-tag: #7FB4F2;
+  --syn-punct: #94A0BB;
+  --syn-meta: #94A0BB;
+  --syn-regex: #E8A16B;
+  --syn-constant: #D9A6F2;
+  --syn-invalid: #E8617A;
 }
 
 /* ════════════════════════════════════════════════════════════════════════════════════════════
@@ -144,6 +161,22 @@
   --shadow-glow-soft: 0 0 20px -6px rgba(229, 62, 62, 0.32);
 
   --code-bg: #161B22;
+
+  /* Syntax highlighting: the GitHub-dark palette, which is what these surfaces came from. */
+  --syn-keyword: #FF7B72;
+  --syn-string: #A5D6FF;
+  --syn-comment: #8B949E;
+  --syn-number: #79C0FF;
+  --syn-function: #D2A8FF;
+  --syn-variable: #C9D1D9;
+  --syn-attribute: #79C0FF;
+  --syn-type: #FFA657;
+  --syn-tag: #7EE787;
+  --syn-punct: #9CA3AF;
+  --syn-meta: #8B949E;
+  --syn-regex: #A5D6FF;
+  --syn-constant: #79C0FF;
+  --syn-invalid: #F56565;
 }
 
 /* ════════════════════════════════════════════════════════════════════════════════════════════
@@ -187,6 +220,243 @@
   --shadow-glow-soft: 0 0 18px -8px rgba(184, 144, 43, 0.28);
 
   --code-bg: #F6F8FA;
+
+  /* Syntax highlighting: the GitHub-light palette — every value clears AA on white. */
+  --syn-keyword: #CF222E;
+  --syn-string: #0A3069;
+  --syn-comment: #6E7781;
+  --syn-number: #0550AE;
+  --syn-function: #8250DF;
+  --syn-variable: #24292F;
+  --syn-attribute: #0550AE;
+  --syn-type: #953800;
+  --syn-tag: #116329;
+  --syn-punct: #57606A;
+  --syn-meta: #6E7781;
+  --syn-regex: #0A3069;
+  --syn-constant: #0550AE;
+  --syn-invalid: #82071E;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════════════════════
+   NORD — the arctic community palette (nordtheme.com), verbatim. Added 1.11.0.
+   ════════════════════════════════════════════════════════════════════════════════════════════ */
+[data-theme='nord'] {
+  --surface-base: #2E3440;
+  --surface-raised: #3B4252;
+  --surface-overlay: #434C5E;
+  --surface-sunken: #272C36;
+  --surface-highest: #4C566A;
+
+  --border-subtle: rgba(136, 192, 208, 0.12);
+  --border-default: #4C566A;
+  --border-emphasis: #88C0D0;
+
+  --text-primary: #ECEFF4;
+  --text-muted: #D8DEE9;
+  --text-faint: #9AA5B8;
+  --text-inverse: #2E3440;
+  --text-accent: #88C0D0;
+
+  --accent-default: #88C0D0;
+  --accent-hover: #8FBCBB;
+  --accent-pressed: #5E81AC;
+  --accent-subtle: rgba(136, 192, 208, 0.13);
+  --accent-glow: rgba(136, 192, 208, 0.4);
+
+  --status-danger: #BF616A;
+  --status-success: #A3BE8C;
+
+  --gradient-depth: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(136, 192, 208, 0.07), transparent);
+  --gradient-accent-text: linear-gradient(135deg, #8FBCBB 0%, #88C0D0 50%, #81A1C1 100%);
+  --gradient-panel: linear-gradient(180deg, rgba(59, 66, 82, 0.85), rgba(46, 52, 64, 0.92));
+
+  --shadow-panel: 0 20px 50px -24px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(76, 86, 106, 0.5);
+  --shadow-glow: 0 0 0 1px rgba(136, 192, 208, 0.35), 0 8px 30px -8px rgba(136, 192, 208, 0.4);
+  --shadow-glow-soft: 0 0 20px -6px rgba(136, 192, 208, 0.35);
+
+  --code-bg: #272C36;
+
+  --syn-keyword: #81A1C1;
+  --syn-string: #A3BE8C;
+  --syn-comment: #7B88A1;
+  --syn-number: #B48EAD;
+  --syn-function: #88C0D0;
+  --syn-variable: #D8DEE9;
+  --syn-attribute: #8FBCBB;
+  --syn-type: #8FBCBB;
+  --syn-tag: #81A1C1;
+  --syn-punct: #9AA5B8;
+  --syn-meta: #5E81AC;
+  --syn-regex: #EBCB8B;
+  --syn-constant: #D08770;
+  --syn-invalid: #BF616A;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════════════════════
+   GRUVBOX DARK — retro warmth (github.com/morhetz/gruvbox), medium contrast. Added 1.11.0.
+   ════════════════════════════════════════════════════════════════════════════════════════════ */
+[data-theme='gruvbox'] {
+  --surface-base: #282828;
+  --surface-raised: #32302F;
+  --surface-overlay: #3C3836;
+  --surface-sunken: #1D2021;
+  --surface-highest: #504945;
+
+  --border-subtle: rgba(250, 189, 47, 0.1);
+  --border-default: #504945;
+  --border-emphasis: #FABD2F;
+
+  --text-primary: #EBDBB2;
+  --text-muted: #BDAE93;
+  --text-faint: #928374;
+  --text-inverse: #282828;
+  --text-accent: #FABD2F;
+
+  --accent-default: #D79921;
+  --accent-hover: #FABD2F;
+  --accent-pressed: #B57614;
+  --accent-subtle: rgba(215, 153, 33, 0.14);
+  --accent-glow: rgba(250, 189, 47, 0.4);
+
+  --status-danger: #FB4934;
+  --status-success: #B8BB26;
+
+  --gradient-depth: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(215, 153, 33, 0.07), transparent);
+  --gradient-accent-text: linear-gradient(135deg, #FABD2F 0%, #D79921 55%, #FE8019 100%);
+  --gradient-panel: linear-gradient(180deg, rgba(60, 56, 54, 0.85), rgba(40, 40, 40, 0.92));
+
+  --shadow-panel: 0 20px 50px -24px rgba(0, 0, 0, 0.65), inset 0 0 0 1px rgba(80, 73, 69, 0.6);
+  --shadow-glow: 0 0 0 1px rgba(250, 189, 47, 0.35), 0 8px 30px -8px rgba(250, 189, 47, 0.4);
+  --shadow-glow-soft: 0 0 20px -6px rgba(250, 189, 47, 0.32);
+
+  --code-bg: #1D2021;
+
+  --syn-keyword: #FB4934;
+  --syn-string: #B8BB26;
+  --syn-comment: #928374;
+  --syn-number: #D3869B;
+  --syn-function: #FABD2F;
+  --syn-variable: #EBDBB2;
+  --syn-attribute: #83A598;
+  --syn-type: #8EC07C;
+  --syn-tag: #8EC07C;
+  --syn-punct: #A89984;
+  --syn-meta: #928374;
+  --syn-regex: #FE8019;
+  --syn-constant: #D3869B;
+  --syn-invalid: #FB4934;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════════════════════
+   ONE DARK — Atom's classic editor palette. Added 1.11.0.
+   ════════════════════════════════════════════════════════════════════════════════════════════ */
+[data-theme='onedark'] {
+  --surface-base: #282C34;
+  --surface-raised: #2C313A;
+  --surface-overlay: #333842;
+  --surface-sunken: #21252B;
+  --surface-highest: #3E4451;
+
+  --border-subtle: rgba(97, 175, 239, 0.1);
+  --border-default: #3E4451;
+  --border-emphasis: #61AFEF;
+
+  --text-primary: #ABB2BF;
+  --text-muted: #9198A5;
+  --text-faint: #6B7382;
+  --text-inverse: #282C34;
+  --text-accent: #61AFEF;
+
+  --accent-default: #61AFEF;
+  --accent-hover: #74BAFF;
+  --accent-pressed: #4D8FC7;
+  --accent-subtle: rgba(97, 175, 239, 0.12);
+  --accent-glow: rgba(97, 175, 239, 0.4);
+
+  --status-danger: #E06C75;
+  --status-success: #98C379;
+
+  --gradient-depth: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(97, 175, 239, 0.07), transparent);
+  --gradient-accent-text: linear-gradient(135deg, #74BAFF 0%, #61AFEF 50%, #C678DD 100%);
+  --gradient-panel: linear-gradient(180deg, rgba(51, 56, 66, 0.85), rgba(40, 44, 52, 0.92));
+
+  --shadow-panel: 0 20px 50px -24px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(62, 68, 81, 0.6);
+  --shadow-glow: 0 0 0 1px rgba(97, 175, 239, 0.35), 0 8px 30px -8px rgba(97, 175, 239, 0.4);
+  --shadow-glow-soft: 0 0 20px -6px rgba(97, 175, 239, 0.35);
+
+  --code-bg: #21252B;
+
+  --syn-keyword: #C678DD;
+  --syn-string: #98C379;
+  --syn-comment: #5C6370;
+  --syn-number: #D19A66;
+  --syn-function: #61AFEF;
+  --syn-variable: #ABB2BF;
+  --syn-attribute: #D19A66;
+  --syn-type: #E5C07B;
+  --syn-tag: #E06C75;
+  --syn-punct: #848B98;
+  --syn-meta: #5C6370;
+  --syn-regex: #56B6C2;
+  --syn-constant: #56B6C2;
+  --syn-invalid: #E06C75;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════════════════════
+   ROSÉ PINE — "all natural pine, faux fur and a bit of soho vibes" (rosepinetheme.com).
+   Added 1.11.0.
+   ════════════════════════════════════════════════════════════════════════════════════════════ */
+[data-theme='rosepine'] {
+  --surface-base: #191724;
+  --surface-raised: #1F1D2E;
+  --surface-overlay: #26233A;
+  --surface-sunken: #16141F;
+  --surface-highest: #403D52;
+
+  --border-subtle: rgba(235, 188, 186, 0.1);
+  --border-default: #403D52;
+  --border-emphasis: #EBBCBA;
+
+  --text-primary: #E0DEF4;
+  --text-muted: #908CAA;
+  --text-faint: #6E6A86;
+  --text-inverse: #191724;
+  --text-accent: #EBBCBA;
+
+  --accent-default: #EBBCBA;
+  --accent-hover: #F6C177;
+  --accent-pressed: #D7827E;
+  --accent-subtle: rgba(235, 188, 186, 0.12);
+  --accent-glow: rgba(235, 188, 186, 0.38);
+
+  --status-danger: #EB6F92;
+  --status-success: #9CCFD8;
+
+  --gradient-depth: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(196, 167, 231, 0.08), transparent);
+  --gradient-accent-text: linear-gradient(135deg, #F6C177 0%, #EBBCBA 50%, #C4A7E7 100%);
+  --gradient-panel: linear-gradient(180deg, rgba(38, 35, 58, 0.85), rgba(25, 23, 36, 0.92));
+
+  --shadow-panel: 0 20px 50px -24px rgba(0, 0, 0, 0.7), inset 0 0 0 1px rgba(64, 61, 82, 0.6);
+  --shadow-glow: 0 0 0 1px rgba(235, 188, 186, 0.35), 0 8px 30px -8px rgba(235, 188, 186, 0.4);
+  --shadow-glow-soft: 0 0 20px -6px rgba(235, 188, 186, 0.32);
+
+  --code-bg: #16141F;
+
+  --syn-keyword: #31748F;
+  --syn-string: #F6C177;
+  --syn-comment: #6E6A86;
+  --syn-number: #C4A7E7;
+  --syn-function: #EBBCBA;
+  --syn-variable: #E0DEF4;
+  --syn-attribute: #9CCFD8;
+  --syn-type: #9CCFD8;
+  --syn-tag: #EB6F92;
+  --syn-punct: #908CAA;
+  --syn-meta: #6E6A86;
+  --syn-regex: #F6C177;
+  --syn-constant: #C4A7E7;
+  --syn-invalid: #EB6F92;
 }
 
 /* ════════════════════════════════════════════════════════════════════════════════════════════
@@ -228,4 +498,20 @@
   --shadow-glow-soft: 0 0 20px -6px rgba(189, 147, 249, 0.35);
 
   --code-bg: #21222C;
+
+  /* Syntax highlighting: the official Dracula spec assignments. */
+  --syn-keyword: #FF79C6;
+  --syn-string: #F1FA8C;
+  --syn-comment: #6272A4;
+  --syn-number: #BD93F9;
+  --syn-function: #50FA7B;
+  --syn-variable: #F8F8F2;
+  --syn-attribute: #8BE9FD;
+  --syn-type: #8BE9FD;
+  --syn-tag: #FF79C6;
+  --syn-punct: #C3C9E0;
+  --syn-meta: #6272A4;
+  --syn-regex: #F1FA8C;
+  --syn-constant: #BD93F9;
+  --syn-invalid: #FF5555;
 }

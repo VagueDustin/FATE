@@ -21,11 +21,41 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('open-file');
     ipcRenderer.on('open-file', (_event, content, name, path) => callback(content, name, path));
   },
+  // The path rides along so the renderer can route the update to the right TAB — any number of
+  // files can be watched at once since 1.10.0.
   onFileChanged: (callback) => {
     ipcRenderer.removeAllListeners('file-changed');
-    ipcRenderer.on('file-changed', (_event, content) => callback(content));
+    ipcRenderer.on('file-changed', (_event, content, path) => callback(content, path));
   },
   openFileDialog: () => ipcRenderer.invoke('open-file-dialog'),
+
+  /** A tab closed — the main process stops watching its file. */
+  closeFile: (filePath) => ipcRenderer.send('close-file', filePath),
+
+  /**
+   * Code-editor persistence.
+   *
+   * `saveFile` writes the buffer back to the path it was opened from; the main process remembers
+   * the written content so its file watcher can tell our own save apart from an external edit
+   * (otherwise every save would echo back as a "file changed on disk" event).
+   *
+   * `saveFileAs` opens a save dialog and, on success, retargets the watcher and recents to the new
+   * path WITHOUT re-sending 'open-file' — the response carries { filePath, name } and the renderer
+   * updates its own state, keeping cursor and scroll position intact.
+   */
+  saveFile: (filePath, content) => ipcRenderer.invoke('save-file', filePath, content),
+  saveFileAs: (suggestedName, content, oldPath) =>
+    ipcRenderer.invoke('save-file-as', suggestedName, content, oldPath),
+
+  /**
+   * Mirror the editor's dirty flag into the main process on every transition. This is what arms
+   * the unsaved-changes guards on window close and on opening another file — the main process
+   * cannot ask the renderer synchronously at decision time.
+   */
+  setEdited: (edited) => ipcRenderer.send('set-edited', edited),
+
+  /** Native "discard unsaved changes?" dialog. Resolves true when the user chooses to discard. */
+  confirmDiscard: (message) => ipcRenderer.invoke('confirm-discard', message),
 
   // Recent documents. `getRecentFiles` annotates each entry with `exists`, so the UI can grey out
   // files that have since been moved or deleted rather than silently dropping them.
@@ -53,11 +83,28 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getDefaultAppStatus: () => ipcRenderer.invoke('get-default-app-status'),
   requestDefaultApp: () => ipcRenderer.invoke('request-default-app'),
   /**
+   * How many of FATE's supported file types currently open with FATE (Settings → Windows).
+   * Computed the way Explorer decides (UserChoice → class default → sole registered handler),
+   * in one hidden PowerShell pass. On demand only — too heavy for the on-focus `.md` check.
+   */
+  getAssociationCoverage: () => ipcRenderer.invoke('get-association-coverage'),
+  /** Claim every extension that has NO handler at all (per-user, reversible). */
+  claimUnclaimedTypes: () => ipcRenderer.invoke('claim-unclaimed-types'),
+  /** Undo claimUnclaimedTypes — releases only what FATE itself claimed and only if still ours. */
+  releaseClaimedTypes: () => ipcRenderer.invoke('release-claimed-types'),
+  getClaimedTypes: () => ipcRenderer.invoke('get-claimed-types'),
+  /** Build facts: { windowsStore } — Store builds route updates to the Microsoft Store. */
+  getRuntimeInfo: () => ipcRenderer.invoke('get-runtime-info'),
+  /** Classic context menus (Windows 11 full-menu tweak): read, set, and apply via Explorer restart. */
+  getClassicMenu: () => ipcRenderer.invoke('get-classic-menu'),
+  setClassicMenu: (enabled) => ipcRenderer.invoke('set-classic-menu', enabled),
+  restartExplorer: () => ipcRenderer.invoke('restart-explorer'),
+  /**
    * Set the window title from the open document's name, or `null` on the home screen.
    * Pass a FILENAME, not a composed title — the main process prepends the app name so the taskbar
-   * label always starts with "FATE - Markdown Viewer".
+   * label always starts with "FATE - Markdown Viewer". `edited` appends the unsaved-changes dot.
    */
-  setTitle: (docName) => ipcRenderer.send('set-title', docName),
+  setTitle: (docName, edited) => ipcRenderer.send('set-title', docName, edited),
   setDiscordActivity: (activity) => ipcRenderer.send('set-discord-activity', activity),
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),

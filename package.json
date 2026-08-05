@@ -1,6 +1,7 @@
 {
   "name": "fate-markdown-viewer",
-  "version": "1.8.2",
+  "version": "1.11.1",
+  "description": "FATE (Formatted Article and Text Editor) is a Markdown viewer and code editor for technical documents.",
   "author": "VagueDustin Enterprises",
   "license": "MIT",
   "type": "module",
@@ -12,11 +13,12 @@
     "preview": "vite preview",
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .\"",
     "electron:build": "vite build && electron-builder",
-    "icons": "node scripts/generate-icons.mjs"
+    "icons": "node scripts/generate-icons.mjs && node scripts/generate-file-icons.mjs"
   },
   "build": {
     "appId": "com.vaguedustin.fate",
-    "productName": "FATE - Markdown Viewer",
+    "productName": "FATE - Formatted Article & Text Editor",
+    "executableName": "FATE",
     "publish": [
       {
         "provider": "github",
@@ -31,6 +33,15 @@
     "files": [
       "dist/**/*",
       "electron/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "build/fileicons",
+        "to": "fileicons",
+        "filter": [
+          "*.ico"
+        ]
+      }
     ],
     "win": {
       "icon": "build/icon.ico",
@@ -49,14 +60,14 @@
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
       "installerHeaderIcon": "build/icon.ico",
-      "shortcutName": "FATE - Markdown Viewer"
+      "shortcutName": "FATE - Formatted Article & Text Editor"
     },
     "appx": {
       "applicationId": "FATEMarkdownViewer",
       "identityName": "VagueDustinEnterprises.FATE-MarkdownViewer",
       "publisher": "CN=8E281BA4-FA63-4F64-812E-5D5067FCC2EB",
       "publisherDisplayName": "VagueDustin Enterprises™",
-      "displayName": "FATE - Markdown Viewer"
+      "displayName": "FATE - Formatted Article and Text Editor"
     },
     "fileAssociations": [
       {
@@ -69,9 +80,29 @@
     ]
   },
   "dependencies": {
+    "@codemirror/autocomplete": "^6.20.3",
+    "@codemirror/commands": "^6.10.4",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/language-data": "^6.5.2",
+    "@codemirror/merge": "^6.12.2",
+    "@codemirror/search": "^6.7.1",
+    "@codemirror/state": "^6.7.1",
+    "@codemirror/view": "^6.43.8",
+    "@fontsource/cascadia-code": "^5.3.0",
     "@fontsource/cinzel": "^5.3.0",
+    "@fontsource/fira-code": "^5.3.0",
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/ibm-plex-sans": "^5.3.0",
     "@fontsource/inter": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "@fontsource/lora": "^5.3.0",
+    "@fontsource/merriweather": "^5.3.0",
+    "@fontsource/roboto-mono": "^5.3.0",
+    "@fontsource/source-code-pro": "^5.3.0",
+    "@fontsource/source-serif-4": "^5.3.0",
+    "@lezer/highlight": "^1.2.3",
     "@phosphor-icons/react": "^2.1.10",
+    "codemirror": "^6.0.2",
     "discord-rpc": "^4.0.1",
     "dompurify": "^3.4.8",
     "electron-store": "^8.1.0",
@@ -79,7 +110,9 @@
     "highlight.js": "^11.11.1",
     "katex": "^0.17.0",
     "marked": "^18.0.5",
+    "marked-highlight": "^2.2.4",
     "marked-katex-extension": "^5.1.10",
+    "mermaid": "^11.16.1",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-dropzone": "^15.0.0"
@@ -101,6 +134,7 @@
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.6.0",
     "png-to-ico": "^3.0.2",
+    "puppeteer-core": "^25.5.0",
     "sharp": "^0.35.3",
     "vite": "^8.0.12",
     "wait-on": "^9.0.10"
