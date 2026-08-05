@@ -95,27 +95,55 @@ export const DEFAULT_FONTS = {
 
 const ALL_FONTS = [...PROSE_FONTS, ...CODE_FONTS];
 
-export function fontById(id) {
+/*
+ * ── System fonts (1.11.3) ─────────────────────────────────────────────────────────────────────
+ * Fonts installed on the machine are offered alongside the bundled set, stored as ids of the form
+ * `system:<Family Name>`. They flow through the exact same plumbing (stacks, per-type overrides,
+ * persistence); the family is simply quoted into a stack in front of the appropriate generic
+ * fallback. If the font is later uninstalled, CSS font-family fallback degrades gracefully — no
+ * validation against the live font list is needed or wanted at load time.
+ */
+export const SYSTEM_FONT_PREFIX = 'system:';
+
+export function isSystemFontId(id) {
+  return typeof id === 'string' && id.startsWith(SYSTEM_FONT_PREFIX) && id.length > SYSTEM_FONT_PREFIX.length;
+}
+
+export function systemFontEntry(id, mono = false) {
+  const family = id.slice(SYSTEM_FONT_PREFIX.length).replace(/['"<>]/g, '');
+  return {
+    id,
+    label: family,
+    stack: `'${family}', ${mono ? SYSTEM_MONO : SYSTEM_SANS}`,
+    system: true
+  };
+}
+
+export function fontById(id, mono = false) {
+  if (isSystemFontId(id)) return systemFontEntry(id, mono);
   return ALL_FONTS.find((f) => f.id === id) || null;
 }
 
-export function fontStack(id, fallbackId) {
-  return (fontById(id) || fontById(fallbackId))?.stack ?? SYSTEM_SANS;
+export function fontStack(id, fallbackId, mono = false) {
+  return (fontById(id, mono) || fontById(fallbackId, mono))?.stack ?? SYSTEM_SANS;
 }
 
 /**
- * Merge stored font settings onto the defaults, dropping ids that no longer exist — a font removed
- * from the registry must degrade to the default, not to an unresolved CSS variable.
+ * Merge stored font settings onto the defaults, dropping ids that no longer exist — a bundled
+ * font removed from the registry must degrade to the default, not to an unresolved CSS variable.
+ * `system:` ids always pass (see the note above).
  */
 export function resolveFonts(stored) {
   const s = stored && typeof stored === 'object' ? stored : {};
-  const proseId = (id, fallback) => (PROSE_FONTS.some((f) => f.id === id) ? id : fallback);
-  const codeId = (id, fallback) => (CODE_FONTS.some((f) => f.id === id) ? id : fallback);
+  const proseId = (id, fallback) =>
+    isSystemFontId(id) || PROSE_FONTS.some((f) => f.id === id) ? id : fallback;
+  const codeId = (id, fallback) =>
+    isSystemFontId(id) || CODE_FONTS.some((f) => f.id === id) ? id : fallback;
 
   const perType = {};
   if (s.perType && typeof s.perType === 'object') {
     for (const [ext, id] of Object.entries(s.perType)) {
-      if (CODE_FONTS.some((f) => f.id === id)) perType[ext] = id;
+      if (isSystemFontId(id) || CODE_FONTS.some((f) => f.id === id)) perType[ext] = id;
     }
   }
 
@@ -137,7 +165,7 @@ export function applyFonts(fonts) {
   const root = document.documentElement.style;
   root.setProperty('--font-sans', fontStack(fonts.ui, DEFAULT_FONTS.ui));
   root.setProperty('--font-doc', fontStack(fonts.markdown, DEFAULT_FONTS.markdown));
-  root.setProperty('--font-mono', fontStack(fonts.code, DEFAULT_FONTS.code));
+  root.setProperty('--font-mono', fontStack(fonts.code, DEFAULT_FONTS.code, true));
   root.setProperty('--doc-font-size', `${fonts.markdownSize}px`);
   root.setProperty('--editor-font-size', `${fonts.editorSize}px`);
   root.setProperty('--editor-liga', fonts.ligatures ? 'normal' : 'none');
@@ -151,5 +179,5 @@ export function editorFontFor(fileName, fonts) {
     return dot > 0 ? base.slice(dot + 1) : '';
   })();
   const override = fonts.perType?.[ext];
-  return fontStack(override || fonts.code, DEFAULT_FONTS.code);
+  return fontStack(override || fonts.code, DEFAULT_FONTS.code, true);
 }

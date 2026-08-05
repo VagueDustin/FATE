@@ -129,6 +129,8 @@ function App() {
   const [updateStatus, setUpdateStatus] = useState('');
   const [updateAction, setUpdateAction] = useState(null);
   const [runtimeInfo, setRuntimeInfo] = useState({ windowsStore: false });
+  /** Font families installed on this machine, for Settings → Fonts (fetched once, local-only). */
+  const [systemFonts, setSystemFonts] = useState([]);
   const [sidebarWidth, setSidebarWidth] = useState(300);
   const [recentFiles, setRecentFiles] = useState([]);
   const [defaultAppStatus, setDefaultAppStatus] = useState(null);
@@ -405,6 +407,7 @@ function App() {
       });
 
       window.electronAPI.getRuntimeInfo?.().then(setRuntimeInfo).catch(() => {});
+      window.electronAPI.getSystemFonts?.().then(setSystemFonts).catch(() => {});
 
       window.electronAPI.onOpenFile((content, name, path) => {
         openDocument(content, name, path);
@@ -1397,6 +1400,7 @@ function App() {
           setActiveShortcutRebind={setActiveShortcutRebind}
           onSidebarWidthChange={setSidebarWidth}
           runtimeInfo={runtimeInfo}
+          systemFonts={systemFonts}
         />
       )}
     </div>

@@ -95,6 +95,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getClaimedTypes: () => ipcRenderer.invoke('get-claimed-types'),
   /** Build facts: { windowsStore } — Store builds route updates to the Microsoft Store. */
   getRuntimeInfo: () => ipcRenderer.invoke('get-runtime-info'),
+  /** Font families installed on this machine (local enumeration only; cached per run). */
+  getSystemFonts: () => ipcRenderer.invoke('get-system-fonts'),
   /** Classic context menus (Windows 11 full-menu tweak): read, set, and apply via Explorer restart. */
   getClassicMenu: () => ipcRenderer.invoke('get-classic-menu'),
   setClassicMenu: (enabled) => ipcRenderer.invoke('set-classic-menu', enabled),

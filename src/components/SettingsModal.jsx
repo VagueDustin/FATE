@@ -6,7 +6,7 @@ import {
 } from '@phosphor-icons/react';
 import fateLogo from '../assets/FATE-Square-Icon.png';
 import { THEMES, PAGE_SIZES, SHORTCUT_ACTIONS, DEFAULT_SHORTCUTS, FIXED_SHORTCUTS } from '../settingsMeta.js';
-import { PROSE_FONTS, CODE_FONTS } from '../fonts.js';
+import { PROSE_FONTS, CODE_FONTS, fontById, systemFontEntry } from '../fonts.js';
 import { CODE_EXTENSIONS } from '../fileKinds.js';
 import { DEFAULT_CUSTOM, CUSTOM_FIELDS, customThemeCss } from '../themeCustom.js';
 
@@ -26,23 +26,30 @@ import { DEFAULT_CUSTOM, CUSTOM_FIELDS, customThemeCss } from '../themeCustom.js
 const PROSE_SAMPLE = 'The quick brown fox jumps over the lazy dog.';
 const CODE_SAMPLE = 'const sum = (a, b) => a !== b ? a + b : 0;';
 
-function FontPicker({ value, options, onChange, mono }) {
+/** How many filtered system fonts to render at once — each row rasterises its own typeface. */
+const SYSTEM_FONT_LIMIT = 30;
+
+function FontPicker({ value, options, onChange, mono, systemFonts = [] }) {
   const [open, setOpen] = useState(false);
   /* Opens UPWARD when the button sits low in the viewport — the list is absolutely positioned
      inside the modal's scroll pane, so opening down near the bottom clipped it (user-reported). */
   const [openUp, setOpenUp] = useState(false);
+  const [query, setQuery] = useState('');
   const rootRef = useRef(null);
+  const filterRef = useRef(null);
 
   const toggleOpen = () => {
     if (!open && rootRef.current) {
       const rect = rootRef.current.getBoundingClientRect();
       setOpenUp(window.innerHeight - rect.bottom < 320);
+      setQuery('');
     }
     setOpen((o) => !o);
   };
 
   useEffect(() => {
     if (!open) return;
+    filterRef.current?.focus();
     const onDocClick = (e) => {
       if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false);
     };
@@ -62,7 +69,38 @@ function FontPicker({ value, options, onChange, mono }) {
     };
   }, [open]);
 
-  const current = options.find((o) => o.id === value) || options[0];
+  const current = fontById(value, mono) || options[0];
+
+  const q = query.trim().toLowerCase();
+  const bundled = q ? options.filter((o) => o.label.toLowerCase().includes(q)) : options;
+  const systemMatches = q ? systemFonts.filter((n) => n.toLowerCase().includes(q)) : systemFonts;
+  const systemShown = systemMatches.slice(0, SYSTEM_FONT_LIMIT);
+
+  const pick = (id) => {
+    onChange(id);
+    setOpen(false);
+  };
+
+  const renderOption = (o) => (
+    <li
+      key={o.id}
+      role="option"
+      aria-selected={o.id === value}
+      className={`fp-option ${o.id === value ? 'selected' : ''}`}
+      onClick={() => pick(o.id)}
+    >
+      <span className="fp-texts">
+        <span className="fp-name" style={{ fontFamily: o.stack }}>
+          {o.label}
+          {o.ligatures && <span className="fp-tag">ligatures</span>}
+        </span>
+        <span className="fp-sample" style={{ fontFamily: o.stack }}>
+          {mono ? CODE_SAMPLE : PROSE_SAMPLE}
+        </span>
+      </span>
+      {o.id === value && <Check size={14} weight="bold" className="fp-check" />}
+    </li>
+  );
 
   return (
     <div className="font-picker" ref={rootRef}>
@@ -79,31 +117,44 @@ function FontPicker({ value, options, onChange, mono }) {
       </button>
 
       {open && (
-        <ul className={`font-picker-list ${openUp ? 'up' : ''}`} role="listbox">
-          {options.map((o) => (
-            <li
-              key={o.id}
-              role="option"
-              aria-selected={o.id === value}
-              className={`fp-option ${o.id === value ? 'selected' : ''}`}
-              onClick={() => {
-                onChange(o.id);
-                setOpen(false);
+        <div className={`font-picker-list ${openUp ? 'up' : ''}`}>
+          {systemFonts.length > 0 && (
+            <input
+              ref={filterRef}
+              className="fp-filter"
+              placeholder={`Search ${systemFonts.length + options.length} fonts…`}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                // Enter takes the first visible match — fastest path from typing to chosen.
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  const first = bundled[0] ?? (systemShown[0] && systemFontEntry(`system:${systemShown[0]}`, mono));
+                  if (first) pick(first.id);
+                }
               }}
-            >
-              <span className="fp-texts">
-                <span className="fp-name" style={{ fontFamily: o.stack }}>
-                  {o.label}
-                  {o.ligatures && <span className="fp-tag">ligatures</span>}
-                </span>
-                <span className="fp-sample" style={{ fontFamily: o.stack }}>
-                  {mono ? CODE_SAMPLE : PROSE_SAMPLE}
-                </span>
-              </span>
-              {o.id === value && <Check size={14} weight="bold" className="fp-check" />}
-            </li>
-          ))}
-        </ul>
+              spellCheck={false}
+            />
+          )}
+
+          <ul role="listbox">
+            {bundled.length > 0 && <li className="fp-section">Bundled with FATE</li>}
+            {bundled.map(renderOption)}
+
+            {systemFonts.length > 0 && systemShown.length > 0 && (
+              <li className="fp-section">Installed on this PC</li>
+            )}
+            {systemShown.map((name) => renderOption(systemFontEntry(`system:${name}`, mono)))}
+            {systemMatches.length > SYSTEM_FONT_LIMIT && (
+              <li className="fp-more">
+                {systemMatches.length - SYSTEM_FONT_LIMIT} more — keep typing to narrow the list
+              </li>
+            )}
+            {bundled.length === 0 && systemShown.length === 0 && (
+              <li className="fp-more">No fonts match &quot;{query}&quot;</li>
+            )}
+          </ul>
+        </div>
       )}
     </div>
   );
@@ -148,7 +199,8 @@ function SettingsModal({
   activeShortcutRebind,
   setActiveShortcutRebind,
   onSidebarWidthChange,
-  runtimeInfo
+  runtimeInfo,
+  systemFonts
 }) {
   const [section, setSection] = useState('appearance');
   const [coverage, setCoverage] = useState(null);
@@ -428,7 +480,7 @@ function SettingsModal({
                   <span className="group-caption">Interface</span>
                   <div className="setting-item">
                     <span className="setting-label">Application font</span>
-                    <FontPicker value={fonts.ui} options={PROSE_FONTS} onChange={(id) => setFonts({ ui: id })} />
+                    <FontPicker systemFonts={systemFonts} value={fonts.ui} options={PROSE_FONTS} onChange={(id) => setFonts({ ui: id })} />
                   </div>
                 </div>
 
@@ -436,7 +488,7 @@ function SettingsModal({
                   <span className="group-caption">Markdown documents</span>
                   <div className="setting-item">
                     <span className="setting-label">Document font</span>
-                    <FontPicker value={fonts.markdown} options={PROSE_FONTS} onChange={(id) => setFonts({ markdown: id })} />
+                    <FontPicker systemFonts={systemFonts} value={fonts.markdown} options={PROSE_FONTS} onChange={(id) => setFonts({ markdown: id })} />
                   </div>
                   <SizeSlider label="Document text size" value={fonts.markdownSize} min={12} max={22} onChange={(v) => setFonts({ markdownSize: v })} />
                 </div>
@@ -445,7 +497,7 @@ function SettingsModal({
                   <span className="group-caption">Code</span>
                   <div className="setting-item">
                     <span className="setting-label">Code font</span>
-                    <FontPicker mono value={fonts.code} options={CODE_FONTS} onChange={(id) => setFonts({ code: id })} />
+                    <FontPicker mono systemFonts={systemFonts} value={fonts.code} options={CODE_FONTS} onChange={(id) => setFonts({ code: id })} />
                   </div>
                   <SizeSlider label="Editor text size" value={fonts.editorSize} min={10} max={20} onChange={(v) => setFonts({ editorSize: v })} />
                   <div className="setting-item">
@@ -468,6 +520,7 @@ function SettingsModal({
                     <div className="override-row" key={ext}>
                       <code className="override-ext">.{ext}</code>
                       <FontPicker
+                      systemFonts={systemFonts}
                         mono
                         value={fontId}
                         options={CODE_FONTS}

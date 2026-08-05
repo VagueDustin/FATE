@@ -7,7 +7,7 @@ FATE is a beautiful, elegant, and highly resilient Markdown viewer **and code ed
 - **Instant Viewing:** Drag & drop any `.md` or `.markdown` file directly into the app, or set FATE as your default markdown viewer.
 - **Full Code Editor:** Open and *edit* code files — `.ps1`, `.html`, `.py`, `.js`, `.json`, `.css`, `.yaml` and 80+ more — in a real editor with syntax highlighting, line numbers, code folding, search (`Ctrl`+`F`), multiple cursors and undo history. Save with `Ctrl`+`S`; unsaved changes are guarded everywhere (closing the file, opening another, closing the window).
 - **Tabs:** Open any number of files side by side, Notepad++-style — mixed markdown and code, per-tab unsaved-changes tracking, middle-click to close, `Ctrl`+`Tab` to cycle, `Ctrl`+`1`–`9` to jump. Every tab keeps its scroll position, cursor and undo history while backgrounded.
-- **Bundled Font Library:** JetBrains Mono, Fira Code, Cascadia Code, Source Code Pro, IBM Plex Mono, Roboto Mono for code; Inter, IBM Plex Sans, Source Serif 4, Lora, Merriweather for prose — all shipped inside the app, fully offline. Pick fonts for the interface, markdown documents, and code separately, override the font *per file type*, and tune sizes and ligatures — all previewed live in the font picker.
+- **Bundled Font Library — plus every font on your PC:** JetBrains Mono, Fira Code, Cascadia Code, Source Code Pro, IBM Plex Mono, Roboto Mono for code; Inter, IBM Plex Sans, Source Serif 4, Lora, Merriweather for prose — all shipped inside the app, fully offline — and a searchable picker over every font installed on your system. Pick fonts for the interface, markdown documents, and code separately, override the font *per file type*, and tune sizes and ligatures, all previewed live in each typeface.
 - **Live Reload That Respects Your Edits:** Files changed on disk reload in place while your buffer is clean — and never clobber unsaved edits.
 - **Deep LaTeX Math Support:** Perfectly renders complex inline and block mathematical equations, fractions, and multi-line matrices using KaTeX.
 - **Surgical Math Auto-Repair:** FATE includes a custom algorithmic layer that detects and dynamically heals corrupted backslash escapes (e.g., `\theta`, `\begin`, `\approx`) caused by poorly escaped markdown generators before they hit the screen.
@@ -94,6 +94,10 @@ reserved. MIT is a copyright licence and says nothing about trademarks, which is
 In short: fork freely, but **rename and re-skin before you distribute.**
 
 ## Changelog
+
+### v1.11.3
+- **[Feature]** **Use any font installed on your PC.** Every font picker (interface, markdown documents, code, and per-file-type overrides) now offers the fonts installed on your system alongside the bundled library — with a search box, each candidate previewed in its own typeface, and Enter to take the top match. Selections persist as `system:<Family>` and degrade gracefully through the standard fallback stack if a font is later uninstalled. Enumeration is one local query, cached per run; nothing leaves your machine.
+- **[Maintenance]** Dev/test instances can run beside an installed FATE via the `FATE_USER_DATA` environment variable (separate profile, separate single-instance lock).
 
 ### v1.11.2
 - **[Bugfix]** **Mermaid diagrams now render reliably.** Two causes fixed: rendering was attempted inside hidden (backgrounded) tabs, where SVG text measurement returns zeros and mermaid fails — the pass now runs when the tab is visible and re-runs on activation; and fences are only marked processed after their SVG actually lands, so a re-render can no longer strand them.

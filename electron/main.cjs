@@ -108,6 +108,15 @@ function composeTitle(docName, edited) {
   return docName ? `${docName}${edited ? ' •' : ''}` : APP_TITLE;
 }
 
+/*
+ * Dev/test escape hatch: point userData somewhere else so a test instance can run beside a real
+ * installed FATE (the single-instance lock and the Chromium profile are both scoped to userData).
+ * Must run before Store() below touches the path. No effect unless the env var is set.
+ */
+if (process.env.FATE_USER_DATA) {
+  app.setPath('userData', process.env.FATE_USER_DATA);
+}
+
 const store = new Store({
   defaults: {
     // 'fate' = VagueDustin Enterprises navy & gold (utility tier), the default since 1.5.0.
@@ -1282,6 +1291,43 @@ app.whenReady().then(() => {
     windowsStore: isWindowsStore,
     platform: process.platform
   }));
+
+  /*
+   * Font families installed on this machine, for Settings → Fonts. Enumerated once per app run
+   * via GDI+ (one hidden PowerShell call, ~300 names) and cached — font installs mid-session are
+   * rare enough that a restart picking them up is fine. Purely local: the list never leaves the
+   * process, matching the privacy posture.
+   */
+  let systemFontsCache = null;
+  ipcMain.handle('get-system-fonts', () => {
+    if (systemFontsCache) return systemFontsCache;
+    if (process.platform !== 'win32') return [];
+    return new Promise((resolve) => {
+      execFile(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          'Add-Type -AssemblyName System.Drawing; ([System.Drawing.Text.InstalledFontCollection]::new()).Families | ForEach-Object { $_.Name } | ConvertTo-Json -Compress'
+        ],
+        { windowsHide: true, timeout: 15000, maxBuffer: 4 * 1024 * 1024 },
+        (err, stdout) => {
+          if (err || !stdout) {
+            resolve([]);
+            return;
+          }
+          try {
+            const names = [].concat(JSON.parse(stdout.trim())).filter((n) => typeof n === 'string' && n);
+            systemFontsCache = [...new Set(names)].sort((a, b) => a.localeCompare(b));
+            resolve(systemFontsCache);
+          } catch {
+            resolve([]);
+          }
+        }
+      );
+    });
+  });
 
   /*
    * ── Classic context menus (opt-in, Settings → Windows) ─────────────────────────────────────
