@@ -24,8 +24,16 @@ dist-ssr
 *.sw?
 
 dist-electron/
-build/
 AI_CONTEXT.md
+
+# build/ is generated output — icons, file-type icons, AppX tiles, Store art — EXCEPT the NSIS
+# script. `build/*` rather than `build/` so git still descends into the directory and the negation
+# below can take effect (git does not traverse an excluded directory).
+build/*
+
+# The NSIS installer script is hand-authored build SOURCE, not a generated artifact. Without it
+# `npm run electron:build` cannot produce an installer at all, so a clone needs it.
+!build/installer.nsh
 
 # Icon artwork masters. build/ is ignored (generated), but these are the sources
 # scripts/generate-icons.mjs derives everything from — they must be tracked.

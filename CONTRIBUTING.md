@@ -36,8 +36,11 @@ npm run electron:dev      # Vite + Electron together
 | `npm run icons` | regenerate every icon from the masters in `brand/` |
 | `npm run electron:build` | full installer (`dist-electron/`) |
 
-**Note:** `build/` is gitignored, and `build/installer.nsh` is not in the repo. `npm run icons`
-regenerates the icons, but a full `electron:build` needs that NSIS include — ask if you need it.
+**Note:** `build/` is generated output and gitignored — with one exception. `build/installer.nsh` is
+hand-authored build source and **is** tracked, so `npm run icons` followed by `npm run electron:build`
+works from a fresh clone. If you touch the supported-extension list, remember it lives in three
+places that must agree: `electron/main.cjs`, `src/fileKinds.js`, and the generated blocks in
+`build/installer.nsh`.
 
 ---
 
