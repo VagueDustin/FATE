@@ -96,8 +96,9 @@ Both render through the same print stylesheet, so what you preview is what print
 
 ## Contributing
 
-Pull requests are welcome — see **[CONTRIBUTING.md](CONTRIBUTING.md)** for setup and the house rules.
-For anything non-trivial, open an issue first.
+Pull requests are welcome — see **[CONTRIBUTING.md](CONTRIBUTING.md)** for setup and the house rules,
+and **[BRAND.md](BRAND.md)** for what the name and artwork cover. For anything non-trivial, open an
+issue first. Merges are at the maintainer's discretion.
 
 ## Licence & brand
 
@@ -105,16 +106,21 @@ The **code** is [AGPL-3.0](LICENSE): read it, learn from it, fork it, improve it
 you distribute (or serve to users over a network) must publish its complete source under the same
 licence. Open source with teeth: nobody turns FATE into a closed product.
 
-> Versions **up to and including v1.11.4** were released under MIT and remain so — the licence
-> change applies from the next release onward.
-
 The **name and the artwork are separate from the code licence.** "FATE", "VagueDustin Enterprises",
-the gilded badge and the document mark are trademarks and artwork owned by VagueDustin Enterprises,
-and all rights in them are reserved — see **[TRADEMARK.md](TRADEMARK.md)**.
+the gilded badge and the document mark belong to VagueDustin Enterprises, and all rights in them are
+reserved — see **[BRAND.md](BRAND.md)**.
 
 In short: fork freely, keep it open, and **rename and re-skin before you distribute.**
 
 ## Changelog
+
+### Unreleased
+- **[Licence]** FATE is now **AGPL-3.0**. Fork it, learn from it, improve it — anything you distribute
+  or serve over a network ships its complete source under the same licence.
+- **[Docs]** `TRADEMARK.md` is now **[BRAND.md](BRAND.md)**, rewritten to say what's actually true:
+  no registered trademarks, just a brand and an alias, with artwork protected by copyright. The
+  fork-and-rename checklist is current again (executable name, per-type ProgIds, the shell verb,
+  store art). Contribution terms, PR and issue templates updated to match.
 
 ### v1.11.4
 - **[Bugfix]** **Drag & drop actually works now — anywhere in the window.** Two root causes fixed: the drop library's file handles broke Electron's path resolution, and a drop landing outside the drop zone fell through to Chromium's default behaviour, *navigating the whole app to the dropped file*. Drops are now handled natively across the entire window (home screen, editor, tab strip — anywhere), with a gold "Release to open" overlay while dragging, and stray navigations are refused by the main process as a second line of defence.

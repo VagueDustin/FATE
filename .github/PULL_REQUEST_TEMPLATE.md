@@ -35,5 +35,6 @@ performance, nothing floats against the viewport).
 
 ---
 
-<sub>By opening this PR you agree your contribution is licensed under the MIT License, and that it
-grants you no interest in the FATE or VagueDustin Enterprises marks or artwork. See TRADEMARK.md.</sub>
+<sub>By opening this PR you agree your contribution is licensed under the AGPL-3.0, that the project
+may be relicensed under other terms in future, and that contributing grants you no rights in the FATE
+or VagueDustin Enterprises name or artwork. See BRAND.md.</sub>

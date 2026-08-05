@@ -1,7 +1,7 @@
 blank_issues_enabled: true
 contact_links:
-  - name: Brand, naming, or trademark question
-    url: https://github.com/VagueDustin/FATE/blob/main/TRADEMARK.md
+  - name: Brand, naming, or artwork question
+    url: https://github.com/VagueDustin/FATE/blob/main/BRAND.md
     about: Forking, renaming, redistributing, or reusing the artwork — start here.
   - name: Contributing guide
     url: https://github.com/VagueDustin/FATE/blob/main/CONTRIBUTING.md
