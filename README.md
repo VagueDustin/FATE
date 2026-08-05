@@ -101,14 +101,18 @@ For anything non-trivial, open an issue first.
 
 ## Licence & brand
 
-The **code** is [MIT](LICENSE) — fork it, modify it, ship it, sell it.
+The **code** is [AGPL-3.0](LICENSE): read it, learn from it, fork it, improve it — but any version
+you distribute (or serve to users over a network) must publish its complete source under the same
+licence. Open source with teeth: nobody turns FATE into a closed product.
 
-The **name and the artwork are not.** "FATE", "VagueDustin Enterprises", the gilded badge and the
-document mark are trademarks and artwork owned by VagueDustin Enterprises, and all rights in them are
-reserved. MIT is a copyright licence and says nothing about trademarks, which is exactly why
-**[TRADEMARK.md](TRADEMARK.md)** exists.
+> Versions **up to and including v1.11.4** were released under MIT and remain so — the licence
+> change applies from the next release onward.
 
-In short: fork freely, but **rename and re-skin before you distribute.**
+The **name and the artwork are separate from the code licence.** "FATE", "VagueDustin Enterprises",
+the gilded badge and the document mark are trademarks and artwork owned by VagueDustin Enterprises,
+and all rights in them are reserved — see **[TRADEMARK.md](TRADEMARK.md)**.
+
+In short: fork freely, keep it open, and **rename and re-skin before you distribute.**
 
 ## Changelog
 

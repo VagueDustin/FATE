@@ -1,8 +1,13 @@
 # Contributing to FATE
 
-Pull requests are welcome. FATE is maintained by **VagueDustin Enterprises** — the code is MIT, the
-name and artwork are not (see [TRADEMARK.md](TRADEMARK.md)). Contributions are reviewed and merged at
-the maintainer's discretion.
+Pull requests are welcome. FATE is maintained by **VagueDustin Enterprises** — the code is
+[AGPL-3.0](LICENSE), the name and artwork are not (see [TRADEMARK.md](TRADEMARK.md)). Contributions
+are reviewed and merged at the maintainer's discretion.
+
+**Contribution licensing:** by submitting a pull request you agree that your contribution is
+licensed under the project's AGPL-3.0 licence, and you grant VagueDustin Enterprises the right to
+relicense the project (including your contribution) under other terms in the future. If you can't
+agree to that, please open an issue describing the change instead of a PR.
 
 ---
 
