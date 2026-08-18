@@ -17,9 +17,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return null;
     }
   },
+  // `meta.fromRestore` marks a tab being reinstated from last session rather than one the user
+  // just asked for, so restoring tabs cannot steal focus from the file that launched the app.
   onOpenFile: (callback) => {
     ipcRenderer.removeAllListeners('open-file');
-    ipcRenderer.on('open-file', (_event, content, name, path) => callback(content, name, path));
+    ipcRenderer.on('open-file', (_event, content, name, path, meta) => callback(content, name, path, meta || {}));
   },
   // The path rides along so the renderer can route the update to the right TAB — any number of
   // files can be watched at once since 1.10.0.
@@ -57,10 +59,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** Native "discard unsaved changes?" dialog. Resolves true when the user chooses to discard. */
   confirmDiscard: (message) => ipcRenderer.invoke('confirm-discard', message),
 
+  /**
+   * Quitting with unsaved work. The main process cannot save (the buffers are in the renderer), so
+   * it vetoes the close, fires `onRequestClose`, and waits: the renderer walks its dirty tabs
+   * asking Save / Don't save / Cancel, then answers with `confirmedClose(proceed)`.
+   */
+  onRequestClose: (callback) => {
+    ipcRenderer.removeAllListeners('request-close');
+    ipcRenderer.on('request-close', () => callback());
+  },
+  confirmSaveOnClose: (docName) => ipcRenderer.invoke('confirm-save-on-close', docName),
+  confirmedClose: (proceed) => ipcRenderer.send('confirmed-close', proceed),
+
   // Recent documents. `getRecentFiles` annotates each entry with `exists`, so the UI can grey out
   // files that have since been moved or deleted rather than silently dropping them.
   getRecentFiles: () => ipcRenderer.invoke('get-recent-files'),
-  openRecentFile: (filePath) => ipcRenderer.invoke('open-recent-file', filePath),
+  openRecentFile: (filePath, opts) => ipcRenderer.invoke('open-recent-file', filePath, opts),
   clearRecentFiles: () => ipcRenderer.invoke('clear-recent-files'),
 
   /**
@@ -84,15 +98,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   requestDefaultApp: () => ipcRenderer.invoke('request-default-app'),
   /**
    * How many of FATE's supported file types currently open with FATE (Settings → Windows).
-   * Computed the way Explorer decides (UserChoice → class default → sole registered handler),
-   * in one hidden PowerShell pass. On demand only — too heavy for the on-focus `.md` check.
+   * Resolved through the shell itself (AssocQueryString), not inferred from the registry, in one
+   * hidden PowerShell pass. On demand only — too heavy for the on-focus `.md` check.
    */
   getAssociationCoverage: () => ipcRenderer.invoke('get-association-coverage'),
-  /** Claim every extension that has NO handler at all (per-user, reversible). */
-  claimUnclaimedTypes: () => ipcRenderer.invoke('claim-unclaimed-types'),
-  /** Undo claimUnclaimedTypes — releases only what FATE itself claimed and only if still ours. */
-  releaseClaimedTypes: () => ipcRenderer.invoke('release-claimed-types'),
-  getClaimedTypes: () => ipcRenderer.invoke('get-claimed-types'),
+  /**
+   * Undo the file-type damage older versions did: clear the class defaults that suppress the
+   * association they were meant to create, and hand .bat/.cmd back to the command processor.
+   * Runs automatically at launch too — this is the manual trigger in Settings.
+   */
+  repairAssociations: () => ipcRenderer.invoke('repair-associations'),
   /** Build facts: { windowsStore } — Store builds route updates to the Microsoft Store. */
   getRuntimeInfo: () => ipcRenderer.invoke('get-runtime-info'),
   /** Font families installed on this machine (local enumeration only; cached per run). */

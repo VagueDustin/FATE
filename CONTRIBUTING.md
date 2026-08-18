@@ -42,6 +42,14 @@ works from a fresh clone. If you touch the supported-extension list, remember it
 places that must agree: `electron/main.cjs`, `src/fileKinds.js`, and the generated blocks in
 `build/installer.nsh`.
 
+**Before adding an extension, check it against `PROTECTED_EXTENSIONS`.** A type whose system
+handler runs the file itself — `.bat` and `.cmd`, whose open command is `"%1" %*` — must never be
+registered. No application name appears in that command, so Windows' "Choose a default" picker has
+nothing to offer for restoring it, and an editor that takes the type leaves the user unable to run
+their scripts with no supported way back. Such types belong in `CODE_EXTENSIONS` (so the open
+dialog, drag & drop and *Edit in FATE* still work) and in `PROTECTED_EXTENSIONS` (so nothing ever
+registers them).
+
 ---
 
 ## House rules

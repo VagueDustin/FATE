@@ -59,6 +59,37 @@ const CODE_EXTENSIONS = [
   'clj', 'cljs', 'edn', 'nim', 'zig', 'jl', 'asm'
 ];
 
+/**
+ * Types FATE must NEVER register against in any way — not even "politely".
+ *
+ * `.bat` and `.cmd` resolve to the system ProgIds `batfile`/`cmdfile`, whose open command is
+ * `"%1" %*`: the script IS the executable. Two consequences, and the second one is the trap.
+ *
+ *  1. No application name appears in that command, so Windows' "Choose a default" picker has
+ *     nothing to offer for putting it back. Losing the default is a ONE-WAY DOOR.
+ *
+ *  2. MERELY BEING LISTED in the type's `OpenWithProgids` breaks it. Windows then sees two
+ *     candidate handlers with no UserChoice to arbitrate, and shows "Pick an app" instead of
+ *     running the script. Measured directly: `.reg` ran its handler normally, gained ONE
+ *     OpenWithProgids entry, and immediately started showing the picker; removing the entry
+ *     restored it. So the harmless-looking `OpenWithProgids` registration that makes FATE a
+ *     polite option for `.py` is destructive for any type whose handler is a system ProgId that
+ *     runs the file itself.
+ *
+ * Up to 1.11.5 both were registered like every other code type, which broke `.cmd` outright and
+ * `.bat` twice over (the registration, plus a UserChoice for anyone who then picked FATE on its
+ * Default-apps page).
+ *
+ * This is about REGISTRATION only. Both stay in CODE_EXTENSIONS, so the open dialog, drag & drop,
+ * the command line and "Edit in FATE" all still open them — FATE just never advertises itself as
+ * a handler.
+ */
+const PROTECTED_EXTENSIONS = ['bat', 'cmd'];
+
+/** Every type FATE may register against: what the installer writes and the coverage counter walks. */
+const ASSOCIABLE_CODE_EXTENSIONS = CODE_EXTENSIONS.filter((e) => !PROTECTED_EXTENSIONS.includes(e));
+const ASSOCIABLE_EXTENSIONS = [...MARKDOWN_EXTENSIONS, ...ASSOCIABLE_CODE_EXTENSIONS];
+
 /** Extensionless files that are obviously code. `path.extname('.gitignore')` is '' — hence names. */
 const SPECIAL_CODE_BASENAMES = [
   'dockerfile', 'makefile', 'cmakelists.txt', '.gitignore', '.gitattributes',
@@ -350,164 +381,252 @@ async function requestDefaultAppAssociation() {
 }
 
 /**
- * How many of FATE's supported file types currently open with FATE — computed the way EXPLORER
- * decides, not just by UserChoice. Per extension, the effective handler is:
+ * Run a PowerShell script and resolve its stdout.
  *
- *   1. the UserChoice ProgId, if present (what the user confirmed in Windows Settings);
- *   2. else the `.ext` class's (default) ProgId (HKCU shadows HKLM);
- *   3. else, if exactly one application is registered under OpenWithProgids, that app.
+ * Via a temp `.ps1` and `-File`, NOT `-Command` with an inline string: the association scripts
+ * below need `Add-Type -MemberDefinition` here-strings, and a here-string's closing `'@` has to
+ * start at column 0 — which survives a file and does not survive being flattened into one argv
+ * element. `-ExecutionPolicy Bypass` is required for the same reason (a `.ps1` is subject to
+ * policy where `-Command` is not).
  *
- * Rule 3 is why the old UserChoice-only count was so wrong: the installer registers FATE under
- * OpenWithProgids for 83 code types, and for every type where FATE is the ONLY registered
- * handler, Explorer opens it with FATE with no UserChoice ever existing. The user sees FATE as
- * the default; the counter said otherwise.
- *
- * Runs as ONE hidden PowerShell process rather than ~300 `reg query` spawns — a single read of
- * the relevant keys, returning JSON. Only invoked when Settings → Windows opens.
- *
- * Returns { supported, total, ours, claimable } where `claimable` are the extensions with no
- * handler at all — the ones "Claim file types" (below) can take without touching anyone's choice.
+ * `-WindowStyle Hidden` is belt to `windowsHide`'s braces. windowsHide alone is documented to be
+ * enough, but a console window still flashes on some machines when the child is spawned from a
+ * GUI process — which is the most likely cause of the "a PowerShell window blinks when I
+ * double-click a .ps1" report, since the launch path runs one of these.
  */
-function getAssociationCoverage() {
-  if (process.platform !== 'win32') {
-    return Promise.resolve({ supported: false, total: 0, ours: 0, ownedExtensions: [], claimable: [] });
-  }
-
-  const exts = [...MARKDOWN_EXTENSIONS, ...CODE_EXTENSIONS];
-  const ourProgIds = [MD_PROG_ID_HINT, CODE_PROG_ID];
-
-  const script = `
-    $exts = @(${exts.map((e) => `'${e}'`).join(',')})
-    $owned = @(); $claimable = @()
-    foreach ($e in $exts) {
-      $handler = $null
-      try { $handler = (Get-ItemProperty "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.$e\\UserChoice" -ErrorAction Stop).ProgId } catch {}
-      if (-not $handler) {
-        foreach ($root in 'HKCU:\\Software\\Classes','HKLM:\\SOFTWARE\\Classes') {
-          try { $d = (Get-ItemProperty "$root\\.$e" -ErrorAction Stop).'(default)'; if ($d) { $handler = $d; break } } catch {}
-        }
-      }
-      if (-not $handler) {
-        $openWith = @()
-        foreach ($root in 'HKCU:\\Software\\Classes','HKLM:\\SOFTWARE\\Classes') {
-          try {
-            $k = Get-Item "$root\\.$e\\OpenWithProgids" -ErrorAction Stop
-            $openWith += $k.GetValueNames() | Where-Object { $_ }
-          } catch {}
-        }
-        # @(...) is load-bearing: a one-element pipeline result unwraps to a bare string, and
-        # indexing a string yields its first CHARACTER — 'F' is not a ProgId.
-        $openWith = @($openWith | Sort-Object -Unique)
-        if ($openWith.Count -eq 1) { $handler = $openWith[0] }
-        # Zero registrants (nothing owns the type) or several (Explorer would just show the
-        # "How do you want to open this?" picker): claiming overrides nobody's default.
-        else { $claimable += $e }
-      }
-      # Ours: the markdown ProgId, the per-type FATE.<ext> ProgIds (1.11.0), or the legacy shared
-      # FATE.CodeFile that older UserChoice entries still reference.
-      if ($handler -and (($handler -eq '${MD_PROG_ID_HINT}') -or ($handler -like 'FATE.*'))) { $owned += $e }
-    }
-    @{ owned = $owned; claimable = $claimable } | ConvertTo-Json -Compress
-  `;
-
+let psScriptSeq = 0;
+function runPowerShell(script, timeout = 60000) {
   return new Promise((resolve) => {
+    const file = path.join(app.getPath('temp'), `fate-ps-${process.pid}-${psScriptSeq++}.ps1`);
+    try {
+      fs.writeFileSync(file, script, 'utf-8');
+    } catch (e) {
+      resolve({ ok: false, error: e.message, stdout: '' });
+      return;
+    }
     execFile(
       'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-Command', script],
-      { windowsHide: true, timeout: 20000 },
+      ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', file],
+      { windowsHide: true, timeout },
       (err, stdout) => {
-        if (err || !stdout) {
-          resolve({ supported: true, total: exts.length, ours: 0, ownedExtensions: [], claimable: [], error: err?.message });
-          return;
-        }
         try {
-          const parsed = JSON.parse(stdout.trim());
-          const owned = [].concat(parsed.owned || []);
-          const claimable = [].concat(parsed.claimable || []);
-          resolve({ supported: true, total: exts.length, ours: owned.length, ownedExtensions: owned, claimable, ourProgIds });
-        } catch (e) {
-          resolve({ supported: true, total: exts.length, ours: 0, ownedExtensions: [], claimable: [], error: e.message });
+          fs.unlinkSync(file);
+        } catch {
+          /* temp dir cleanup will get it */
         }
+        resolve({ ok: !err, error: err?.message, stdout: (stdout || '').trim() });
       }
     );
   });
 }
 
 /**
- * Claim every supported extension that currently has NO effective handler, by writing the
- * per-user `.ext` (default) ProgId under HKCU\Software\Classes. This is the legitimate half of
- * "make FATE the default for everything":
+ * Shared PowerShell prelude: ask the SHELL what a file type opens with, rather than inferring it
+ * from the registry.
  *
- *   - Types with no handler: a plain class default is exactly how a type gets its first handler;
- *     no UserChoice exists to override, so Explorer honours it immediately. Reversible below.
- *   - Types already owned by another app (a UserChoice): Windows validates UserChoice with a
- *     per-user hash precisely so apps cannot take these programmatically. Those still require the
- *     one-click-per-type flow on FATE's page in Windows Settings — the deep link goes there.
+ * ── Why this replaced the registry heuristic in 1.12.0 ────────────────────────────────────────
+ * The old counter walked the registry and applied the rules everyone believes Explorer uses:
+ * UserChoice, else the `.ext` class default, else a sole OpenWithProgids registrant. Measured
+ * against a real machine, rule 2 is simply FALSE on Windows 11 — a class default written by an
+ * application does not make it the handler. Worse, writing one SUPPRESSES rule 3, which does
+ * work. So the old "claim" feature took 41 types that Explorer was happy to give FATE and left
+ * them with no handler at all, while the counter reported them as won (68/86 against a true 29).
  *
- * Every extension claimed this way is recorded in the store so "release" can undo exactly what
- * FATE did and nothing else.
+ * `AssocQueryString(ASSOCSTR_EXECUTABLE, verb 'open')` is the API Explorer itself resolves through,
+ * so there is nothing left to get wrong: it returns the exe that would actually launch, and
+ * `OpenWith.exe` (the "How do you want to open this file?" picker) is the no-handler sentinel.
+ *
+ * Costs an `Add-Type` compile (~1s) on first use, which is why callers are on-demand only.
  */
-async function claimUnclaimedTypes() {
+const ASSOC_PRELUDE = `
+$ErrorActionPreference = 'SilentlyContinue'
+Add-Type -Namespace FATE -Name Shell -MemberDefinition @'
+[DllImport("shlwapi.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+public static extern uint AssocQueryString(int flags, int str, string pszAssoc, string pszExtra, System.Text.StringBuilder pszOut, ref uint pcchOut);
+[DllImport("shell32.dll")]
+public static extern void SHChangeNotify(int wEventId, uint uFlags, IntPtr dwItem1, IntPtr dwItem2);
+'@
+function Get-Handler([string] $dotExt) {
+  $sb = New-Object System.Text.StringBuilder 2048
+  $n = [uint32] 2048
+  # 2 = ASSOCSTR_EXECUTABLE. The 'open' verb is required; without it the call returns
+  # ERROR_NO_ASSOCIATION even for types that plainly have a handler.
+  $rc = [FATE.Shell]::AssocQueryString(0, 2, $dotExt, 'open', $sb, [ref] $n)
+  if ($rc -ne 0) { return '' }
+  return $sb.ToString()
+}
+function Test-Ours([string] $progId) {
+  if (-not $progId) { return $false }
+  return ($progId -eq 'Markdown Document') -or ($progId -like 'FATE.*')
+}
+`;
+
+/** SHCNE_ASSOCCHANGED — tell Explorer the association map moved so icons and menus catch up. */
+const ASSOC_NOTIFY_PS = `[FATE.Shell]::SHChangeNotify(0x08000000, 0, [IntPtr]::Zero, [IntPtr]::Zero)`;
+
+/**
+ * Undo the damage 1.10/1.11 did, and keep `.bat`/`.cmd` out of FATE's hands. Runs on every
+ * packaged launch (and on demand from Settings → Windows).
+ *
+ * Two repairs, both deliberately conservative — a type that currently works is never touched:
+ *
+ *  1. **The dead class defaults.** For any type that resolves to NOTHING while
+ *     `HKCU\Software\Classes\.ext` names a FATE ProgId, that value is removed. It was never doing
+ *     anything useful (see ASSOC_PRELUDE) and it actively blocks the sole-registrant fallback, so
+ *     removing it can only improve the type: it either starts opening with FATE or stays unowned.
+ *
+ *  2. **`.bat` / `.cmd`.** Every trace of FATE is removed: the Open With entry (the thing that
+ *     actually breaks these types — see PROTECTED_EXTENSIONS), the ProgId, the Capabilities entry,
+ *     and any FATE `UserChoice`. Deleting a UserChoice is allowed where writing one is not — its
+ *     ACL denies SetValue, not Delete, which is how Windows itself resets a type.
+ *
+ *     LIMIT: this reaches HKCU only, because the app runs unelevated. The 1.11.5 installer wrote
+ *     the same entries to HKLM, and those keep the type broken until they are gone. Removing them
+ *     needs elevation, so it happens in the installer (RestoreCommandProcessorType in
+ *     build/installer.nsh) — upgrading to 1.12.0 is what completes the repair on a machine that
+ *     had 1.11.5 installed per-machine.
+ */
+async function repairAssociations() {
   if (process.platform !== 'win32') return { ok: false, error: 'Windows only' };
-  const coverage = await getAssociationCoverage();
-  const claimable = coverage.claimable || [];
-  if (claimable.length === 0) return { ok: true, claimed: 0 };
 
-  // Per-type ProgIds since 1.11.0 — each carries its own document icon.
-  const progIdFor = (ext) => (MARKDOWN_EXTENSIONS.includes(ext) ? MD_PROG_ID_HINT : `FATE.${ext}`);
-  const script = claimable
-    .map((e) => `New-Item -Path 'HKCU:\\Software\\Classes\\.${e}' -Force | Out-Null; Set-ItemProperty -Path 'HKCU:\\Software\\Classes\\.${e}' -Name '(default)' -Value '${progIdFor(e)}'`)
-    .join('; ');
+  const exe = process.execPath.replace(/'/g, "''");
+  const list = (arr) => arr.map((e) => `'${e}'`).join(',');
+  /*
+   * Written into the PowerShell source verbatim, so single backslashes here. Two spellings on
+   * purpose: the PowerShell registry PROVIDER needs the drive colon (`HKCU:\…`), reg.exe rejects
+   * it and wants the bare hive name (`HKCU\…`).
+   */
+  const FILE_EXTS_PS = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts';
+  const FILE_EXTS_REG = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts';
 
-  return new Promise((resolve) => {
-    execFile(
-      'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-Command', script],
-      { windowsHide: true, timeout: 20000 },
-      (err) => {
-        if (err) {
-          resolve({ ok: false, error: err.message });
-          return;
-        }
-        const already = store.get('claimedTypes') || [];
-        store.set('claimedTypes', [...new Set([...already, ...claimable])]);
-        // Nudge Explorer to notice the association change (best effort, refreshes icons).
-        execFile('ie4uinit.exe', ['-show'], { windowsHide: true }, () => {});
-        resolve({ ok: true, claimed: claimable.length });
-      }
-    );
-  });
+  const script = `${ASSOC_PRELUDE}
+$exe = '${exe}'
+$exeName = [System.IO.Path]::GetFileName($exe)
+$fixed = @(); $restored = @()
+
+function Test-Unowned([string] $handler) {
+  return (-not $handler) -or ($handler -imatch 'OpenWith\\.exe$')
+}
+function Get-ClassDefault([string] $dotExt) {
+  try { return (Get-ItemProperty "HKCU:\\Software\\Classes\\$dotExt" -ErrorAction Stop).'(default)' } catch { return $null }
+}
+function Remove-UserChoice([string] $dotExt) {
+  # NOT reg.exe. It opens the target with KEY_ALL_ACCESS, and UserChoice carries a deny ACE on
+  # KEY_SET_VALUE — SDDL (D;;DC;;;<user-sid>) — so that open fails outright with Access Denied.
+  # DELETING the key needs only DELETE, which the inherited full-control ACE does grant. Opening
+  # the PARENT for write and removing the child through it asks for exactly that and no more.
+  # This is the same reset Windows itself performs; only WRITING a UserChoice is protected.
+  try {
+    $parent = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey("Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\$dotExt", $true)
+    if ($null -eq $parent) { return $false }
+    $parent.DeleteSubKey('UserChoice', $false)
+    $parent.Close()
+    return $true
+  } catch { return $false }
 }
 
-/** Undo claimUnclaimedTypes: remove OUR per-user class defaults, and only where still ours. */
-async function releaseClaimedTypes() {
-  if (process.platform !== 'win32') return { ok: false, error: 'Windows only' };
-  const claimed = store.get('claimedTypes') || [];
-  if (claimed.length === 0) return { ok: true, released: 0 };
+# ── 1. Class defaults that block the association they were meant to create ──────────────────
+foreach ($e in @(${list(ASSOCIABLE_EXTENSIONS)})) {
+  $d = ".$e"
+  if (-not (Test-Unowned (Get-Handler $d))) { continue }   # working type: leave it alone
+  if (Test-Ours (Get-ClassDefault $d)) {
+    reg.exe delete "HKCU\\Software\\Classes\\$d" /ve /f > $null 2>&1
+    $fixed += $e
+  }
+}
 
-  const script = claimed
-    .map(
-      (e) =>
-        `try { $v = (Get-ItemProperty 'HKCU:\\Software\\Classes\\.${e}' -ErrorAction Stop).'(default)'; if ($v -eq '${MD_PROG_ID_HINT}' -or $v -eq '${CODE_PROG_ID}') { Remove-ItemProperty -Path 'HKCU:\\Software\\Classes\\.${e}' -Name '(default)' } } catch {}`
-    )
-    .join('; ');
+# ── 2. Give .bat / .cmd back to the command processor, permanently ──────────────────────────
+foreach ($e in @(${list(PROTECTED_EXTENSIONS)})) {
+  $d = ".$e"
+  $uc = $null
+  try { $uc = (Get-ItemProperty "${FILE_EXTS_PS}\\$d\\UserChoice" -ErrorAction Stop).ProgId } catch {}
+  if ((Test-Ours $uc) -and (Remove-UserChoice $d)) { $restored += $e }
+  if (Test-Ours (Get-ClassDefault $d)) { reg.exe delete "HKCU\\Software\\Classes\\$d" /ve /f > $null 2>&1 }
+  reg.exe delete "HKCU\\Software\\Classes\\$d\\OpenWithProgids" /v "FATE.$e" /f > $null 2>&1
+  reg.exe delete "HKCU\\Software\\Classes\\$d\\OpenWithProgids" /v "FATE.CodeFile" /f > $null 2>&1
+  reg.exe delete "${FILE_EXTS_REG}\\$d\\OpenWithProgids" /v "FATE.$e" /f > $null 2>&1
+  reg.exe delete "HKCU\\Software\\Classes\\FATE.$e" /f > $null 2>&1
+  reg.exe delete "HKCU\\Software\\FATE\\Capabilities\\FileAssociations" /v "$d" /f > $null 2>&1
+}
 
-  return new Promise((resolve) => {
-    execFile(
-      'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-Command', script],
-      { windowsHide: true, timeout: 20000 },
-      (err) => {
-        if (err) {
-          resolve({ ok: false, error: err.message });
-          return;
-        }
-        store.set('claimedTypes', []);
-        execFile('ie4uinit.exe', ['-show'], { windowsHide: true }, () => {});
-        resolve({ ok: true, released: claimed.length });
-      }
-    );
-  });
+if ($fixed.Count -gt 0 -or $restored.Count -gt 0) { ${ASSOC_NOTIFY_PS} }
+@{ fixed = @($fixed); restored = @($restored) } | ConvertTo-Json -Compress
+`;
+
+  const { ok, stdout, error } = await runPowerShell(script);
+  if (!ok) return { ok: false, error };
+  try {
+    const parsed = JSON.parse(stdout || '{}');
+    const fixed = [].concat(parsed.fixed || []);
+    const restored = [].concat(parsed.restored || []);
+    // The legacy bookkeeping described writes that never worked; once repaired it means nothing.
+    if (fixed.length) store.set('claimedTypes', []);
+    return { ok: true, fixed, restored };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
+ * Which of FATE's supported file types actually open with FATE.
+ *
+ * Asks the shell per extension (see ASSOC_PRELUDE) instead of reimplementing Explorer's
+ * resolution order, because the registry-heuristic version this replaced was wrong in a way that
+ * mattered: it counted FATE's own inert class-default writes as ownership and reported 68/86 on a
+ * machine whose true figure was 29.
+ *
+ * `.bat`/`.cmd` are absent from the total by design — FATE will not take them (PROTECTED_EXTENSIONS).
+ *
+ * Returns { supported, total, ours, ownedExtensions, unowned, otherApp, repairable } where
+ * `unowned` have no handler at all, `otherApp` belong to something else, and `repairable` is the
+ * subset of `unowned` still carrying a FATE class default that repairAssociations() can clear.
+ */
+async function getAssociationCoverage() {
+  if (process.platform !== 'win32') {
+    return { supported: false, total: 0, ours: 0, ownedExtensions: [], unowned: [], otherApp: [], repairable: [] };
+  }
+
+  const exe = process.execPath.replace(/'/g, "''");
+  const script = `${ASSOC_PRELUDE}
+$exe = '${exe}'
+$exeName = [System.IO.Path]::GetFileName($exe)
+$owned = @(); $unowned = @(); $other = @(); $repairable = @()
+
+foreach ($e in @(${ASSOCIABLE_EXTENSIONS.map((x) => `'${x}'`).join(',')})) {
+  $d = ".$e"
+  $h = Get-Handler $d
+  if ((-not $h) -or ($h -imatch 'OpenWith\\.exe$')) {
+    $unowned += $e
+    $cd = $null
+    try { $cd = (Get-ItemProperty "HKCU:\\Software\\Classes\\$d" -ErrorAction Stop).'(default)' } catch {}
+    if (Test-Ours $cd) { $repairable += $e }
+  }
+  # Full path first (a per-user and a per-machine install share an exe name), then the name alone.
+  elseif (($h -ieq $exe) -or ([System.IO.Path]::GetFileName($h) -ieq $exeName)) { $owned += $e }
+  else { $other += $e }
+}
+@{ owned = @($owned); unowned = @($unowned); other = @($other); repairable = @($repairable) } | ConvertTo-Json -Compress
+`;
+
+  const total = ASSOCIABLE_EXTENSIONS.length;
+  const { ok, stdout, error } = await runPowerShell(script);
+  if (!ok) return { supported: true, total, ours: 0, ownedExtensions: [], unowned: [], otherApp: [], repairable: [], error };
+  try {
+    const p = JSON.parse(stdout || '{}');
+    const ownedExtensions = [].concat(p.owned || []);
+    return {
+      supported: true,
+      total,
+      ours: ownedExtensions.length,
+      ownedExtensions,
+      unowned: [].concat(p.unowned || []),
+      otherApp: [].concat(p.other || []),
+      repairable: [].concat(p.repairable || []),
+      protectedExtensions: PROTECTED_EXTENSIONS
+    };
+  } catch (e) {
+    return { supported: true, total, ours: 0, ownedExtensions: [], unowned: [], otherApp: [], repairable: [], error: e.message };
+  }
 }
 
 /**
@@ -533,7 +652,7 @@ function ensureWindowsRegistration() {
   const stampKey = 'registrationStamp';
   // The trailing number is the registration SCHEMA version — bump it whenever the shape of the
   // .reg payload changes, so existing installs re-heal on update even at the same app version.
-  const stamp = `${process.execPath}|${app.getVersion()}|3`;
+  const stamp = `${process.execPath}|${app.getVersion()}|4`;
   if (store.get(stampKey) === stamp) return;
 
   const exe = process.execPath.replace(/\\/g, '\\\\');
@@ -559,7 +678,7 @@ function ensureWindowsRegistration() {
     '"ApplicationDescription"="Formatted Article & Text Editor — a Markdown viewer and code editor for technical documents."',
     '[HKEY_CURRENT_USER\\Software\\FATE\\Capabilities\\FileAssociations]',
     ...MARKDOWN_EXTENSIONS.map((e) => `".${e}"="${MD_PROG_ID_HINT}"`),
-    ...CODE_EXTENSIONS.map((e) => `".${e}"="FATE.${e}"`),
+    ...ASSOCIABLE_CODE_EXTENSIONS.map((e) => `".${e}"="FATE.${e}"`),
     '[HKEY_CURRENT_USER\\Software\\RegisteredApplications]',
     `"${APP_TITLE}"="Software\\\\FATE\\\\Capabilities"`,
     /*
@@ -573,7 +692,7 @@ function ensureWindowsRegistration() {
     '[HKEY_CURRENT_USER\\Software\\Classes\\*\\shell\\FATE.edit\\command]',
     `@="\\"${exe}\\" \\"%1\\""`,
     // One ProgId per code type, each with its own gilded extension icon.
-    ...CODE_EXTENSIONS.flatMap((e) => [
+    ...ASSOCIABLE_CODE_EXTENSIONS.flatMap((e) => [
       `[HKEY_CURRENT_USER\\Software\\Classes\\FATE.${e}]`,
       `@="${e.toUpperCase()} File (FATE)"`,
       `[HKEY_CURRENT_USER\\Software\\Classes\\FATE.${e}\\DefaultIcon]`,
@@ -918,29 +1037,42 @@ function createWindow() {
   });
 
   /*
-   * Don't let the window close over unsaved edits. The renderer mirrors its dirty flag here via
-   * 'set-edited'; when it is set, closing asks first. `documentEdited = false` before the second
-   * close() is what lets that close actually proceed — this handler runs again for it.
+   * Don't let the window close over unsaved edits.
+   *
+   * The main process knows only THAT something is dirty (the renderer mirrors an aggregate flag
+   * over 'set-edited'); it cannot save, because the buffers live in the renderer's CodeMirror
+   * instances. So it vetoes the close once and hands the flow over: the renderer walks its dirty
+   * tabs, offering Save / Don't save / Cancel per tab, and calls back on 'confirmed-close'.
+   *
+   * Before 1.12.0 this was a single "Discard changes and close?" — the only way to keep your work
+   * was to cancel, close the dialog, and save by hand.
+   *
+   * `closeConfirmed` is what lets the second close() through; this handler runs again for it. The
+   * timeout is the escape hatch for a renderer that never answers (mid-crash, or a stuck dialog) —
+   * without it the window would be unclosable.
    */
+  let closeConfirmed = false;
+  let closeHandoffTimer = null;
   mainWindow.on('close', (e) => {
-    if (!documentEdited) return;
+    if (closeConfirmed || !documentEdited) return;
     e.preventDefault();
-    dialog
-      .showMessageBox(mainWindow, {
-        type: 'warning',
-        buttons: ['Discard changes and close', 'Cancel'],
-        defaultId: 1,
-        cancelId: 1,
-        title: 'Unsaved changes',
-        message: 'Close FATE and discard unsaved changes?',
-        detail: 'One or more open tabs have changes that have not been saved.'
-      })
-      .then(({ response }) => {
-        if (response === 0 && mainWindow && !mainWindow.isDestroyed()) {
-          documentEdited = false;
-          mainWindow.close();
-        }
-      });
+    clearTimeout(closeHandoffTimer);
+    closeHandoffTimer = setTimeout(() => {
+      closeConfirmed = true;
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
+    }, 60000);
+    mainWindow.webContents.send('request-close');
+  });
+
+  /** The renderer finished its save-or-discard walk. `proceed: false` means the user cancelled. */
+  ipcMain.removeAllListeners('confirmed-close'); // createWindow can run again (macOS 'activate')
+  ipcMain.on('confirmed-close', (event, proceed) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== mainWindow) return;
+    clearTimeout(closeHandoffTimer);
+    if (!proceed) return;
+    closeConfirmed = true;
+    documentEdited = false;
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
   });
 
   // SECURITY: Prevent inner navigation and force external links to open in default browser
@@ -1056,7 +1188,7 @@ function unwatchFile(filePath) {
   lastSavedByApp.delete(key);
 }
 
-async function openAndWatchFile(filePath) {
+async function openAndWatchFile(filePath, opts = {}) {
   if (!fs.existsSync(filePath)) return;
 
   try {
@@ -1091,7 +1223,13 @@ async function openAndWatchFile(filePath) {
     rememberRecentFile(filePath);
 
     if (mainWindow) {
-      mainWindow.webContents.send('open-file', content, name, filePath);
+      /*
+       * `fromRestore` rides along so the renderer can tell a tab the user just asked for from one
+       * it is merely reinstating. Session restore replays every path from last time, and each
+       * replay used to activate its tab — so double-clicking a file to LAUNCH FATE landed you on
+       * whichever restored tab happened to arrive last, not on the file you opened.
+       */
+      mainWindow.webContents.send('open-file', content, name, filePath, { fromRestore: !!opts.fromRestore });
     }
 
     watchFile(filePath);
@@ -1249,11 +1387,31 @@ app.whenReady().then(() => {
     });
     return response === 0;
   });
+
+  /**
+   * The per-tab prompt of the close walk: Save / Don't save / Cancel.
+   *
+   * Cancel is both the default and the Escape action deliberately — this dialog appears while the
+   * app is on its way out, so the safe answer to a stray keypress is "stop", never "throw the
+   * edits away".
+   */
+  ipcMain.handle('confirm-save-on-close', async (event, docName) => {
+    const { response } = await dialog.showMessageBox(mainWindow, {
+      type: 'warning',
+      buttons: ['Save', "Don't save", 'Cancel'],
+      defaultId: 0,
+      cancelId: 2,
+      title: 'Unsaved changes',
+      message: `Save changes to ${docName || 'this document'} before closing?`,
+      detail: "If you don't save, your changes will be lost."
+    });
+    return ['save', 'discard', 'cancel'][response] || 'cancel';
+  });
   
   // ── Recent documents ──────────────────────────────────────────────────────────────────────
   ipcMain.handle('get-recent-files', () => readRecentFiles());
 
-  ipcMain.handle('open-recent-file', (event, filePath) => {
+  ipcMain.handle('open-recent-file', (event, filePath, opts) => {
     // Re-check existence here rather than trusting the renderer's cached `exists` flag; the file
     // may have been deleted since the list was rendered.
     if (!filePath || !fs.existsSync(filePath)) {
@@ -1264,7 +1422,7 @@ app.whenReady().then(() => {
       store.set('recentFiles', remaining);
       return { ok: false, reason: 'missing' };
     }
-    openAndWatchFile(filePath);
+    openAndWatchFile(filePath, opts || {});
     return { ok: true };
   });
 
@@ -1295,9 +1453,7 @@ app.whenReady().then(() => {
   ipcMain.handle('get-default-app-status', () => getDefaultAppStatus());
   ipcMain.handle('request-default-app', () => requestDefaultAppAssociation());
   ipcMain.handle('get-association-coverage', () => getAssociationCoverage());
-  ipcMain.handle('claim-unclaimed-types', () => claimUnclaimedTypes());
-  ipcMain.handle('release-claimed-types', () => releaseClaimedTypes());
-  ipcMain.handle('get-claimed-types', () => store.get('claimedTypes') || []);
+  ipcMain.handle('repair-associations', () => repairAssociations());
 
   /** Build facts the renderer adjusts its UI to (Store builds get Store-owned updates). */
   ipcMain.handle('get-runtime-info', () => ({
@@ -1321,6 +1477,10 @@ app.whenReady().then(() => {
         [
           '-NoProfile',
           '-NonInteractive',
+          // See runPowerShell: -WindowStyle Hidden alongside windowsHide, because this one runs
+          // on the launch path and a flash here reads as "FATE ran my script before opening it".
+          '-WindowStyle',
+          'Hidden',
           '-Command',
           'Add-Type -AssemblyName System.Drawing; ([System.Drawing.Text.InstalledFontCollection]::new()).Families | ForEach-Object { $_.Name } | ConvertTo-Json -Compress'
         ],
@@ -1424,6 +1584,22 @@ app.whenReady().then(() => {
   }
 
   ensureWindowsRegistration();
+
+  /*
+   * Repair before the user can trip over it, on every launch rather than behind a stamp: the
+   * `.bat` hijack it undoes can be re-created at any time from Windows Settings (up to 1.11.5
+   * FATE listed .bat on its own Default-apps page), so a once-per-version check would leave a
+   * window where batch files silently stop running. Async, off the startup path, and a no-op
+   * when there is nothing to fix.
+   */
+  if (process.platform === 'win32' && app.isPackaged) {
+    repairAssociations()
+      .then((r) => {
+        if (r.restored?.length) console.log('Restored the command processor for:', r.restored.join(', '));
+        if (r.fixed?.length) console.log('Cleared dead class defaults for', r.fixed.length, 'types');
+      })
+      .catch(() => {});
+  }
 });
 
 app.on('window-all-closed', () => {

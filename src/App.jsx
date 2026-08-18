@@ -177,6 +177,15 @@ function App() {
   const activeIdRef = useRef(null);
   const splitIdRef = useRef(null);
   const sessionSaveTimerRef = useRef(null);
+  /*
+   * Who gets the focus at startup. Session restore replays every path from last time and each
+   * replay opens a tab; without these, whichever restored tab happened to arrive LAST won, so
+   * double-clicking a file to launch FATE left you looking at some other document. An explicit
+   * open (association, dialog, drop, recents) sets explicitOpenRef and from then on restored tabs
+   * never touch the selection; absent one, the tab that was active last time is reselected.
+   */
+  const explicitOpenRef = useRef(false);
+  const restoreActiveKeyRef = useRef(null);
 
   useEffect(() => {
     docsRef.current = docs;
@@ -227,13 +236,22 @@ function App() {
    * drop, file association, second instance, session restore. A path that is already open just
    * activates (and, for a clean buffer, refreshes) its existing tab instead of duplicating it.
    */
-  const openDocument = (content, name, fPath) => {
+  const openDocument = (content, name, fPath, meta = {}) => {
     const kind = fileKindForName(name);
     const key = fPath ? pathKey(fPath) : null;
 
+    /** Should this open take the user to the tab? Restored tabs only do so if they were active. */
+    const shouldFocus = () => {
+      if (!meta.fromRestore) {
+        explicitOpenRef.current = true;
+        return true;
+      }
+      return !explicitOpenRef.current && !!key && key === restoreActiveKeyRef.current;
+    };
+
     const existing = key && docsRef.current.find((d) => d.path && pathKey(d.path) === key);
     if (existing) {
-      setActiveId(existing.id);
+      if (shouldFocus()) setActiveId(existing.id);
       if (existing.kind === 'markdown' && !existing.editMode) {
         setDocs((ds) =>
           ds.map((d) => (d.id === existing.id ? { ...d, source: content, ...renderMarkdown(content, fPath) } : d))
@@ -259,7 +277,7 @@ function App() {
             dirty: false
           };
     setDocs((ds) => [...ds, doc]);
-    setActiveId(id);
+    if (shouldFocus()) setActiveId(id);
     setIsLoading(false);
   };
 
@@ -403,8 +421,9 @@ function App() {
          * same-path dedupe (against e.g. a file-association argv arriving in parallel) all apply.
          */
         if (newSettings.restoreSession && Array.isArray(session?.paths)) {
+          restoreActiveKeyRef.current = session.active ? pathKey(session.active) : null;
           for (const p of session.paths) {
-            window.electronAPI.openRecentFile(p).catch(() => {});
+            window.electronAPI.openRecentFile(p, { fromRestore: true }).catch(() => {});
           }
         }
       });
@@ -412,8 +431,8 @@ function App() {
       window.electronAPI.getRuntimeInfo?.().then(setRuntimeInfo).catch(() => {});
       window.electronAPI.getSystemFonts?.().then(setSystemFonts).catch(() => {});
 
-      window.electronAPI.onOpenFile((content, name, path) => {
-        openDocument(content, name, path);
+      window.electronAPI.onOpenFile((content, name, path, meta) => {
+        openDocument(content, name, path, meta);
       });
 
       /*
@@ -485,10 +504,20 @@ function App() {
     window.electronAPI.setTitle(activeDoc ? activeDoc.name : null, !!activeDoc?.dirty);
   }, [docs, activeDoc]);
 
-  /* Persist the session (paths only) whenever the tab set or active tab changes, debounced. */
+  /*
+   * Persist the session (paths only) whenever the tab set or active tab changes, debounced.
+   *
+   * With "reopen last session's tabs" off, the stored list is CLEARED rather than merely ignored
+   * at launch. Someone who turns that off is saying they want FATE to start empty; leaving a list
+   * of everything they had open sitting in the config file is not that.
+   */
   useEffect(() => {
     if (!window.electronAPI) return;
     clearTimeout(sessionSaveTimerRef.current);
+    if (!settings.restoreSession) {
+      window.electronAPI.store.set('session', { paths: [], active: null });
+      return;
+    }
     sessionSaveTimerRef.current = setTimeout(() => {
       window.electronAPI.store.set('session', {
         paths: docs.filter((d) => d.path).map((d) => d.path),
@@ -496,7 +525,9 @@ function App() {
       });
     }, 400);
     return () => clearTimeout(sessionSaveTimerRef.current);
-  }, [docs, activeDoc]);
+  }, [docs, activeDoc, settings.restoreSession]);
+
+
 
   /*
    * Re-check the default-app association when the window regains focus — coming back from
@@ -591,15 +622,17 @@ function App() {
    * As, offering every supported format). `forceAs` is the Save As action.
    *
    * The tab is only marked clean AFTER the write succeeds — a failed save leaves the guards armed.
+   * Resolves TRUE only when the file actually reached disk; the quit walk relies on that to stop
+   * dead when a Save As is cancelled rather than closing over the edits it just offered to keep.
    */
   const saveDoc = useCallback(async (docId, { forceAs = false } = {}) => {
     const id = typeof docId === 'number' ? docId : activeIdRef.current;
     const doc = docsRef.current.find((d) => d.id === id);
-    if (!doc || !window.electronAPI) return;
+    if (!doc || !window.electronAPI) return false;
 
     const editor = editorRefs.current[id];
     const content = editor ? editor.getContent() : doc.kind === 'markdown' ? doc.source : null;
-    if (content === null) return;
+    if (content === null) return false;
 
     setStatusError('');
     try {
@@ -639,13 +672,42 @@ function App() {
         } else if (!editor) {
           setDocs((ds) => ds.map((d) => (d.id === id ? { ...d, dirty: false } : d)));
         }
-      } else if (!res?.canceled) {
-        setStatusError(res?.error || 'Save failed');
+        return true;
       }
+      if (!res?.canceled) setStatusError(res?.error || 'Save failed');
+      return false;
     } catch (err) {
       setStatusError(err?.message || 'Save failed');
+      return false;
     }
   }, []);
+
+  /*
+   * Quitting with unsaved work. The main process vetoes its own close and hands the flow here,
+   * because it cannot save — the buffers live in CodeMirror. Each dirty tab is selected (so the
+   * user can see what they are being asked about) and offered Save / Don't save / Cancel; Cancel,
+   * or a save that does not reach disk, calls the whole quit off.
+   */
+  useEffect(() => {
+    if (!window.electronAPI?.onRequestClose) return;
+    window.electronAPI.onRequestClose(async () => {
+      for (const doc of docsRef.current) {
+        const editor = editorRefs.current[doc.id];
+        if (!(editor ? editor.isDirty() : doc.dirty)) continue;
+        setActiveId(doc.id);
+        const answer = await window.electronAPI.confirmSaveOnClose(doc.name);
+        if (answer === 'cancel') {
+          window.electronAPI.confirmedClose(false);
+          return;
+        }
+        if (answer === 'save' && !(await saveDoc(doc.id))) {
+          window.electronAPI.confirmedClose(false);
+          return;
+        }
+      }
+      window.electronAPI.confirmedClose(true);
+    });
+  }, [saveDoc]);
 
   /** Mirror a tab's dirty flag into the doc list (title + guards follow via the sync effect). */
   const handleDirtyChange = useCallback((docId, dirty) => {

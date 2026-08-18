@@ -91,6 +91,54 @@
   DeleteRegKey SHCTX "Software\Classes\FATE.${EXT}"
 !macroend
 
+# ── Retroactive repair: give .bat and .cmd back to the command processor ────────────────────────
+#
+# 1.11.5 and earlier registered these like any other code type. That alone breaks them: once a
+# second handler appears in OpenWithProgids with no UserChoice to arbitrate, Windows stops running
+# the script and shows "Pick an app" instead. Setting FATE as the default on its own Default-apps
+# page then made it unrecoverable, because that picker has no "Windows Command Processor" to
+# choose — batfile's open command is `"%1" %*`, which names no application.
+#
+# Everything FATE wrote for the type comes out: the Open With entries (the actual cause), the
+# ProgId, the Capabilities entry, and any UserChoice naming a FATE ProgId. Deleting a UserChoice is
+# permitted where writing one is not; the key's ACL denies SetValue, not Delete.
+#
+# THIS PASS IS THE ONLY ONE THAT CAN FIX HKLM. The app repeats the cleanup per-user on every launch
+# but runs unelevated, so the per-machine entries a previous installer wrote can only be removed
+# here — which is why upgrading is what actually restores .bat on a machine that had 1.11.5.
+#
+# A macro rather than a Function because this is inserted into customInstall, and NSIS does not
+# allow Function definitions inside a Section.
+#
+# The app repeats all of this per-user on every launch (repairAssociations in electron/main.cjs),
+# which is the reliable half — an elevated installer writes to the ADMIN's HKCU, not necessarily
+# the profile that will actually run FATE. This pass is here so the machine is fixed even if the
+# app is never launched again.
+!macro RestoreCommandProcessorType EXT
+  DeleteRegValue SHCTX "Software\FATE\Capabilities\FileAssociations" ".${EXT}"
+  DeleteRegValue SHCTX "Software\Classes\.${EXT}\OpenWithProgids" "FATE.${EXT}"
+  DeleteRegValue SHCTX "Software\Classes\.${EXT}\OpenWithProgids" "FATE.CodeFile"
+  DeleteRegKey SHCTX "Software\Classes\FATE.${EXT}"
+  DeleteRegValue HKCU "Software\Classes\.${EXT}\OpenWithProgids" "FATE.${EXT}"
+  DeleteRegValue HKCU "Software\Classes\.${EXT}\OpenWithProgids" "FATE.CodeFile"
+  DeleteRegKey HKCU "Software\Classes\FATE.${EXT}"
+
+  ; The class default only ever suppressed the association it was meant to create. Drop it if it
+  ; is ours; leave anything else alone.
+  ReadRegStr $R8 HKCU "Software\Classes\.${EXT}" ""
+  ${If} $R8 == "FATE.${EXT}"
+  ${OrIf} $R8 == "FATE.CodeFile"
+    DeleteRegValue HKCU "Software\Classes\.${EXT}" ""
+  ${EndIf}
+
+  ; The one that breaks batch files. Removed only when it is FATE's — never someone else's choice.
+  ReadRegStr $R8 HKCU "Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.${EXT}\UserChoice" "ProgId"
+  ${If} $R8 == "FATE.${EXT}"
+  ${OrIf} $R8 == "FATE.CodeFile"
+    DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.${EXT}\UserChoice"
+  ${EndIf}
+!macroend
+
 !macro customInstall
   # ── Register FATE as a Windows "Registered Application" (new name) ────────────────────────────
   # This is what gives FATE its own page in Settings > Default apps and makes the
@@ -153,8 +201,11 @@
   !insertmacro RegisterCodeType "sh" "SH File (FATE)"
   !insertmacro RegisterCodeType "bash" "BASH File (FATE)"
   !insertmacro RegisterCodeType "zsh" "ZSH File (FATE)"
-  !insertmacro RegisterCodeType "bat" "BAT File (FATE)"
-  !insertmacro RegisterCodeType "cmd" "CMD File (FATE)"
+  # .bat and .cmd are NOT registered — see PROTECTED_EXTENSIONS in electron/main.cjs. Windows runs
+  # them through batfile/cmdfile, whose open command is `"%1" %*`: the script IS the executable, so
+  # no application name appears for the "Choose a default" picker to offer. An editor that takes
+  # the type leaves the user with no supported way to give it back, and batch files stop running.
+  # Up to 1.11.5 both were registered here; customInstall below undoes that on existing machines.
   !insertmacro RegisterCodeType "c" "C File (FATE)"
   !insertmacro RegisterCodeType "h" "H File (FATE)"
   !insertmacro RegisterCodeType "cpp" "CPP File (FATE)"
@@ -201,6 +252,9 @@
   !insertmacro RegisterCodeType "zig" "ZIG File (FATE)"
   !insertmacro RegisterCodeType "jl" "JL File (FATE)"
   !insertmacro RegisterCodeType "asm" "ASM File (FATE)"
+
+  !insertmacro RestoreCommandProcessorType "bat"
+  !insertmacro RestoreCommandProcessorType "cmd"
 !macroend
 
 !macro customUnInstall
@@ -266,6 +320,7 @@
   !insertmacro UnregisterCodeType "sh"
   !insertmacro UnregisterCodeType "bash"
   !insertmacro UnregisterCodeType "zsh"
+  # Still unregistered on the way out: 1.11.5 and earlier created these keys.
   !insertmacro UnregisterCodeType "bat"
   !insertmacro UnregisterCodeType "cmd"
   !insertmacro UnregisterCodeType "c"

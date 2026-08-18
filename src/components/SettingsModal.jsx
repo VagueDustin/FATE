@@ -204,8 +204,8 @@ function SettingsModal({
 }) {
   const [section, setSection] = useState('appearance');
   const [coverage, setCoverage] = useState(null);
-  const [claimBusy, setClaimBusy] = useState(false);
-  const [claimedCount, setClaimedCount] = useState(0);
+  const [repairBusy, setRepairBusy] = useState(false);
+  const [repairResult, setRepairResult] = useState(null);
   const [classicMenu, setClassicMenu] = useState(null);
   const [explorerRestartNeeded, setExplorerRestartNeeded] = useState(false);
   const [newOverrideExt, setNewOverrideExt] = useState('');
@@ -230,9 +230,6 @@ function SettingsModal({
     if (window.electronAPI?.getAssociationCoverage) {
       window.electronAPI.getAssociationCoverage().then(setCoverage).catch(() => {});
     }
-    if (window.electronAPI?.getClaimedTypes) {
-      window.electronAPI.getClaimedTypes().then((l) => setClaimedCount(l.length)).catch(() => {});
-    }
     if (window.electronAPI?.getClassicMenu) {
       window.electronAPI.getClassicMenu().then(setClassicMenu).catch(() => {});
     }
@@ -251,18 +248,12 @@ function SettingsModal({
     if (section === 'windows') refreshCoverage();
   }, [section]);
 
-  const claimTypes = async () => {
-    setClaimBusy(true);
-    await window.electronAPI?.claimUnclaimedTypes?.();
+  const repairTypes = async () => {
+    setRepairBusy(true);
+    const res = await window.electronAPI?.repairAssociations?.();
+    setRepairResult(res || null);
     refreshCoverage();
-    setClaimBusy(false);
-  };
-
-  const releaseTypes = async () => {
-    setClaimBusy(true);
-    await window.electronAPI?.releaseClaimedTypes?.();
-    refreshCoverage();
-    setClaimBusy(false);
+    setRepairBusy(false);
   };
 
   const overrides = Object.entries(fonts.perType);
@@ -458,8 +449,15 @@ function SettingsModal({
                       }}
                     />
                   </div>
-                  <div className="setting-item">
-                    <span className="setting-label">Reopen last session&apos;s tabs on launch</span>
+                  <div className="setting-item setting-item-stacked">
+                    <div className="setting-label-block">
+                      <span className="setting-label">Reopen last session&apos;s tabs on launch</span>
+                      <span className="setting-hint">
+                        Off means FATE closes your tabs when you quit and starts on the home screen
+                        next time — and the list of what you had open is not kept. Either way, quitting
+                        with unsaved work asks you to save or discard it first, tab by tab.
+                      </span>
+                    </div>
                     <label className="switch">
                       <input
                         type="checkbox"
@@ -679,10 +677,10 @@ function SettingsModal({
                       <span className="coverage-caption">file types currently open with FATE</span>
                     </div>
                     <div className="coverage-actions">
-                      {coverage && coverage.claimable?.length > 0 && (
-                        <button className="btn btn-primary btn-compact" onClick={claimTypes} disabled={claimBusy}>
-                          <Check size={14} weight="bold" />
-                          {claimBusy ? 'Working…' : `Claim ${coverage.claimable.length} unclaimed types`}
+                      {coverage && coverage.repairable?.length > 0 && (
+                        <button className="btn btn-primary btn-compact" onClick={repairTypes} disabled={repairBusy}>
+                          <ArrowCounterClockwise size={14} weight="bold" />
+                          {repairBusy ? 'Repairing…' : `Repair ${coverage.repairable.length} broken types`}
                         </button>
                       )}
                       <button className="btn btn-secondary btn-compact" onClick={requestDefaultApp}>
@@ -692,18 +690,39 @@ function SettingsModal({
                     </div>
                   </div>
                   <p className="setting-hint group-hint">
-                    The count reflects what double-clicking would actually launch — your confirmed
-                    choices, plus every type where FATE is the only registered handler.
-                    <strong> Claim</strong> takes the types no app owns at all (per-user and fully
-                    reversible); types owned by another app can only be reassigned on FATE&apos;s
-                    page in Windows Settings — Windows enforces that one-click-per-type itself.
+                    The count is what double-clicking would <em>actually</em> launch — FATE asks the
+                    shell, the same way Explorer does.
+                    {coverage && coverage.unowned?.length > 0 && (
+                      <> {coverage.unowned.length} type{coverage.unowned.length === 1 ? ' has' : 's have'} no
+                      handler at all; {coverage.otherApp?.length || 0} belong to another app.</>
+                    )}{' '}
+                    Windows only lets an application be <em>offered</em> — the confirmation itself has
+                    to happen in Windows Settings, one type at a time. <strong>Choose in Windows</strong>
+                    opens FATE&apos;s page there with every supported type listed.
                   </p>
-                  {claimedCount > 0 && (
-                    <button className="link-btn" onClick={releaseTypes} disabled={claimBusy}>
-                      <ArrowCounterClockwise size={13} weight="bold" />
-                      Release the {claimedCount} types FATE claimed
-                    </button>
+                  {coverage && coverage.repairable?.length > 0 && (
+                    <p className="setting-hint group-hint">
+                      <strong>Repair</strong> clears registry entries FATE itself wrote in 1.10–1.11.
+                      They were meant to claim these types and instead left them with no handler at
+                      all — removing them lets Windows fall back to FATE.
+                    </p>
                   )}
+                  {repairResult?.ok && (
+                    <p className="setting-hint group-hint">
+                      Repaired {repairResult.fixed?.length || 0} file type
+                      {repairResult.fixed?.length === 1 ? '' : 's'}
+                      {repairResult.restored?.length > 0 &&
+                        `, and gave .${repairResult.restored.join(', .')} back to the command processor`}
+                      .
+                    </p>
+                  )}
+                  <p className="setting-hint group-hint">
+                    <strong>.bat</strong> and <strong>.cmd</strong> are deliberately not in this list.
+                    Windows runs them through the command processor, which is not an app you can pick
+                    again in the &quot;Choose a default&quot; dialog — so an editor that takes them
+                    leaves no way back. FATE still opens both from the Open dialog, drag &amp; drop and
+                    <em> Edit in FATE</em>; it just never registers to own them.
+                  </p>
                 </div>
 
                 <div className="setting-group">

@@ -114,6 +114,44 @@ In short: fork freely, keep it open, and **rename and re-skin before you distrib
 
 ## Changelog
 
+### v1.12.0
+- **[Bugfix]** **FATE no longer breaks `.bat` and `.cmd`, and this release repairs machines where
+  it did.** Both were registered like any other code type — and for these two, that alone is
+  destructive. Their handlers (`batfile`/`cmdfile`) open with `"%1" %*`, where the script *is* the
+  executable; as soon as a second handler appears in the type's "Open with" list and no explicit
+  user choice exists, Windows stops running the script and shows **"Pick an app"** instead.
+  Setting FATE as the default on its own Default-apps page then made it unrecoverable, because
+  that picker has no "Windows Command Processor" to select. FATE now refuses to register either
+  type at all. **The repair happens during install** — the per-machine entries a previous version
+  wrote need elevation, so upgrading is what actually restores your batch files; the app repeats
+  the per-user half on every launch and deletes any FATE `UserChoice` (which needs the parent key
+  handle, not `reg.exe` — that asks for `KEY_ALL_ACCESS` and is refused by the key's deny ACE).
+  Both types still open in FATE from the Open dialog, drag & drop, and *Edit in FATE*.
+- **[Bugfix]** **"Claim file types" was breaking the very types it claimed to fix — it is gone, and
+  a Repair button undoes it.** Claiming wrote a per-user class default for each unowned extension.
+  On Windows 11 that does not make an app the handler *and* it suppresses the rule that does (being
+  the only registered `OpenWithProgids` handler), so 39 file types that Explorer was happy to hand
+  FATE ended up with no handler at all — while the counter reported them as won. On the author's
+  machine: 68 of 86 claimed, 29 actually working. Repair removes those entries; the same machine
+  went from **29 to 59** working types with one click.
+- **[Bugfix]** **The coverage counter now asks the shell instead of guessing.** It resolves each
+  type through `AssocQueryString` — the same API Explorer uses — rather than reimplementing an
+  association order that turned out to be wrong. It also breaks the total down: how many types no
+  app owns at all, and how many belong to something else.
+- **[Enhancement]** **Quitting with unsaved work now offers to save it.** The prompt was
+  "Discard changes and close?" with no way to keep them; it is now **Save / Don't save / Cancel**,
+  asked per tab, with the tab in question brought to the front so you can see what you are
+  answering about. Cancelling — or cancelling a Save As — calls the whole quit off.
+- **[Enhancement]** **Turning off "reopen last session's tabs" now also forgets them.** The setting
+  moved to a labelled control that explains both directions, and with it off FATE clears the stored
+  tab list rather than keeping a record of files you asked it not to reopen.
+- **[Bugfix]** **Opening a file while FATE is already running now switches to it.** Session restore
+  reopens every tab from last time and each one took the focus as it arrived, so double-clicking a
+  file to launch FATE landed you on whichever restored tab happened to load last. Restored tabs no
+  longer steal the selection; an explicitly opened file always wins.
+- **[Bugfix]** Every PowerShell helper now also passes `-WindowStyle Hidden` alongside `windowsHide`,
+  which should settle the console window that occasionally blinked at launch.
+
 ### v1.11.5
 - **[Bugfix]** **A custom install directory no longer gets reset on upgrade.** The installer's
   `preInit` unconditionally reseeded the remembered install location to the default publisher folder,
