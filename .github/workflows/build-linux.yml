@@ -1,14 +1,14 @@
-# Linux packages (AppImage + .deb for Ubuntu/Debian), built on a real Linux runner and attached
-# to the GitHub release for the tag.
+# Linux packages — AppImage (any distro), .deb (Ubuntu/Debian) and .rpm (Fedora/RHEL/openSUSE) —
+# built on a real Linux runner and attached to the GitHub release for the tag.
 #
 # Release flow, end to end:
 #   1. The maintainer builds the Windows installer locally and runs
 #        gh release create vX.Y.Z FATE-Setup-X.Y.Z.exe latest.yml --title ... --notes ...
 #      which creates the vX.Y.Z tag on GitHub — and that tag push is what triggers this workflow.
-#   2. This job builds FATE-X.Y.Z-x86_64.AppImage, FATE-X.Y.Z-amd64.deb and latest-linux.yml
-#      (electron-updater's manifest for the AppImage) and uploads them to that same release.
-#      If the tag was pushed before a release exists, the job creates the release as a DRAFT so
-#      nothing goes public without the maintainer.
+#   2. This job builds FATE-X.Y.Z-x86_64.AppImage, FATE-X.Y.Z-amd64.deb, FATE-X.Y.Z-x86_64.rpm
+#      and latest-linux.yml (electron-updater's manifest for the AppImage) and uploads them to
+#      that same release. If the tag was pushed before a release exists, the job creates the
+#      release as a DRAFT so nothing goes public without the maintainer.
 #
 # "Run workflow" (workflow_dispatch) on a branch builds the packages and attaches them to the run
 # as artifacts. Give it a `release_tag` to ALSO upload them to that existing release — the
@@ -46,6 +46,13 @@ jobs:
           node-version: 22
           cache: npm
 
+      # The .deb and .rpm are assembled by fpm, which electron-builder downloads itself — but the
+      # rpm output shells out to `rpmbuild`, which Ubuntu does not ship by default.
+      - name: Install rpmbuild for the Fedora package
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends rpm
+
       - run: npm ci
 
       # build/ is gitignored (except installer.nsh): the icon set the Linux packages need is
@@ -59,7 +66,13 @@ jobs:
 
       - name: Check that the packages exist
         run: |
-          ls -la dist-electron/*.AppImage dist-electron/*.deb dist-electron/latest-linux.yml
+          ls -la dist-electron/*.AppImage dist-electron/*.deb dist-electron/*.rpm dist-electron/latest-linux.yml
+          echo "--- rpm metadata"
+          rpm -qip dist-electron/*.rpm
+          echo "--- rpm dependencies"
+          rpm -qpR dist-electron/*.rpm
+          echo "--- deb metadata"
+          dpkg-deb --info dist-electron/*.deb
 
       - uses: actions/upload-artifact@v4
         with:
@@ -68,6 +81,7 @@ jobs:
           path: |
             dist-electron/*.AppImage
             dist-electron/*.deb
+            dist-electron/*.rpm
             dist-electron/latest-linux.yml
 
       - name: Attach the packages to the GitHub release
@@ -83,6 +97,6 @@ jobs:
               --notes "Linux packages built by GitHub Actions. The Windows installer and latest.yml are attached by the maintainer."
           fi
           gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber \
-            dist-electron/*.AppImage dist-electron/*.deb dist-electron/latest-linux.yml
+            dist-electron/*.AppImage dist-electron/*.deb dist-electron/*.rpm dist-electron/latest-linux.yml
           echo "Release assets now:"
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name'

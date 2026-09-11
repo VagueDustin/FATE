@@ -23,7 +23,7 @@ FATE is a beautiful, elegant, and highly resilient Markdown viewer **and code ed
 
 - **Instant Viewing:** Drag & drop any `.md` or `.markdown` file directly into the app, or set FATE as your default markdown viewer.
 - **Full Text & Code Editor:** Open and *edit* **any text file** — code (`.ps1`, `.py`, `.js`, `.json`, `.css`, `.yaml` and 80+ registered types), configs (`web.config`, `.properties`, `.ini`), logs, `.reg` exports, `.csv`, extensionless scripts, whatever is text — in a real editor with syntax highlighting, line numbers, code folding, search (`Ctrl`+`F`), multiple cursors and undo history. Extensions the highlighter has never heard of are sniffed from their content (XML prologues, JSON, INI sections, shebang lines). Save with `Ctrl`+`S`; unsaved changes are guarded everywhere (closing the file, opening another, closing the window).
-- **Windows and Linux:** An NSIS installer and Microsoft Store package for Windows; an AppImage and a `.deb` for Linux. Same app, same themes, same fonts — the Windows-only integration (file-type registration, Default apps) simply doesn't appear elsewhere.
+- **Windows and Linux:** An NSIS installer and Microsoft Store package for Windows; an AppImage, a `.deb` (Ubuntu, Debian) and an `.rpm` (Fedora, RHEL, openSUSE) for Linux. Same app, same themes, same fonts — the Windows-only integration (file-type registration, Default apps) simply doesn't appear elsewhere.
 - **Tabs:** Open any number of files side by side, Notepad++-style — mixed markdown and code, per-tab unsaved-changes tracking, middle-click to close, `Ctrl`+`Tab` to cycle, `Ctrl`+`1`–`9` to jump. Every tab keeps its scroll position, cursor and undo history while backgrounded.
 - **Bundled Font Library — plus every font on your PC:** JetBrains Mono, Fira Code, Cascadia Code, Source Code Pro, IBM Plex Mono, Roboto Mono for code; Inter, IBM Plex Sans, Source Serif 4, Lora, Merriweather for prose — all shipped inside the app, fully offline — and a searchable picker over every font installed on your system. Pick fonts for the interface, markdown documents, and code separately, override the font *per file type*, and tune sizes and ligatures, all previewed live in each typeface.
 - **Live Reload That Respects Your Edits:** Files changed on disk reload in place while your buffer is clean — and never clobber unsaved edits.
@@ -80,19 +80,21 @@ Don't want to use the pre-compiled releases? You can easily build FATE from sour
    npm run electron:build
    ```
    The built installers will be output to the `dist-electron/` directory.
-5. **Linux packages (AppImage and `.deb`):**
+5. **Linux packages (AppImage, `.deb` and `.rpm`):**
    ```bash
    npm run icons
    npm run electron:build:linux
    ```
    `npm run icons` first, because the Linux icon set lives in the gitignored `build/` directory
-   and is derived from the tracked masters in `brand/`. Build on Linux itself, or let the
-   **Build Linux** GitHub Actions workflow (`.github/workflows/build-linux.yml`) do it. Every
-   `v*` tag — which `gh release create` makes when the maintainer publishes a release — builds
-   the AppImage, the `.deb` (Ubuntu, Debian and derivatives) and `latest-linux.yml` on an Ubuntu
-   runner and attaches them to that release; *Run workflow* on a branch just attaches them to the
-   run. The AppImage self-updates through `latest-linux.yml` the same way the Windows installer
-   uses `latest.yml`; the `.deb` updates through your package manager.
+   and is derived from the tracked masters in `brand/`. The `.rpm` needs `rpmbuild` on the
+   machine (`sudo apt install rpm` on Ubuntu; it is part of Fedora). Build on Linux itself, or
+   let the **Build Linux** GitHub Actions workflow (`.github/workflows/build-linux.yml`) do it.
+   Every `v*` tag — which `gh release create` makes when the maintainer publishes a release —
+   builds the AppImage, the `.deb` (Ubuntu, Debian and derivatives), the `.rpm` (Fedora, RHEL,
+   openSUSE) and `latest-linux.yml` on an Ubuntu runner and attaches them to that release; *Run
+   workflow* on a branch just attaches them to the run. The AppImage self-updates through
+   `latest-linux.yml` the same way the Windows installer uses `latest.yml`; the `.deb` and
+   `.rpm` update through your package manager.
 
    Cross-building from Windows gets as far as `dist-electron/linux-unpacked/` and then stops:
    the AppImage step creates symlinks, which Windows only allows with Developer Mode on or from
@@ -146,8 +148,9 @@ In short: fork freely, keep it open, and **rename and re-skin before you distrib
   language registry has never heard of is sniffed: XML/HTML prologues (`web.config`, `.csproj`,
   `.plist`), JSON, INI sections and registry exports, and shebang lines (`#!/bin/bash`,
   `#!/usr/bin/env python3`, …). Anything ambiguous stays plain text rather than guessing wrong.
-- **[New]** **Linux builds.** `npm run electron:build:linux` produces an AppImage and a `.deb`,
-  and a *Build Linux* GitHub Actions workflow does the same on a real Linux runner for every tag.
+- **[New]** **Linux builds.** `npm run electron:build:linux` produces an AppImage, a `.deb`
+  (Ubuntu, Debian) and an `.rpm` (Fedora, RHEL, openSUSE), and a *Build Linux* GitHub Actions
+  workflow does the same on a real Linux runner for every tag.
   The app itself needed little: the Windows-only integration (file-type registration, Default
   apps, classic context menus) was already gated and simply doesn't appear; the installed-font
   picker now enumerates through fontconfig; paths compare case-sensitively where the filesystem

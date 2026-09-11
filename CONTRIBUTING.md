@@ -35,7 +35,7 @@ npm run electron:dev      # Vite + Electron together
 | `npm run build` | production renderer build |
 | `npm run icons` | regenerate every icon from the masters in `brand/` |
 | `npm run electron:build` | Windows installer + Store package (`dist-electron/`) |
-| `npm run electron:build:linux` | Linux AppImage + `.deb` (`dist-electron/`); run `npm run icons` first |
+| `npm run electron:build:linux` | Linux AppImage + `.deb` + `.rpm` (`dist-electron/`); run `npm run icons` first, and have `rpmbuild` installed |
 
 **Note:** `build/` is generated output and gitignored — with one exception. `build/installer.nsh` is
 hand-authored build source and **is** tracked, so `npm run icons` followed by `npm run electron:build`

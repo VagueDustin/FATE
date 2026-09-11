@@ -65,6 +65,12 @@
           "arch": [
             "x64"
           ]
+        },
+        {
+          "target": "rpm",
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "build/icons",
@@ -87,6 +93,9 @@
     "deb": {
       "packageName": "fate",
       "priority": "optional"
+    },
+    "rpm": {
+      "packageName": "fate"
     },
     "nsis": {
       "oneClick": false,
