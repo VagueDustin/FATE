@@ -37,15 +37,18 @@ const MAX_RECENT_FILES = 8;
 
 /* ════════════════════════════════════════════════════════════════════════════════════════════
    FILE TYPES
-   The main process reads bytes and watches paths; it does not care what a file *is*. These lists
-   exist only to (a) build the open-dialog filters and (b) keep handleArgs from trying to "open"
-   the installer's own flags or a random DLL passed on the command line. The renderer owns the
-   markdown-vs-code routing decision (see fileKindForName in App.jsx).
+   The main process reads bytes and watches paths; it does not care what a file *is*. FATE opens
+   ANY text file — the only gates are size (MAX_FILE_BYTES) and a binary sniff (isProbablyBinary).
+   These lists exist for the curated open-dialog filters and for Windows registration (which
+   types the installer advertises FATE for). Up to 1.12.0 they ALSO gated the command line and
+   drag & drop, so "Edit in FATE" on a `.config`, `.properties`, `.reg`, `.csv` or any other
+   unlisted extension did nothing at all, silently — the one thing an editor must never do.
+   The renderer owns the markdown-vs-code routing decision (see fileKindForName in App.jsx).
    ════════════════════════════════════════════════════════════════════════════════════════════ */
 
 const MARKDOWN_EXTENSIONS = ['md', 'markdown', 'txt'];
 
-/** Code files offered in the open dialog and accepted from the command line. */
+/** Code files offered in the open dialog's curated filter and registered on Windows. */
 const CODE_EXTENSIONS = [
   'js', 'mjs', 'cjs', 'jsx', 'ts', 'tsx', 'json', 'jsonc',
   'html', 'htm', 'xhtml', 'css', 'scss', 'sass', 'less',
@@ -90,12 +93,6 @@ const PROTECTED_EXTENSIONS = ['bat', 'cmd'];
 const ASSOCIABLE_CODE_EXTENSIONS = CODE_EXTENSIONS.filter((e) => !PROTECTED_EXTENSIONS.includes(e));
 const ASSOCIABLE_EXTENSIONS = [...MARKDOWN_EXTENSIONS, ...ASSOCIABLE_CODE_EXTENSIONS];
 
-/** Extensionless files that are obviously code. `path.extname('.gitignore')` is '' — hence names. */
-const SPECIAL_CODE_BASENAMES = [
-  'dockerfile', 'makefile', 'cmakelists.txt', '.gitignore', '.gitattributes',
-  '.editorconfig', '.env', '.npmrc', '.prettierrc', '.eslintrc'
-];
-
 /**
  * Refuse files above this size rather than feeding them to the renderer. 25 MB of text is already
  * an unpleasant document; past that the single-string IPC payload and the editor both suffer, and
@@ -103,12 +100,28 @@ const SPECIAL_CODE_BASENAMES = [
  */
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
 
-/** Would FATE know what to do with this path? Used by handleArgs and the drop of a dialog pick. */
-function isOpenableFile(filePath) {
-  const base = path.basename(filePath).toLowerCase();
-  if (SPECIAL_CODE_BASENAMES.includes(base)) return true;
-  const ext = path.extname(filePath).replace(/^\./, '').toLowerCase();
-  return MARKDOWN_EXTENSIONS.includes(ext) || CODE_EXTENSIONS.includes(ext);
+/**
+ * Is this command-line argument a file the user wants opened?
+ *
+ * Deliberately NOT an extension check. argv carries the exe path, Chromium switches, and in dev
+ * the app path — none of which name a file the user picked — so this filters on shape (a flag?
+ * an existing regular file? part of FATE itself?) and leaves "is it text?" to the size cap and
+ * the binary sniff in openAndWatchFile, which show a proper error box instead of silently
+ * ignoring the file. Up to 1.12.0 this was an extension whitelist, and an `Open with → FATE` on
+ * anything not on it (`web.config`, say) did nothing whatsoever.
+ */
+function isOpenableArg(arg) {
+  if (!arg || arg.startsWith('-')) return false;
+  let stat;
+  try {
+    stat = fs.statSync(arg);
+  } catch {
+    return false;
+  }
+  if (!stat.isFile()) return false;
+  // `electron electron/main.cjs` in dev: the entry file exists and is a file, but it is FATE.
+  if (path.resolve(arg) === __filename) return false;
+  return true;
 }
 
 /**
@@ -191,9 +204,8 @@ for (const staleKey of ['discordEnabled']) {
 function rememberRecentFile(filePath) {
   const existing = store.get('recentFiles') || [];
   const normalized = path.normalize(filePath);
-  const deduped = existing.filter(
-    (entry) => path.normalize(entry.path || '').toLowerCase() !== normalized.toLowerCase()
-  );
+  const key = watchKey(filePath);
+  const deduped = existing.filter((entry) => watchKey(entry.path) !== key);
   deduped.unshift({ path: normalized, openedAt: Date.now() });
   store.set('recentFiles', deduped.slice(0, MAX_RECENT_FILES));
 }
@@ -1007,8 +1019,15 @@ let mainWindow;
 const fileWatchers = new Map();
 const lastSavedByApp = new Map();
 
+/**
+ * The comparable key for a path — used for the watcher map, recents dedupe and tab dedupe.
+ * Windows and (by default) macOS compare paths case-insensitively; Linux does not, where
+ * `Notes.md` and `notes.md` are two files and folding case would give them one watcher.
+ */
+const CASE_INSENSITIVE_PATHS = process.platform === 'win32' || process.platform === 'darwin';
 function watchKey(filePath) {
-  return path.normalize(filePath).toLowerCase();
+  const normalized = path.normalize(filePath || '');
+  return CASE_INSENSITIVE_PATHS ? normalized.toLowerCase() : normalized;
 }
 
 /**
@@ -1028,6 +1047,14 @@ function createWindow() {
     minHeight: 520,
     title: APP_TITLE,
     backgroundColor: '#070b1a', // avoids a white flash before the renderer paints
+    /*
+     * Linux only: Windows takes the window icon from the exe's resource and macOS from the
+     * bundle, but on X11/Wayland the window's own icon (taskbar, alt-tab, dock) comes from this
+     * option — without it every Electron app wears the stock Electron atom. Vite copies
+     * public/favicon.png (a 256px square render of the app master) into dist/, which is shipped
+     * in every package, so the same file serves dev and packaged builds.
+     */
+    ...(process.platform === 'linux' ? { icon: path.join(__dirname, '..', 'dist', 'favicon.png') } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
@@ -1239,17 +1266,9 @@ async function openAndWatchFile(filePath, opts = {}) {
 }
 
 function handleArgs(argv) {
-  // argv also carries the exe path, the app path in dev, and Chromium switches — hence the
-  // "exists AND looks openable" filter rather than the old `endsWith('.md')`.
-  const filePath = argv
-    .slice(1)
-    .find(
-      (arg) =>
-        !arg.startsWith('-') &&
-        isOpenableFile(arg) &&
-        fs.existsSync(arg) &&
-        fs.statSync(arg).isFile()
-    );
+  // argv also carries the exe path, the app path in dev, and Chromium switches — see
+  // isOpenableArg for why this is a shape check and not an extension list.
+  const filePath = argv.slice(1).find(isOpenableArg);
   if (filePath) {
     openAndWatchFile(filePath);
   }
@@ -1301,12 +1320,13 @@ app.whenReady().then(() => {
   ipcMain.handle('open-file-dialog', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
       properties: ['openFile'],
+      // "All files" FIRST, so it is the default: FATE opens any text file, and hiding
+      // `web.config`, `.properties` or an extensionless Dockerfile behind a filter switch made
+      // it look as though it could not. The curated filters stay for narrowing a busy folder.
       filters: [
-        { name: 'All supported files', extensions: [...MARKDOWN_EXTENSIONS, ...CODE_EXTENSIONS] },
+        { name: 'All files', extensions: ['*'] },
         { name: 'Markdown', extensions: [...MARKDOWN_EXTENSIONS] },
-        { name: 'Code files', extensions: [...CODE_EXTENSIONS] },
-        // Extensionless files (Dockerfile, .gitignore, …) can only come in through this filter.
-        { name: 'All files', extensions: ['*'] }
+        { name: 'Code files', extensions: [...CODE_EXTENSIONS] }
       ]
     });
 
@@ -1342,13 +1362,13 @@ app.whenReady().then(() => {
       const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
         title: 'Save As',
         defaultPath: suggestedName || 'untitled.txt',
-        // Every format FATE opens is offered as a save target — this is what makes "new file"
-        // able to become any supported type. "All files" stays last for the odd extension out.
+        // "All files" first: with a curated filter selected, Windows appends that filter's first
+        // extension to any name typed without one — so saving a new buffer as `Dockerfile` or
+        // `.env` produced `Dockerfile.md`. The typed name is now taken literally.
         filters: [
-          { name: 'All supported files', extensions: [...MARKDOWN_EXTENSIONS, ...CODE_EXTENSIONS] },
+          { name: 'All files', extensions: ['*'] },
           { name: 'Markdown', extensions: [...MARKDOWN_EXTENSIONS] },
-          { name: 'Code files', extensions: [...CODE_EXTENSIONS] },
-          { name: 'All files', extensions: ['*'] }
+          { name: 'Code files', extensions: [...CODE_EXTENSIONS] }
         ]
       });
       if (canceled || !filePath) return { ok: false, canceled: true };
@@ -1416,9 +1436,7 @@ app.whenReady().then(() => {
     // may have been deleted since the list was rendered.
     if (!filePath || !fs.existsSync(filePath)) {
       // Drop the dead entry so the list self-heals instead of offering it again.
-      const remaining = (store.get('recentFiles') || []).filter(
-        (e) => path.normalize(e.path || '').toLowerCase() !== path.normalize(filePath || '').toLowerCase()
-      );
+      const remaining = (store.get('recentFiles') || []).filter((e) => watchKey(e.path) !== watchKey(filePath));
       store.set('recentFiles', remaining);
       return { ok: false, reason: 'missing' };
     }
@@ -1468,9 +1486,29 @@ app.whenReady().then(() => {
    * process, matching the privacy posture.
    */
   let systemFontsCache = null;
+  const finishFontList = (resolve, names) => {
+    const clean = names.filter((n) => typeof n === 'string' && n.trim()).map((n) => n.trim());
+    systemFontsCache = [...new Set(clean)].sort((a, b) => a.localeCompare(b));
+    resolve(systemFontsCache);
+  };
   ipcMain.handle('get-system-fonts', () => {
     if (systemFontsCache) return systemFontsCache;
-    if (process.platform !== 'win32') return [];
+    if (process.platform !== 'win32') {
+      /*
+       * Linux/macOS: fontconfig's `fc-list : family` prints one line per face, and a line can
+       * carry several comma-separated names (localised aliases) — take the first. Absent fc-list
+       * (unusual outside a container) the picker just offers the bundled set.
+       */
+      return new Promise((resolve) => {
+        execFile('fc-list', [':', 'family'], { timeout: 15000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
+          if (err || !stdout) {
+            resolve([]);
+            return;
+          }
+          finishFontList(resolve, stdout.split('\n').map((line) => line.split(',')[0]));
+        });
+      });
+    }
     return new Promise((resolve) => {
       execFile(
         'powershell.exe',
@@ -1491,9 +1529,7 @@ app.whenReady().then(() => {
             return;
           }
           try {
-            const names = [].concat(JSON.parse(stdout.trim())).filter((n) => typeof n === 'string' && n);
-            systemFontsCache = [...new Set(names)].sort((a, b) => a.localeCompare(b));
-            resolve(systemFontsCache);
+            finishFontList(resolve, [].concat(JSON.parse(stdout.trim())));
           } catch {
             resolve([]);
           }

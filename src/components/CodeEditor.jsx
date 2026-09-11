@@ -214,7 +214,8 @@ const CodeEditor = forwardRef(function CodeEditor(
     writeCursor(state);
 
     // Load the language for this filename asynchronously; plain text until (and unless) it lands.
-    const langDesc = detectLanguage(fileName);
+    // The content rides along so an unknown extension can still be sniffed (web.config → XML).
+    const langDesc = detectLanguage(fileName, initialContent);
     let cancelled = false;
     if (langDesc) {
       langDesc.load().then(
@@ -299,7 +300,7 @@ const CodeEditor = forwardRef(function CodeEditor(
        * buffer, cursor and undo history all survive the rename.
        */
       setLanguage: (newFileName) => {
-        const langDesc = detectLanguage(newFileName);
+        const langDesc = detectLanguage(newFileName, viewRef.current?.state.doc.sliceString(0, 2048));
         if (!langDesc) {
           viewRef.current?.dispatch({ effects: languageCompartment.reconfigure([]) });
           return;

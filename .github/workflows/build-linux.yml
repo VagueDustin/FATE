@@ -1,0 +1,79 @@
+# Linux packages (AppImage + .deb for Ubuntu/Debian), built on a real Linux runner and attached
+# to the GitHub release for the tag.
+#
+# Release flow, end to end:
+#   1. The maintainer builds the Windows installer locally and runs
+#        gh release create vX.Y.Z FATE-Setup-X.Y.Z.exe latest.yml --title ... --notes ...
+#      which creates the vX.Y.Z tag on GitHub — and that tag push is what triggers this workflow.
+#   2. This job builds FATE-X.Y.Z-x86_64.AppImage, fate_X.Y.Z_amd64.deb and latest-linux.yml
+#      (electron-updater's manifest for the AppImage) and uploads them to that same release.
+#      If the tag was pushed before a release exists, the job creates the release as a DRAFT so
+#      nothing goes public without the maintainer.
+#
+# "Run workflow" (workflow_dispatch) on a branch builds the packages and attaches them to the run
+# as artifacts only — there is no tag to release against.
+name: Build Linux
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-linux-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # build/ is gitignored (except installer.nsh): the icon set the Linux packages need is
+      # derived from the tracked masters in brand/.
+      - run: npm run icons
+
+      - run: npm run lint
+
+      # Never let electron-builder publish on its own; the release step below owns that.
+      - run: npm run electron:build:linux -- --publish never
+
+      - name: Check that the packages exist
+        run: |
+          ls -la dist-electron/*.AppImage dist-electron/*.deb dist-electron/latest-linux.yml
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FATE-linux-${{ github.ref_name }}
+          if-no-files-found: error
+          path: |
+            dist-electron/*.AppImage
+            dist-electron/*.deb
+            dist-electron/latest-linux.yml
+
+      - name: Attach the packages to the GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "No release for $TAG yet — creating it as a draft."
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --title "$TAG" \
+              --notes "Linux packages built by GitHub Actions. The Windows installer and latest.yml are attached by the maintainer."
+          fi
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber \
+            dist-electron/*.AppImage dist-electron/*.deb dist-electron/latest-linux.yml
+          echo "Release assets now:"
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name'

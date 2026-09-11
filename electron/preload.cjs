@@ -110,6 +110,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   repairAssociations: () => ipcRenderer.invoke('repair-associations'),
   /** Build facts: { windowsStore } — Store builds route updates to the Microsoft Store. */
   getRuntimeInfo: () => ipcRenderer.invoke('get-runtime-info'),
+  /** 'win32' | 'linux' | 'darwin' — synchronous, for decisions needed before any IPC resolves. */
+  platform: process.platform,
   /** Font families installed on this machine (local enumeration only; cached per run). */
   getSystemFonts: () => ipcRenderer.invoke('get-system-fonts'),
   /** Classic context menus (Windows 11 full-menu tweak): read, set, and apply via Explorer restart. */

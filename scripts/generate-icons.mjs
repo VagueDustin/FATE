@@ -30,6 +30,7 @@
  *                                            Programs entry, desktop shortcut
  *   build/icon-doc.ico               16–256  .md / .markdown file association
  *   build/appx/*.png                 various Microsoft Store (AppX) tiles
+ *   build/icons/<n>x<n>.png          16–512  Linux icon set (electron-builder `linux.icon`)
  *   src/assets/FATE-Square-Icon.png  512     the logo on the app's home screen
  *   public/favicon.png               256     dev-server / renderer favicon
  */
@@ -120,6 +121,19 @@ for (const [name, size] of SQUARE_TILES) {
 }
 await writeFile(join(root, 'build', 'appx', 'Wide310x150Logo.png'), await wideTile(310, 150));
 console.log(`  build/appx/*.png                 ${SQUARE_TILES.length + 1} tiles  Microsoft Store`);
+
+// ── Linux icon set ───────────────────────────────────────────────────────────────────────────
+// electron-builder's `linux.icon` takes a directory of `<size>x<size>.png` frames; the .desktop
+// entry, AppImage integration and the deb's hicolor theme install pick per size from it.
+// Transparent like the in-app assets — desktop themes composite icons over arbitrary panels.
+// The small frames get the same unsharp pass as the .ico frames: 16/22/24/32 are what panels and
+// file managers actually show, and the ornate badge turns to mush on a plain downscale.
+const LINUX_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512];
+await mkdir(join(root, 'build', 'icons'), { recursive: true });
+for (const size of LINUX_SIZES) {
+  await writeFile(join(root, 'build', 'icons', `${size}x${size}.png`), await icoFrame(APP_MASTER, size));
+}
+console.log(`  build/icons/<n>x<n>.png          ${LINUX_SIZES.join('/')}  Linux (AppImage, deb)`);
 
 // ── In-app + renderer assets ─────────────────────────────────────────────────────────────────
 // Transparent, not navy: these sit on the app's own navy surface, and a baked-in navy square would

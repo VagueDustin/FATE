@@ -14,7 +14,7 @@ import CommandPalette from './components/CommandPalette.jsx';
 import DiffView from './components/DiffView.jsx';
 import { renderMarkdown } from './markdown.js';
 import { detectLanguage } from './languageDetect.js';
-import { fileKindForName, isSupportedFileName } from './fileKinds.js';
+import { fileKindForName, looksBinary } from './fileKinds.js';
 import { resolveFonts, applyFonts, editorFontFor, DEFAULT_FONTS } from './fonts.js';
 import { DEFAULT_THEME, resolveTheme, THEMES, SHORTCUT_ACTIONS, DEFAULT_SHORTCUTS, resolveShortcuts } from './settingsMeta.js';
 import { resolveCustomTheme, applyCustomTheme } from './themeCustom.js';
@@ -42,8 +42,15 @@ function shortenDir(dir, max = 38) {
 }
 
 /** Case-insensitive path key — Windows paths compare that way. */
+/*
+ * Comparable key for a path (tab dedupe, the file-changed router). Windows and macOS compare
+ * paths case-insensitively; Linux does not — `Notes.md` and `notes.md` are two files there and
+ * folding case would merge their tabs. Mirrors watchKey() in electron/main.cjs.
+ */
+const CASE_INSENSITIVE_PATHS = window.electronAPI?.platform !== 'linux';
 function pathKey(p) {
-  return (p || '').replace(/\//g, '\\').toLowerCase();
+  const s = p || '';
+  return CASE_INSENSITIVE_PATHS ? s.replace(/\//g, '\\').toLowerCase() : s;
 }
 
 /*
@@ -273,7 +280,7 @@ function App() {
             name,
             path: fPath || null,
             codeContent: content,
-            langName: detectLanguage(name)?.name ?? 'Plain text',
+            langName: detectLanguage(name, content)?.name ?? 'Plain text',
             dirty: false
           };
     setDocs((ds) => [...ds, doc]);
@@ -646,7 +653,7 @@ function App() {
         if (res?.ok) {
           finalPath = res.filePath;
           const newKey = pathKey(res.filePath);
-          const newLang = detectLanguage(res.name)?.name ?? 'Plain text';
+          const newLang = detectLanguage(res.name, content)?.name ?? 'Plain text';
           setDocs((ds) =>
             ds
               // If the chosen path was already open in another tab, that tab is now stale — drop it.
@@ -946,11 +953,9 @@ function App() {
         continue;
       }
 
-      if (!isSupportedFileName(file.name)) {
-        setStatusError(`Can't open ${file.name} — not a markdown or code file`);
-        continue;
-      }
-
+      // No extension check here — FATE opens any text file. With a real path the main process
+      // applies the size cap and binary sniff (and shows a proper error box); the path-less
+      // fallback below sniffs the decoded text itself.
       const resolvedPath = window.electronAPI?.getPathForFile?.(file) ?? file.path ?? null;
 
       // With a real path, route through the main process: watcher, recents, tab dedupe.
@@ -962,7 +967,13 @@ function App() {
       setIsLoading(true);
       const reader = new FileReader();
       reader.onload = (ev) => {
-        openDocument(ev.target.result, file.name, resolvedPath);
+        const text = ev.target.result;
+        if (looksBinary(text)) {
+          setIsLoading(false);
+          setStatusError(`Can't open ${file.name} — it looks like a binary file`);
+          return;
+        }
+        openDocument(text, file.name, resolvedPath);
       };
       reader.readAsText(file);
     }
@@ -1270,9 +1281,9 @@ function App() {
                       <>
                         <UploadSimple className="dz-icon" weight="duotone" />
                         <p className="dz-title">
-                          {isDragActive ? 'Release to open' : 'Drag & drop markdown or code files'}
+                          {isDragActive ? 'Release to open' : 'Drag & drop any text file'}
                         </p>
-                        <span className="dz-sub">.md &middot; .txt &middot; .ps1 &middot; .html &middot; .py &middot; .json &middot; &hellip;</span>
+                        <span className="dz-sub">markdown &middot; code &middot; configs &middot; logs &middot; scripts &middot; &hellip;</span>
                       </>
                     )}
                   </div>

@@ -34,13 +34,18 @@ npm run electron:dev      # Vite + Electron together
 | `npm run lint` | ESLint; **must pass** |
 | `npm run build` | production renderer build |
 | `npm run icons` | regenerate every icon from the masters in `brand/` |
-| `npm run electron:build` | full installer (`dist-electron/`) |
+| `npm run electron:build` | Windows installer + Store package (`dist-electron/`) |
+| `npm run electron:build:linux` | Linux AppImage + `.deb` (`dist-electron/`); run `npm run icons` first |
 
 **Note:** `build/` is generated output and gitignored — with one exception. `build/installer.nsh` is
 hand-authored build source and **is** tracked, so `npm run icons` followed by `npm run electron:build`
-works from a fresh clone. If you touch the supported-extension list, remember it lives in three
+works from a fresh clone. If you touch the code-extension list, remember it lives in three
 places that must agree: `electron/main.cjs`, `src/fileKinds.js`, and the generated blocks in
-`build/installer.nsh`.
+`build/installer.nsh`. The list is a curated dialog filter and the set of types FATE registers
+for on Windows — it does **not** decide what opens. FATE opens any text file; the only gates are
+the size cap and the binary sniff in `openAndWatchFile`. Don't reintroduce an extension check on
+the command line or drag & drop (1.12.0 and earlier had one, and "Edit in FATE" on a `.config`
+silently did nothing).
 
 **Before adding an extension, check it against `PROTECTED_EXTENSIONS`.** A type whose system
 handler runs the file itself — `.bat` and `.cmd`, whose open command is `"%1" %*` — must never be

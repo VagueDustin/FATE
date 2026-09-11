@@ -1,8 +1,9 @@
 {
   "name": "fate-markdown-viewer",
-  "version": "1.12.0",
-  "description": "FATE (Formatted Article and Text Editor) is a Markdown viewer and code editor for technical documents.",
+  "version": "1.13.0",
+  "description": "FATE (Formatted Article and Text Editor) is a Markdown viewer and text editor for technical documents.",
   "author": "VagueDustin Enterprises",
+  "homepage": "https://github.com/VagueDustin/FATE",
   "license": "AGPL-3.0-only",
   "type": "module",
   "main": "electron/main.cjs",
@@ -13,6 +14,7 @@
     "preview": "vite preview",
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .\"",
     "electron:build": "vite build && electron-builder",
+    "electron:build:linux": "vite build && electron-builder --linux",
     "icons": "node scripts/generate-icons.mjs && node scripts/generate-file-icons.mjs"
   },
   "build": {
@@ -34,21 +36,57 @@
       "dist/**/*",
       "electron/**/*"
     ],
-    "extraResources": [
-      {
-        "from": "build/fileicons",
-        "to": "fileicons",
-        "filter": [
-          "*.ico"
-        ]
-      }
-    ],
     "win": {
       "icon": "build/icon.ico",
       "target": [
         "nsis",
         "appx"
+      ],
+      "extraResources": [
+        {
+          "from": "build/fileicons",
+          "to": "fileicons",
+          "filter": [
+            "*.ico"
+          ]
+        }
       ]
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icons",
+      "artifactName": "FATE-${version}-${arch}.${ext}",
+      "category": "Utility",
+      "synopsis": "Markdown viewer and text editor for technical documents",
+      "maintainer": "VagueDustin Enterprises <enterprises@vaguedustin.com>",
+      "mimeTypes": [
+        "text/markdown",
+        "text/x-markdown",
+        "text/plain"
+      ],
+      "desktop": {
+        "entry": {
+          "GenericName": "Text Editor",
+          "Keywords": "markdown;text;editor;code;latex;katex;"
+        }
+      }
+    },
+    "deb": {
+      "packageName": "fate",
+      "priority": "optional"
     },
     "nsis": {
       "oneClick": false,
@@ -74,6 +112,7 @@
         "ext": "md",
         "name": "Markdown Document",
         "description": "Markdown Document",
+        "mimeType": "text/markdown",
         "role": "Viewer",
         "icon": "build/icon-doc.ico"
       }

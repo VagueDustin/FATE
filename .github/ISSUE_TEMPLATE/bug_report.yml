@@ -18,11 +18,11 @@ body:
       required: true
 
   - type: input
-    id: windows
+    id: os
     attributes:
-      label: Windows version
-      description: Run `winver` if you're not sure.
-      placeholder: "Windows 11 Pro 24H2"
+      label: Operating system
+      description: Windows — run `winver` if you're not sure. Linux — distribution, version, and whether you installed the AppImage or the .deb.
+      placeholder: "Windows 11 Pro 24H2 · Ubuntu 24.04 (AppImage)"
     validations:
       required: true
 
