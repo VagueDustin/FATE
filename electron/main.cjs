@@ -1276,12 +1276,27 @@ function handleArgs(argv) {
 
 app.whenReady().then(() => {
   // Register custom protocol for local images
+  /*
+   * Local images referenced from a markdown file. URL shape: fate-local://local/<encoded absolute
+   * path> — `/C%3A/Users/…` on Windows, `/home/…` elsewhere (built in src/markdown.js).
+   *
+   * The fixed `local` host is what makes this work at all. fate-local is registered as a
+   * STANDARD scheme, and Chromium canonicalises `scheme:///C:/x` for standard schemes the way it
+   * does `http:///example.com`: the empty authority collapses, so `C:` became the host (lower-cased
+   * to `c`, the colon read as a port separator) and the handler received `c/Users/…` — a relative
+   * path that never existed. Every local image failed with net::ERR_FILE_NOT_FOUND while the
+   * <img src> attribute still read `fate-local:///C:/…`. Verified on Electron 42.3.3 and 42.11.3
+   * alike; it was never a Chromium regression, just the URL shape.
+   */
   protocol.handle('fate-local', (request) => {
-    let urlPath = request.url.replace(/^fate-local:\/\//, '');
-    if (process.platform === 'win32' && urlPath.startsWith('/')) {
-      urlPath = urlPath.slice(1);
+    let urlPath;
+    try {
+      urlPath = decodeURIComponent(new URL(request.url).pathname);
+    } catch {
+      return new Response('Bad fate-local URL', { status: 400 });
     }
-    urlPath = decodeURIComponent(urlPath);
+    // '/C:/Users/…' → 'C:/Users/…'. POSIX paths keep their leading slash.
+    if (process.platform === 'win32' && /^\/[a-zA-Z]:/.test(urlPath)) urlPath = urlPath.slice(1);
     return net.fetch(pathToFileURL(urlPath).toString());
   });
 

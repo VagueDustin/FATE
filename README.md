@@ -146,6 +146,26 @@ In short: fork freely, keep it open, and **rename and re-skin before you distrib
 
 ## Changelog
 
+### v1.13.1
+- **[Security]** **Every open Dependabot alert resolved — sixty of them.** They spanned the whole
+  dependency tree: Electron/Chromium itself, electron-updater and its runtime, DOMPurify (the
+  markdown sanitiser), js-yaml, fast-uri, and electron-builder's toolchain. Every fix was
+  available within the existing version ranges, so nothing in `package.json` changed; the lock
+  moved. Electron 42.3.3 → 42.11.3, electron-updater 6.8.3 → 6.8.9, DOMPurify 3.4.8 → 3.4.15,
+  electron-builder 26.8.1 → 26.15.3. `npm audit` reports zero findings.
+- **[Bugfix]** **Local images in Markdown documents load — they never did.** A relative image
+  such as `![](docs/shot.png)` was rewritten to `fate-local:///C:/…`, and Chromium collapses the
+  empty authority of a standard scheme the way it does for `http:///host`: `C:` became the host,
+  the drive letter vanished, and every local image failed with *file not found* while its `src`
+  still looked right. Confirmed on the previous Electron too — the URL shape, not a Chromium
+  change. Images now travel as `fate-local://local/<encoded path>`, so filenames containing `#`,
+  `?` or `%` work as well.
+- **[Enhancement]** **Linux packages are real applications.** The `.deb`/`.rpm` register FATE
+  for Markdown, plain text and about sixty code MIME types (so it appears under *Open With* and
+  can be made the default from the file manager or `xdg-mime`) and ship AppStream metadata for
+  GNOME Software / KDE Discover. A Fedora `.rpm` joins the AppImage and `.deb`. These landed
+  right after v1.13.0 and were attached to that release; they are part of this version's source.
+
 ### v1.13.0
 - **[Enhancement]** **FATE opens any text file.** Up to 1.12.0 the command line, *Edit in FATE*
   and drag & drop accepted only extensions on a built-in list of about ninety, so `web.config`, a

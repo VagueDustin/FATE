@@ -91,7 +91,16 @@ export function renderMarkdown(content, fPath) {
         const isAbsolute = /^[a-zA-Z]:[\\/]/.test(src) || src.startsWith('/');
         const absPath = isAbsolute ? src.replace(/\\/g, '/') : `${dirPath}/${src}`.replace(/\\/g, '/');
         const finalPath = absPath.startsWith('/') ? absPath : `/${absPath}`;
-        img.setAttribute('src', `fate-local://${finalPath}`);
+        /*
+         * fate-local://local/<encoded absolute path>. The fixed `local` host is load-bearing:
+         * fate-local is a *standard* scheme (main.cjs registerSchemesAsPrivileged), and Chromium
+         * canonicalises `scheme:///C:/x` for standard schemes by collapsing the empty authority —
+         * so the old `fate-local:///C:/Users/…` became host `c`, path `/Users/…`, and every local
+         * image 404'd while the src attribute still looked right. Per-segment encoding keeps `#`,
+         * `?` and `%` in filenames from being parsed as URL syntax; the main process decodes.
+         */
+        const encoded = finalPath.split('/').map(encodeURIComponent).join('/');
+        img.setAttribute('src', `fate-local://local${encoded}`);
       }
     });
   }

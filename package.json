@@ -1,6 +1,6 @@
 {
   "name": "fate-markdown-viewer",
-  "version": "1.13.0",
+  "version": "1.13.1",
   "description": "FATE (Formatted Article and Text Editor) is a Markdown viewer and text editor for technical documents.",
   "author": "VagueDustin Enterprises",
   "homepage": "https://github.com/VagueDustin/FATE",
@@ -79,7 +79,6 @@
       "synopsis": "Markdown viewer and text editor for technical documents",
       "maintainer": "VagueDustin Enterprises <enterprises@vaguedustin.com>",
       "mimeTypes": [
-        "text/markdown",
         "text/x-markdown",
         "text/plain",
         "text/javascript",
