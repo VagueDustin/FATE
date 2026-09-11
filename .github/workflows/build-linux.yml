@@ -5,7 +5,7 @@
 #   1. The maintainer builds the Windows installer locally and runs
 #        gh release create vX.Y.Z FATE-Setup-X.Y.Z.exe latest.yml --title ... --notes ...
 #      which creates the vX.Y.Z tag on GitHub — and that tag push is what triggers this workflow.
-#   2. This job builds FATE-X.Y.Z-x86_64.AppImage, fate_X.Y.Z_amd64.deb and latest-linux.yml
+#   2. This job builds FATE-X.Y.Z-x86_64.AppImage, FATE-X.Y.Z-amd64.deb and latest-linux.yml
 #      (electron-updater's manifest for the AppImage) and uploads them to that same release.
 #      If the tag was pushed before a release exists, the job creates the release as a DRAFT so
 #      nothing goes public without the maintainer.
