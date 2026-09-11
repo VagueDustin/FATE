@@ -11,13 +11,22 @@
 #      nothing goes public without the maintainer.
 #
 # "Run workflow" (workflow_dispatch) on a branch builds the packages and attaches them to the run
-# as artifacts only — there is no tag to release against.
+# as artifacts. Give it a `release_tag` to ALSO upload them to that existing release — the
+# recovery path when a tag's own run failed (e.g. v1.13.0's run failed on `npm ci` because the
+# lockfile at the tag was out of sync; the fix landed on main, and the fixed main was built and
+# attached to v1.13.0 this way rather than rewriting the tag).
 name: Build Linux
 
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Existing release tag to attach the packages to (empty = run artifacts only)'
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: write
@@ -62,10 +71,10 @@ jobs:
             dist-electron/latest-linux.yml
 
       - name: Attach the packages to the GitHub release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
           set -euo pipefail
           if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
