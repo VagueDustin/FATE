@@ -37,9 +37,11 @@ npm run electron:dev      # Vite + Electron together
 | `npm run electron:build` | Windows installer + Store package (`dist-electron/`) |
 | `npm run electron:build:linux` | Linux AppImage + `.deb` + `.rpm` (`dist-electron/`); run `npm run icons` first, and have `rpmbuild` installed |
 
-**Note:** `build/` is generated output and gitignored — with one exception. `build/installer.nsh` is
-hand-authored build source and **is** tracked, so `npm run icons` followed by `npm run electron:build`
-works from a fresh clone. If you touch the code-extension list, remember it lives in three
+**Note:** `build/` is generated output and gitignored — with two exceptions. `build/installer.nsh`
+(the NSIS installer script) and `build/com.vaguedustin.fate.metainfo.xml` (the AppStream metadata
+the Linux packages install for software centres) are hand-authored build source and **are**
+tracked, so `npm run icons` followed by `npm run electron:build` works from a fresh clone. When you
+cut a release, add a `<release>` entry to the metainfo file. If you touch the code-extension list, remember it lives in three
 places that must agree: `electron/main.cjs`, `src/fileKinds.js`, and the generated blocks in
 `build/installer.nsh`. The list is a curated dialog filter and the set of types FATE registers
 for on Windows — it does **not** decide what opens. FATE opens any text file; the only gates are

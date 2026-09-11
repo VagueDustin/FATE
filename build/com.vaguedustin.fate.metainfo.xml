@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AppStream metadata for the Linux packages (.deb and .rpm). This is what makes FATE a real
+  entry in GNOME Software, KDE Discover and friends — name, description, screenshots, licence —
+  rather than a bare desktop file. Installed to /usr/share/metainfo/ by the fpm mapping in
+  package.json (build.deb.fpm / build.rpm.fpm). Validated in CI with `appstreamcli validate`.
+
+  Hand-authored build SOURCE (tracked despite build/ being gitignored, like installer.nsh).
+  When cutting a release, add a <release> entry below.
+-->
+<component type="desktop-application">
+  <id>com.vaguedustin.fate</id>
+  <launchable type="desktop-id">FATE.desktop</launchable>
+  <name>FATE</name>
+  <summary>Markdown viewer and text editor for technical documents</summary>
+  <developer id="com.vaguedustin">
+    <name>VagueDustin Enterprises</name>
+  </developer>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>AGPL-3.0-only</project_license>
+
+  <description>
+    <p>
+      FATE (Formatted Article and Text Editor) renders Markdown the way technical documents need:
+      KaTeX mathematics, including multi-line matrices and equations inside headings, Mermaid
+      diagrams, syntax-highlighted code fences, and a live table of contents. A repair layer heals
+      the badly escaped LaTeX that language models and export tools produce before it reaches the
+      screen.
+    </p>
+    <p>
+      It is also a full text editor. Any text file opens — code, configuration files, logs,
+      scripts, extensionless files — in a CodeMirror editor with syntax highlighting for around
+      150 languages, code folding, multiple cursors, search and replace, split view and diffs.
+      Files changed on disk reload in place while your buffer is clean, and never over unsaved
+      edits.
+    </p>
+    <p>
+      Eight themes plus a custom theme builder, a bundled font library with per-file-type
+      overrides, print to PDF with a real preview, tabs with per-tab session restore. Fully
+      offline: no telemetry, no network requests.
+    </p>
+  </description>
+
+  <url type="homepage">https://github.com/VagueDustin/FATE</url>
+  <url type="bugtracker">https://github.com/VagueDustin/FATE/issues</url>
+  <url type="vcs-browser">https://github.com/VagueDustin/FATE</url>
+
+  <categories>
+    <category>Utility</category>
+    <category>TextEditor</category>
+  </categories>
+
+  <keywords>
+    <keyword>markdown</keyword>
+    <keyword>text</keyword>
+    <keyword>editor</keyword>
+    <keyword>code</keyword>
+    <keyword>latex</keyword>
+    <keyword>katex</keyword>
+    <keyword>mermaid</keyword>
+  </keywords>
+
+  <provides>
+    <binary>FATE</binary>
+    <mediatype>text/markdown</mediatype>
+    <mediatype>text/plain</mediatype>
+  </provides>
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>Reading a Markdown document with rendered mathematics</caption>
+      <image>https://raw.githubusercontent.com/VagueDustin/FATE/main/docs/screenshots/02-markdown-reading.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Editing code</caption>
+      <image>https://raw.githubusercontent.com/VagueDustin/FATE/main/docs/screenshots/04-code-editor.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Split view</caption>
+      <image>https://raw.githubusercontent.com/VagueDustin/FATE/main/docs/screenshots/05-split-view.png</image>
+    </screenshot>
+  </screenshots>
+
+  <content_rating type="oars-1.1"/>
+
+  <releases>
+    <release version="1.13.0" date="2026-09-11">
+      <url>https://github.com/VagueDustin/FATE/releases/tag/v1.13.0</url>
+    </release>
+  </releases>
+</component>

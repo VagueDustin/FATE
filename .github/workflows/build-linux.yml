@@ -47,11 +47,17 @@ jobs:
           cache: npm
 
       # The .deb and .rpm are assembled by fpm, which electron-builder downloads itself — but the
-      # rpm output shells out to `rpmbuild`, which Ubuntu does not ship by default.
-      - name: Install rpmbuild for the Fedora package
+      # rpm output shells out to `rpmbuild`, which Ubuntu does not ship by default. appstream and
+      # desktop-file-utils bring the validators for the metadata that makes FATE show up as a real
+      # application (software centres, app menu, "Open with").
+      - name: Install rpmbuild and the AppStream / desktop-entry validators
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends rpm
+          sudo apt-get install -y --no-install-recommends rpm appstream desktop-file-utils
+
+      # The AppStream file is what GNOME Software / KDE Discover read. Fail early if it is wrong.
+      - name: Validate the AppStream metadata
+        run: appstreamcli validate --no-net --explain build/com.vaguedustin.fate.metainfo.xml
 
       - run: npm ci
 
@@ -64,8 +70,9 @@ jobs:
       # Never let electron-builder publish on its own; the release step below owns that.
       - run: npm run electron:build:linux -- --publish never
 
-      - name: Check that the packages exist
+      - name: Check the packages and their desktop integration
         run: |
+          set -euo pipefail
           ls -la dist-electron/*.AppImage dist-electron/*.deb dist-electron/*.rpm dist-electron/latest-linux.yml
           echo "--- rpm metadata"
           rpm -qip dist-electron/*.rpm
@@ -73,6 +80,22 @@ jobs:
           rpm -qpR dist-electron/*.rpm
           echo "--- deb metadata"
           dpkg-deb --info dist-electron/*.deb
+
+          # Everything a package installs OUTSIDE /opt is desktop integration: the .desktop entry,
+          # the icon set, the shared-mime-info globs and the AppStream metadata. List it, then
+          # validate the desktop entry the way the distro's own tooling would.
+          echo "--- deb: files outside /opt"
+          dpkg-deb --contents dist-electron/*.deb | awk '{print $6}' | grep -v '^\./opt/' | grep -v '/$'
+          echo "--- rpm: files outside /opt"
+          rpm -qpl dist-electron/*.rpm | grep -v '^/opt/'
+          rpm -qpl dist-electron/*.rpm | grep -q '^/usr/share/metainfo/com.vaguedustin.fate.metainfo.xml$'
+          rpm -qpl dist-electron/*.rpm | grep -q '^/usr/share/applications/FATE.desktop$'
+
+          echo "--- desktop entry"
+          rm -rf /tmp/deb && mkdir -p /tmp/deb && dpkg-deb -x dist-electron/*.deb /tmp/deb
+          desktop-file-validate /tmp/deb/usr/share/applications/FATE.desktop
+          cat /tmp/deb/usr/share/applications/FATE.desktop
+          echo "--- MIME types declared: $(grep '^MimeType=' /tmp/deb/usr/share/applications/FATE.desktop | tr ';' '\n' | grep -c /)"
 
       - uses: actions/upload-artifact@v4
         with:

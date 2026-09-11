@@ -23,7 +23,7 @@ FATE is a beautiful, elegant, and highly resilient Markdown viewer **and code ed
 
 - **Instant Viewing:** Drag & drop any `.md` or `.markdown` file directly into the app, or set FATE as your default markdown viewer.
 - **Full Text & Code Editor:** Open and *edit* **any text file** — code (`.ps1`, `.py`, `.js`, `.json`, `.css`, `.yaml` and 80+ registered types), configs (`web.config`, `.properties`, `.ini`), logs, `.reg` exports, `.csv`, extensionless scripts, whatever is text — in a real editor with syntax highlighting, line numbers, code folding, search (`Ctrl`+`F`), multiple cursors and undo history. Extensions the highlighter has never heard of are sniffed from their content (XML prologues, JSON, INI sections, shebang lines). Save with `Ctrl`+`S`; unsaved changes are guarded everywhere (closing the file, opening another, closing the window).
-- **Windows and Linux:** An NSIS installer and Microsoft Store package for Windows; an AppImage, a `.deb` (Ubuntu, Debian) and an `.rpm` (Fedora, RHEL, openSUSE) for Linux. Same app, same themes, same fonts — the Windows-only integration (file-type registration, Default apps) simply doesn't appear elsewhere.
+- **Windows and Linux:** An NSIS installer and Microsoft Store package for Windows; an AppImage, a `.deb` (Ubuntu, Debian) and an `.rpm` (Fedora, RHEL, openSUSE) for Linux. The `.deb` and `.rpm` install FATE as a proper application — app-menu entry, icon set, AppStream listing in GNOME Software / KDE Discover — and register it for Markdown, plain text and some sixty code MIME types, so it appears under *Open With* and can be made the default for any of them from your file manager. Same app, same themes, same fonts — the Windows-only integration (file-type registration, Default apps) simply doesn't appear elsewhere.
 - **Tabs:** Open any number of files side by side, Notepad++-style — mixed markdown and code, per-tab unsaved-changes tracking, middle-click to close, `Ctrl`+`Tab` to cycle, `Ctrl`+`1`–`9` to jump. Every tab keeps its scroll position, cursor and undo history while backgrounded.
 - **Bundled Font Library — plus every font on your PC:** JetBrains Mono, Fira Code, Cascadia Code, Source Code Pro, IBM Plex Mono, Roboto Mono for code; Inter, IBM Plex Sans, Source Serif 4, Lora, Merriweather for prose — all shipped inside the app, fully offline — and a searchable picker over every font installed on your system. Pick fonts for the interface, markdown documents, and code separately, override the font *per file type*, and tune sizes and ligatures, all previewed live in each typeface.
 - **Live Reload That Respects Your Edits:** Files changed on disk reload in place while your buffer is clean — and never clobber unsaved edits.
@@ -95,6 +95,17 @@ Don't want to use the pre-compiled releases? You can easily build FATE from sour
    workflow* on a branch just attaches them to the run. The AppImage self-updates through
    `latest-linux.yml` the same way the Windows installer uses `latest.yml`; the `.deb` and
    `.rpm` update through your package manager.
+
+   **Making FATE the default on Linux.** The `.deb`/`.rpm` install `FATE.desktop` with a
+   `MimeType=` line covering Markdown, plain text and the code types FATE registers on Windows,
+   plus AppStream metadata (`build/com.vaguedustin.fate.metainfo.xml`) for software centres.
+   Defaults are per user and set through the desktop, exactly as for any other editor: in GNOME
+   Files, *Properties → Open With → FATE → Set as default*; in KDE Dolphin, *Properties → File
+   Type Options*; or from a shell, `xdg-mime default FATE.desktop text/markdown` (any of the
+   listed types). File types the system's MIME database doesn't know (`.jsonc`, `.psm1`, `.zig`,
+   …) are detected as `text/plain`, which FATE also declares. The AppImage is a portable single
+   file and does not integrate on its own — use AppImageLauncher or Gear Lever if you want it in
+   the menu and the *Open With* list.
 
    Cross-building from Windows gets as far as `dist-electron/linux-unpacked/` and then stops:
    the AppImage step creates symlinks, which Windows only allows with Developer Mode on or from

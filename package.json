@@ -81,7 +81,61 @@
       "mimeTypes": [
         "text/markdown",
         "text/x-markdown",
-        "text/plain"
+        "text/plain",
+        "text/javascript",
+        "application/javascript",
+        "application/typescript",
+        "application/json",
+        "application/schema+json",
+        "text/html",
+        "application/xhtml+xml",
+        "text/css",
+        "text/x-scss",
+        "text/x-sass",
+        "application/x-powershell",
+        "text/x-python",
+        "text/x-python3",
+        "application/x-ruby",
+        "application/x-php",
+        "application/sql",
+        "application/xml",
+        "text/xml",
+        "application/xslt+xml",
+        "image/svg+xml",
+        "application/yaml",
+        "application/x-yaml",
+        "application/toml",
+        "text/x-shellscript",
+        "application/x-shellscript",
+        "application/x-bat",
+        "text/x-csrc",
+        "text/x-chdr",
+        "text/x-c++src",
+        "text/x-c++hdr",
+        "text/x-csharp",
+        "text/x-java",
+        "text/x-go",
+        "text/rust",
+        "text/x-rust",
+        "text/x-kotlin",
+        "application/vnd.dart",
+        "text/x-lua",
+        "application/x-perl",
+        "text/x-perl",
+        "text/x-scala",
+        "text/x-groovy",
+        "text/x-gradle",
+        "text/x-tex",
+        "text/x-patch",
+        "text/x-diff",
+        "text/x-log",
+        "text/x-vb",
+        "text/x-erlang",
+        "text/x-elixir",
+        "text/x-haskell",
+        "text/x-nim",
+        "text/julia",
+        "text/x-asm"
       ],
       "desktop": {
         "entry": {
@@ -92,10 +146,16 @@
     },
     "deb": {
       "packageName": "fate",
-      "priority": "optional"
+      "priority": "optional",
+      "fpm": [
+        "build/com.vaguedustin.fate.metainfo.xml=/usr/share/metainfo/com.vaguedustin.fate.metainfo.xml"
+      ]
     },
     "rpm": {
-      "packageName": "fate"
+      "packageName": "fate",
+      "fpm": [
+        "build/com.vaguedustin.fate.metainfo.xml=/usr/share/metainfo/com.vaguedustin.fate.metainfo.xml"
+      ]
     },
     "nsis": {
       "oneClick": false,
