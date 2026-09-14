@@ -38,6 +38,7 @@ npm run electron:dev      # Vite + Electron together
 | `npm run electron:build:linux` | Linux AppImage + `.deb` + `.rpm` (`dist-electron/`); run `npm run icons` first, have `rpmbuild` installed, and put the public signing keyring in `build/` (README → How to Build) |
 | `node scripts/write-snap-desktop.mjs` | regenerate `snap/gui/` (desktop entry + icon) for the snap build from package.json |
 | `bash scripts/setup-signing-key.sh` | **maintainer, once:** create the package-signing key and store it as the `FATE_GPG_PRIVATE_KEY` secret |
+| `powershell -File scripts/setup-snap-store-token.ps1` | **maintainer, once:** create the Snap Store upload token for `fate` via Canonical's snapcraft container and store it as the `SNAPCRAFT_STORE_CREDENTIALS` secret |
 
 The Linux distribution channels are all driven by `.github/workflows/build-linux.yml` from a
 release tag — apt and dnf repositories (served from GitHub Releases, rolling prerelease tags `apt`

@@ -145,9 +145,10 @@ Don't want to use the pre-compiled releases? You can easily build FATE from sour
    Snap Store; the Flathub manifest built and linted; and `fate` installed from the live
    repositories in Debian and Fedora containers as a smoke test. Flathub itself picks the new
    version up through its external-data-checker bot. One-time setup, all in the repository:
-   `scripts/setup-signing-key.sh` (creates the `FATE_GPG_PRIVATE_KEY` secret), a
-   `SNAPCRAFT_STORE_CREDENTIALS` secret from `snapcraft export-login` after registering the `fate`
-   name, and the initial Flathub submission (`flatpak/`).
+   `scripts/setup-signing-key.sh` (creates the `FATE_GPG_PRIVATE_KEY` secret) and
+   `scripts/setup-snap-store-token.ps1` (creates the `SNAPCRAFT_STORE_CREDENTIALS` secret through
+   Canonical's snapcraft container, after the `fate` name is registered on snapcraft.io). The
+   Flathub manifest in `flatpak/` is ready for a submission made by the maintainer personally.
 
    Cross-building from Windows gets as far as `dist-electron/linux-unpacked/` and then stops:
    the AppImage step creates symlinks, which Windows only allows with Developer Mode on or from
