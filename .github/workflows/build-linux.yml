@@ -127,8 +127,13 @@ jobs:
         run: |
           set -euo pipefail
           rpmsign --define "_gpg_name $GPG_FPR" --addsign dist-electron/*.rpm
+          # Verify the way dnf will: import the public key into the rpm database and let rpm
+          # check the signature. (Querying %{SIGPGP} is wrong here — rpm 4.14+ writes a V4
+          # header signature into RSAHEADER, and SIGPGP reads back as "(none)".)
+          sudo rpm --import build/fate-archive-keyring.asc
           echo "--- signature on the rpm:"
-          rpm -qp --qf '%{SIGPGP:pgpsig}\n' dist-electron/*.rpm | grep -v '(none)'
+          rpm -qip dist-electron/*.rpm | grep '^Signature'
+          rpm -K dist-electron/*.rpm | tee /dev/stderr | grep -q 'signatures OK'
 
       - name: Check the packages and their desktop integration
         run: |
@@ -320,7 +325,7 @@ jobs:
             curl -fsSL -o /etc/yum.repos.d/fate.repo "$REPO_BASE/repodata/fate.repo"
             dnf install -y fate >/dev/null
             rpm -q fate
-            rpm -q --qf "%{SIGPGP:pgpsig}\n" fate | grep -v "(none)"
+            rpm -qi fate | grep "^Signature" | grep -v "(none)"
             test -x "/opt/FATE - Formatted Article & Text Editor/FATE"
             test -f /etc/yum.repos.d/fate.repo
             echo "dnf install fate: OK"'
