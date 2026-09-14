@@ -1,9 +1,10 @@
 #!/bin/bash
 # Post-install for the .deb.
 #
-# TEMPLATE, not a plain script: electron-builder substitutes ${executable} and
-# ${sanitizedProductName} at build time and FAILS THE BUILD on any other ${name}. So: template
-# variables use braces, shell variables never do ($VAR only). The first half is electron-builder's
+# TEMPLATE, not a plain script: electron-builder substitutes the two macros executable and
+# sanitizedProductName (written as a dollar sign + braces) at build time and FAILS THE BUILD on
+# any other braced name, comments included. So: only those two use braces, shell variables never
+# do ($VAR only). The first half is electron-builder's
 # own default after-install.tpl, kept verbatim so replacing it loses nothing; the second half
 # registers FATE's apt repository so `apt upgrade` keeps FATE current from then on.
 
