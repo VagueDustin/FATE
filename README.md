@@ -42,7 +42,7 @@ sudo dnf install fate
 
 **Flathub** — not yet available. The manifest in `flatpak/` is ready and is built and linted on every release; the listing itself must be submitted by the maintainer personally, per Flathub's [Generative AI policy](https://docs.flathub.org/docs/for-app-authors/requirements#generative-ai-policy).
 
-**Snap Store** — `snap install fate` (once the listing is live).
+**Snap Store** — `sudo snap install fate` on Ubuntu and any distro with snapd ([snapcraft.io/fate](https://snapcraft.io/fate)). snapd keeps it updated.
 
 Every Linux package registers FATE for Markdown, plain text and some sixty code MIME types, so it shows up under *Open With* and can be made the default for any of them from your file manager. Packages and repository indexes are signed; the key is `fate-archive-keyring.gpg` on the `apt` release.
 
