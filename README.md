@@ -40,7 +40,7 @@ sudo dnf install fate
 
 **Any Linux** — `FATE-<version>-x86_64.AppImage` from the latest release; `chmod +x` and run. It updates itself.
 
-**Flathub** — `flatpak install flathub com.vaguedustin.fate` (once the listing is live — submission under review at [flathub/flathub#10220](https://github.com/flathub/flathub/pull/10220)).
+**Flathub** — not yet available. The manifest in `flatpak/` is ready and is built and linted on every release; the listing itself must be submitted by the maintainer personally, per Flathub's [Generative AI policy](https://docs.flathub.org/docs/for-app-authors/requirements#generative-ai-policy).
 
 **Snap Store** — `snap install fate` (once the listing is live).
 
