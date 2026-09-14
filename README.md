@@ -19,6 +19,33 @@ FATE is a beautiful, elegant, and highly resilient Markdown viewer **and code ed
   </tr>
 </table>
 
+## Install
+
+**Windows** — download `FATE-Setup-<version>.exe` from the [latest release](https://github.com/VagueDustin/FATE/releases/latest). It updates itself. Also on the Microsoft Store.
+
+**Ubuntu / Debian / Mint / Pop!_OS** — either install the `.deb` from the latest release, or add the
+repository once; both leave you with `apt upgrade` keeping FATE current:
+```bash
+sudo curl -fsSL -o /usr/share/keyrings/fate-archive-keyring.gpg https://github.com/VagueDustin/FATE/releases/download/apt/fate-archive-keyring.gpg
+sudo curl -fsSL -o /etc/apt/sources.list.d/fate.sources https://github.com/VagueDustin/FATE/releases/download/apt/fate.sources
+sudo apt update && sudo apt install fate
+```
+(The `.deb` registers the same repository during installation, so there is nothing to add afterwards.)
+
+**Fedora / RHEL / openSUSE** — the same choice, `.rpm` or repository:
+```bash
+sudo curl -fsSL -o /etc/yum.repos.d/fate.repo https://github.com/VagueDustin/FATE/releases/download/repodata/fate.repo
+sudo dnf install fate
+```
+
+**Any Linux** — `FATE-<version>-x86_64.AppImage` from the latest release; `chmod +x` and run. It updates itself.
+
+**Flathub** — `flatpak install flathub com.vaguedustin.fate` (once the listing is live; the submission is in progress).
+
+**Snap Store** — `snap install fate` (once the listing is live).
+
+Every Linux package registers FATE for Markdown, plain text and some sixty code MIME types, so it shows up under *Open With* and can be made the default for any of them from your file manager. Packages and repository indexes are signed; the key is `fate-archive-keyring.gpg` on the `apt` release.
+
 ## Features & Capabilities
 
 - **Instant Viewing:** Drag & drop any `.md` or `.markdown` file directly into the app, or set FATE as your default markdown viewer.
@@ -107,6 +134,21 @@ Don't want to use the pre-compiled releases? You can easily build FATE from sour
    file and does not integrate on its own — use AppImageLauncher or Gear Lever if you want it in
    the menu and the *Open With* list.
 
+   A local Linux build also needs the public signing keyring in `build/`, because the `.deb` and
+   `.rpm` ship it: `curl -fsSL -o build/fate-archive-keyring.gpg https://github.com/VagueDustin/FATE/releases/download/apt/fate-archive-keyring.gpg`
+   and the same for `fate-archive-keyring.asc` (CI derives both from the signing secret).
+
+   **Releases.** The maintainer builds the Windows installer locally and runs
+   `gh release create vX.Y.Z FATE-Setup-X.Y.Z.exe latest.yml --title … --notes …`. That creates the
+   tag, and the *Build Linux* workflow does the rest: AppImage, `.deb`, `.rpm` (signed) and `.snap`
+   attached to the release; the apt and dnf repositories republished; the snap uploaded to the
+   Snap Store; the Flathub manifest built and linted; and `fate` installed from the live
+   repositories in Debian and Fedora containers as a smoke test. Flathub itself picks the new
+   version up through its external-data-checker bot. One-time setup, all in the repository:
+   `scripts/setup-signing-key.sh` (creates the `FATE_GPG_PRIVATE_KEY` secret), a
+   `SNAPCRAFT_STORE_CREDENTIALS` secret from `snapcraft export-login` after registering the `fate`
+   name, and the initial Flathub submission (`flatpak/`).
+
    Cross-building from Windows gets as far as `dist-electron/linux-unpacked/` and then stops:
    the AppImage step creates symlinks, which Windows only allows with Developer Mode on or from
    an elevated shell, and the `.deb` step needs `fpm` on your PATH — electron-builder downloads
@@ -145,6 +187,23 @@ reserved — see **[BRAND.md](BRAND.md)**.
 In short: fork freely, keep it open, and **rename and re-skin before you distribute.**
 
 ## Changelog
+
+### v1.13.2
+- **[New]** **`apt install fate` and `dnf install fate`.** Every release now publishes a signed apt
+  repository and signed dnf repodata, served entirely from GitHub Releases: the indexes live under
+  two rolling prerelease tags (`apt` and `repodata`) and point at the versioned packages. The
+  `.deb` and `.rpm` register the repository during installation, so a one-off download turns
+  into `apt upgrade` / `dnf upgrade` keeping FATE current from then on. Both paths are tested on
+  every release by installing `fate` from the live repositories in Debian and Fedora containers.
+- **[New]** **Snap Store and Flathub packaging.** A strict-confinement snap (`fate`) is built on
+  every release and uploaded to the Snap Store's stable channel; a Flatpak manifest
+  (`com.vaguedustin.fate`) repackages the released `.deb` on Electron's Flathub base and is built
+  and linted on every release, with Flathub's bot configured to pick up new versions on its own.
+- **[Enhancement]** **Installs that have an owner no longer update themselves.** Flatpak, Snap,
+  apt and dnf each deliver updates on their own schedule; FATE now recognises those installs and
+  stays out of the way, the same way the Microsoft Store build does. The status-bar button says
+  who is in charge and opens the latest release notes. The Windows installer and the AppImage
+  still update themselves.
 
 ### v1.13.1
 - **[Security]** **Every open Dependabot alert resolved — sixty of them.** They spanned the whole

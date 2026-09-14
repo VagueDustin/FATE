@@ -1512,9 +1512,9 @@ function App() {
         <button
           className={`status-btn ${updateAction === 'install' ? 'accent' : ''}`}
           onClick={handleUpdateAction}
-          title={runtimeInfo.windowsStore ? 'Updates come from the Microsoft Store' : 'Check for updates'}
+          title={runtimeInfo.updates?.managed ? `Updates come from ${runtimeInfo.updates.label}` : 'Check for updates'}
         >
-          {runtimeInfo.windowsStore ? 'Store build · updates via Microsoft Store' : (updateStatus || 'Check for updates')}
+          {runtimeInfo.updates?.managed ? `Updates via ${runtimeInfo.updates.label}` : (updateStatus || 'Check for updates')}
         </button>
       </footer>
 

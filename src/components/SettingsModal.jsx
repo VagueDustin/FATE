@@ -832,14 +832,16 @@ function SettingsModal({
               <>
                 <div className="setting-group">
                   <span className="group-caption">Updates</span>
-                  {runtimeInfo?.windowsStore ? (
+                  {runtimeInfo?.updates?.managed ? (
                     <div className="setting-item setting-item-stacked">
                       <div className="setting-label-block">
-                        <span className="setting-label">Microsoft Store build</span>
+                        <span className="setting-label">
+                          {runtimeInfo.windowsStore ? 'Microsoft Store build' : `Managed by ${runtimeInfo.updates.label}`}
+                        </span>
                         <span className="setting-hint">
-                          This copy of FATE is managed by the Microsoft Store, which delivers its
-                          updates automatically. The update button in the status bar opens the
-                          Store&apos;s downloads page.
+                          {runtimeInfo.windowsStore
+                            ? 'This copy of FATE is managed by the Microsoft Store, which delivers its updates automatically. The update button in the status bar opens the Store’s downloads page.'
+                            : `This copy of FATE was installed through ${runtimeInfo.updates.label}, which delivers its updates on its own schedule — FATE never updates itself here. The update button in the status bar opens the latest release notes.`}
                         </span>
                       </div>
                     </div>

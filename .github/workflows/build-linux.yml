@@ -1,20 +1,43 @@
-# Linux packages — AppImage (any distro), .deb (Ubuntu/Debian) and .rpm (Fedora/RHEL/openSUSE) —
-# built on a real Linux runner and attached to the GitHub release for the tag.
+# Linux release pipeline. One tag push does all of this:
 #
-# Release flow, end to end:
-#   1. The maintainer builds the Windows installer locally and runs
-#        gh release create vX.Y.Z FATE-Setup-X.Y.Z.exe latest.yml --title ... --notes ...
-#      which creates the vX.Y.Z tag on GitHub — and that tag push is what triggers this workflow.
-#   2. This job builds FATE-X.Y.Z-x86_64.AppImage, FATE-X.Y.Z-amd64.deb, FATE-X.Y.Z-x86_64.rpm
-#      and latest-linux.yml (electron-updater's manifest for the AppImage) and uploads them to
-#      that same release. If the tag was pushed before a release exists, the job creates the
-#      release as a DRAFT so nothing goes public without the maintainer.
+#   build      AppImage, .deb (Ubuntu/Debian), .rpm (Fedora/RHEL, GPG-signed), .snap
+#   attach     all of them + latest-linux.yml to the GitHub release for the tag
+#   apt        publish a signed flat apt repository  -> `apt install fate` / `apt upgrade`
+#   dnf        publish signed dnf repodata            -> `dnf install fate` / `dnf upgrade`
+#   snap       upload to the Snap Store stable channel (when SNAPCRAFT_STORE_CREDENTIALS is set)
+#   flatpak    build + lint the Flathub manifest against the released .deb (Flathub itself is
+#              updated by flatpak-external-data-checker from the release — nothing to do here)
+#   test       install `fate` from the apt repo in a Debian container and from the dnf repo in a
+#              Fedora container, exactly as a user would
 #
-# "Run workflow" (workflow_dispatch) on a branch builds the packages and attaches them to the run
-# as artifacts. Give it a `release_tag` to ALSO upload them to that existing release — the
-# recovery path when a tag's own run failed (e.g. v1.13.0's run failed on `npm ci` because the
-# lockfile at the tag was out of sync; the fix landed on main, and the fixed main was built and
-# attached to v1.13.0 this way rather than rewriting the tag).
+# The maintainer's part is unchanged: build Windows locally, then
+#     gh release create vX.Y.Z FATE-Setup-X.Y.Z.exe latest.yml --title ... --notes ...
+# which creates the tag and fires this.
+#
+# ── How the apt/dnf repositories live entirely in GitHub Releases ─────────────────────────────
+# Both package managers need an index, a signature, and the packages. The packages are the
+# versioned release assets already. The indexes go to two ROLLING releases whose tags are chosen
+# so the URLs line up:
+#
+#   apt   flat repo:  deb https://github.com/OWNER/REPO/releases/download/  apt/
+#         apt fetches <base>/apt/InRelease and <base>/apt/Packages; `Filename:` entries are
+#         relative to <base>, i.e. `vX.Y.Z/FATE-X.Y.Z-amd64.deb` — the release asset itself.
+#   dnf   baseurl=https://github.com/OWNER/REPO/releases/download/
+#         dnf fetches <baseurl>/repodata/repomd.xml — so the rolling tag is literally `repodata`;
+#         createrepo_c --baseurl stamps each package location with the versioned release URL.
+#
+# BOTH rolling releases are created as PRERELEASES and never marked latest. This is not
+# cosmetic: electron-updater resolves "latest" through GitHub's /releases/latest, which returns
+# the newest non-prerelease. A normal `apt` release would hijack every Windows and AppImage
+# install's update check. Keep them prereleases forever.
+#
+# Signing: the FATE_GPG_PRIVATE_KEY secret (created once by scripts/setup-signing-key.sh). The
+# public keyring is exported into build/ before packaging so the .deb/.rpm carry it and their
+# post-install scripts (build/linux/after-install-*.sh) can register the repositories.
+#
+# "Run workflow" (workflow_dispatch) on a branch builds everything and attaches it to the run.
+# Give it a `release_tag` to ALSO publish to that existing release and the repositories — the
+# recovery path when a tag's own run failed.
 name: Build Linux
 
 on:
@@ -23,7 +46,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Existing release tag to attach the packages to (empty = run artifacts only)'
+        description: 'Existing release tag to publish to (empty = run artifacts only)'
         required: false
         default: ''
         type: string
@@ -35,9 +58,18 @@ concurrency:
   group: build-linux-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  REPO_BASE: https://github.com/${{ github.repository }}/releases/download
+
 jobs:
   linux:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      release_tag: ${{ steps.meta.outputs.release_tag }}
+      deb_sha256: ${{ steps.hashes.outputs.deb_sha256 }}
+    env:
+      HAS_SNAP_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -46,29 +78,57 @@ jobs:
           node-version: 22
           cache: npm
 
-      # The .deb and .rpm are assembled by fpm, which electron-builder downloads itself — but the
-      # rpm output shells out to `rpmbuild`, which Ubuntu does not ship by default. appstream and
-      # desktop-file-utils bring the validators for the metadata that makes FATE show up as a real
-      # application (software centres, app menu, "Open with").
-      - name: Install rpmbuild and the AppStream / desktop-entry validators
+      # rpm: rpmbuild + rpmsign for the Fedora package. createrepo-c: dnf repodata.
+      # dpkg-dev + apt-utils: the apt index (dpkg-scanpackages, apt-ftparchive).
+      # appstream + desktop-file-utils: validators for the desktop integration.
+      - name: Install packaging tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends rpm appstream desktop-file-utils
+          sudo apt-get install -y --no-install-recommends rpm createrepo-c dpkg-dev apt-utils gnupg appstream desktop-file-utils
 
-      # The AppStream file is what GNOME Software / KDE Discover read. Fail early if it is wrong.
+      - name: Release metadata
+        id: meta
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          TAG=""
+          case "$GITHUB_REF" in refs/tags/*) TAG="$GITHUB_REF_NAME" ;; esac
+          if [ -n "${{ inputs.release_tag }}" ]; then TAG="${{ inputs.release_tag }}"; fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version $VERSION — publishing to release: ${TAG:-no (artifacts only)}"
+
+      - name: Import the package-signing key
+        env:
+          FATE_GPG_PRIVATE_KEY: ${{ secrets.FATE_GPG_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$FATE_GPG_PRIVATE_KEY" ]; then
+            echo "::error::The FATE_GPG_PRIVATE_KEY repository secret is missing. Run scripts/setup-signing-key.sh once (README → How to Build → Releases)."
+            exit 1
+          fi
+          printf '%s\n' "$FATE_GPG_PRIVATE_KEY" | gpg --batch --quiet --import
+          FPR="$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr/ { print $10; exit }')"
+          echo "GPG_FPR=$FPR" >> "$GITHUB_ENV"
+          gpg --export "$FPR" > build/fate-archive-keyring.gpg
+          gpg --armor --export "$FPR" > build/fate-archive-keyring.asc
+          echo "Signing with $FPR"
+
       - name: Validate the AppStream metadata
         run: appstreamcli validate --no-net --explain build/com.vaguedustin.fate.metainfo.xml
 
       - run: npm ci
-
-      # build/ is gitignored (except installer.nsh): the icon set the Linux packages need is
-      # derived from the tracked masters in brand/.
       - run: npm run icons
-
       - run: npm run lint
 
-      # Never let electron-builder publish on its own; the release step below owns that.
-      - run: npm run electron:build:linux -- --publish never
+      - name: Build AppImage, .deb and .rpm
+        run: npm run electron:build:linux -- --publish never
+
+      - name: Sign the rpm
+        run: |
+          set -euo pipefail
+          rpmsign --define "_gpg_name $GPG_FPR" --addsign dist-electron/*.rpm
+          echo "--- signature on the rpm:"
+          rpm -qp --qf '%{SIGPGP:pgpsig}\n' dist-electron/*.rpm | grep -v '(none)'
 
       - name: Check the packages and their desktop integration
         run: |
@@ -81,21 +141,51 @@ jobs:
           echo "--- deb metadata"
           dpkg-deb --info dist-electron/*.deb
 
-          # Everything a package installs OUTSIDE /opt is desktop integration: the .desktop entry,
-          # the icon set, the shared-mime-info globs and the AppStream metadata. List it, then
-          # validate the desktop entry the way the distro's own tooling would.
           echo "--- deb: files outside /opt"
           dpkg-deb --contents dist-electron/*.deb | awk '{print $6}' | grep -v '^\./opt/' | grep -v '/$'
           echo "--- rpm: files outside /opt"
           rpm -qpl dist-electron/*.rpm | grep -v '^/opt/'
           rpm -qpl dist-electron/*.rpm | grep -q '^/usr/share/metainfo/com.vaguedustin.fate.metainfo.xml$'
           rpm -qpl dist-electron/*.rpm | grep -q '^/usr/share/applications/FATE.desktop$'
+          rpm -qpl dist-electron/*.rpm | grep -q '^/etc/pki/rpm-gpg/RPM-GPG-KEY-fate$'
+          dpkg-deb --contents dist-electron/*.deb | grep -q 'usr/share/keyrings/fate-archive-keyring.gpg'
+
+          echo "--- post-install scripts register the repositories"
+          rm -rf /tmp/debctl && mkdir -p /tmp/debctl && dpkg-deb -e dist-electron/*.deb /tmp/debctl
+          grep -q 'sources.list.d/fate.sources' /tmp/debctl/postinst
+          rpm -qp --scripts dist-electron/*.rpm | grep -q 'yum.repos.d/fate.repo'
 
           echo "--- desktop entry"
           rm -rf /tmp/deb && mkdir -p /tmp/deb && dpkg-deb -x dist-electron/*.deb /tmp/deb
           desktop-file-validate /tmp/deb/usr/share/applications/FATE.desktop
           cat /tmp/deb/usr/share/applications/FATE.desktop
           echo "--- MIME types declared: $(grep '^MimeType=' /tmp/deb/usr/share/applications/FATE.desktop | tr ';' '\n' | grep -c /)"
+
+      - name: Package hashes
+        id: hashes
+        run: echo "deb_sha256=$(sha256sum dist-electron/*.deb | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      # ── Snap ───────────────────────────────────────────────────────────────────────────────
+      - name: Stage the snap build
+        run: |
+          set -euo pipefail
+          node scripts/write-snap-desktop.mjs
+          rm -rf snapbuild && mkdir -p snapbuild
+          cp -r snap snapbuild/snap
+          cp -r dist-electron/linux-unpacked snapbuild/linux-unpacked
+          sed -i "s|^version: .*|version: '${{ steps.meta.outputs.version }}'|" snapbuild/snap/snapcraft.yaml
+          grep '^version:' snapbuild/snap/snapcraft.yaml
+
+      - name: Build the snap
+        id: snap
+        uses: snapcore/action-build@v1
+        with:
+          path: snapbuild
+
+      - name: Inspect the snap
+        run: |
+          ls -la "${{ steps.snap.outputs.snap }}"
+          cp "${{ steps.snap.outputs.snap }}" dist-electron/
 
       - uses: actions/upload-artifact@v4
         with:
@@ -105,13 +195,15 @@ jobs:
             dist-electron/*.AppImage
             dist-electron/*.deb
             dist-electron/*.rpm
+            dist-electron/*.snap
             dist-electron/latest-linux.yml
 
+      # ── Release ────────────────────────────────────────────────────────────────────────────
       - name: Attach the packages to the GitHub release
-        if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
+        if: steps.meta.outputs.release_tag != ''
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ inputs.release_tag || github.ref_name }}
+          TAG: ${{ steps.meta.outputs.release_tag }}
         run: |
           set -euo pipefail
           if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
@@ -120,6 +212,170 @@ jobs:
               --notes "Linux packages built by GitHub Actions. The Windows installer and latest.yml are attached by the maintainer."
           fi
           gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber \
-            dist-electron/*.AppImage dist-electron/*.deb dist-electron/*.rpm dist-electron/latest-linux.yml
+            dist-electron/*.AppImage dist-electron/*.deb dist-electron/*.rpm dist-electron/*.snap dist-electron/latest-linux.yml
           echo "Release assets now:"
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name'
+
+      - name: Publish the apt repository
+        if: steps.meta.outputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          rm -rf repo && mkdir -p repo/apt "repo/$TAG"
+          cp dist-electron/*.deb "repo/$TAG/"
+          # Filename: entries come out as ./vX.Y.Z/FATE-...deb; apt wants them relative to the
+          # base URL, so drop the ./ — the result is exactly the release asset URL.
+          ( cd repo && dpkg-scanpackages --multiversion . /dev/null ) > repo/apt/Packages
+          sed -i 's|^Filename: \./|Filename: |' repo/apt/Packages
+          gzip -9 -k -f repo/apt/Packages
+          ( cd repo/apt && apt-ftparchive \
+              -o APT::FTPArchive::Release::Origin="VagueDustin Enterprises" \
+              -o APT::FTPArchive::Release::Label="FATE" \
+              -o APT::FTPArchive::Release::Suite="stable" \
+              -o APT::FTPArchive::Release::Codename="stable" \
+              -o APT::FTPArchive::Release::Architectures="amd64" \
+              -o APT::FTPArchive::Release::Description="FATE - Formatted Article & Text Editor" \
+              release . ) > repo/apt/Release
+          gpg --batch --yes --armor --detach-sign -o repo/apt/Release.gpg repo/apt/Release
+          gpg --batch --yes --clearsign -o repo/apt/InRelease repo/apt/Release
+          cat > repo/apt/fate.sources <<EOF
+          # FATE - Formatted Article & Text Editor — apt repository (served from GitHub Releases).
+          # Keyring: $REPO_BASE/apt/fate-archive-keyring.gpg
+          Types: deb
+          URIs: $REPO_BASE/
+          Suites: apt/
+          Signed-By: /usr/share/keyrings/fate-archive-keyring.gpg
+          EOF
+          echo "--- Packages"; cat repo/apt/Packages
+
+          if ! gh release view apt --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create apt --repo "$GITHUB_REPOSITORY" --prerelease --latest=false \
+              --title "apt repository (index files — not a release)" \
+              --notes "Index files for the FATE apt repository; the packages are the versioned releases. This is marked as a prerelease on purpose: it must never become the 'latest' release. To install: see the README, Linux → Ubuntu / Debian."
+          fi
+          gh release upload apt --repo "$GITHUB_REPOSITORY" --clobber \
+            repo/apt/Release repo/apt/Release.gpg repo/apt/InRelease repo/apt/Packages repo/apt/Packages.gz \
+            repo/apt/fate.sources build/fate-archive-keyring.gpg build/fate-archive-keyring.asc
+
+      - name: Publish the dnf repository
+        if: steps.meta.outputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          rm -rf repo/rpm && mkdir -p repo/rpm
+          cp dist-electron/*.rpm repo/rpm/
+          # --baseurl stamps each package <location> with the versioned release URL, so the
+          # repodata can live under the rolling `repodata` tag while packages stay put.
+          createrepo_c --simple-md-filenames --no-database --general-compress-type gz \
+            --baseurl "$REPO_BASE/$TAG/" repo/rpm
+          gpg --batch --yes --armor --detach-sign -o repo/rpm/repodata/repomd.xml.asc repo/rpm/repodata/repomd.xml
+          cat > repo/rpm/fate.repo <<EOF
+          [fate]
+          name=FATE - Formatted Article & Text Editor
+          baseurl=$REPO_BASE/
+          enabled=1
+          gpgcheck=1
+          repo_gpgcheck=1
+          gpgkey=$REPO_BASE/repodata/fate-archive-keyring.asc
+          metadata_expire=6h
+          EOF
+          echo "--- repodata"; ls -la repo/rpm/repodata
+          echo "--- package location (must point at the versioned release asset)"
+          zcat repo/rpm/repodata/primary.xml.gz | grep -o '<location[^>]*>'
+
+          if ! gh release view repodata --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create repodata --repo "$GITHUB_REPOSITORY" --prerelease --latest=false \
+              --title "dnf repository (repodata — not a release)" \
+              --notes "Repodata for the FATE dnf repository; the packages are the versioned releases. This is marked as a prerelease on purpose: it must never become the 'latest' release. To install: see the README, Linux → Fedora / RHEL."
+          fi
+          gh release upload repodata --repo "$GITHUB_REPOSITORY" --clobber \
+            repo/rpm/repodata/* repo/rpm/fate.repo build/fate-archive-keyring.asc
+
+      # ── Install tests: exactly what a user does ────────────────────────────────────────────
+      - name: Test `apt install fate` in a Debian container
+        if: steps.meta.outputs.release_tag != ''
+        run: |
+          sleep 15
+          docker run --rm -e REPO_BASE -v "$PWD/build:/k:ro" debian:stable-slim bash -euxc '
+            apt-get update -qq
+            apt-get install -y -qq --no-install-recommends ca-certificates >/dev/null
+            install -m644 /k/fate-archive-keyring.gpg /usr/share/keyrings/fate-archive-keyring.gpg
+            printf "Types: deb\nURIs: %s/\nSuites: apt/\nSigned-By: /usr/share/keyrings/fate-archive-keyring.gpg\n" "$REPO_BASE" > /etc/apt/sources.list.d/fate.sources
+            apt-get update -qq
+            apt-get install -y -qq fate >/dev/null
+            dpkg -s fate | grep "^Version"
+            test -x "/opt/FATE - Formatted Article & Text Editor/FATE"
+            test -f /etc/apt/sources.list.d/fate.sources
+            grep -q Signed-By /etc/apt/sources.list.d/fate.sources
+            echo "apt install fate: OK"'
+
+      - name: Test `dnf install fate` in a Fedora container
+        if: steps.meta.outputs.release_tag != ''
+        run: |
+          docker run --rm -e REPO_BASE fedora:latest bash -euxc '
+            curl -fsSL -o /etc/yum.repos.d/fate.repo "$REPO_BASE/repodata/fate.repo"
+            dnf install -y fate >/dev/null
+            rpm -q fate
+            rpm -q --qf "%{SIGPGP:pgpsig}\n" fate | grep -v "(none)"
+            test -x "/opt/FATE - Formatted Article & Text Editor/FATE"
+            test -f /etc/yum.repos.d/fate.repo
+            echo "dnf install fate: OK"'
+
+      # ── Snap Store ─────────────────────────────────────────────────────────────────────────
+      - name: Publish to the Snap Store (stable)
+        if: steps.meta.outputs.release_tag != '' && env.HAS_SNAP_CREDENTIALS == 'true'
+        uses: snapcore/action-publish@v1
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        with:
+          snap: ${{ steps.snap.outputs.snap }}
+          release: stable
+
+      - name: Snap Store publishing skipped
+        if: steps.meta.outputs.release_tag != '' && env.HAS_SNAP_CREDENTIALS != 'true'
+        run: |
+          echo "::notice::SNAPCRAFT_STORE_CREDENTIALS is not set — the snap was built and attached to the release but not uploaded to the Snap Store. See README → How to Build → Releases."
+
+  # ── Flatpak: prove the Flathub manifest builds against the released .deb ──────────────────
+  flatpak:
+    needs: linux
+    if: needs.linux.outputs.release_tag != ''
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-24.08
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Render the manifest for this release
+        run: |
+          set -euo pipefail
+          mkdir -p flatpak/rendered
+          sed -e "s|@VERSION@|${{ needs.linux.outputs.version }}|g" \
+              -e "s|@DEB_SHA256@|${{ needs.linux.outputs.deb_sha256 }}|g" \
+              flatpak/com.vaguedustin.fate.yml > flatpak/rendered/com.vaguedustin.fate.yml
+          cp flatpak/flathub.json flatpak/rendered/flathub.json
+          grep -n "url:\|sha256:" flatpak/rendered/com.vaguedustin.fate.yml
+
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: com.vaguedustin.fate.flatpak
+          manifest-path: flatpak/rendered/com.vaguedustin.fate.yml
+          cache: false
+          upload-artifact: false
+
+      - name: Lint the manifest and the built repo (Flathub's own checks)
+        continue-on-error: true
+        run: |
+          flatpak install -y --noninteractive flathub org.flatpak.Builder || true
+          flatpak run --command=flatpak-builder-lint org.flatpak.Builder manifest flatpak/rendered/com.vaguedustin.fate.yml || echo "::warning::manifest lint reported issues (see above)"
+          flatpak run --command=flatpak-builder-lint org.flatpak.Builder repo repo || echo "::warning::repo lint reported issues (see above)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flathub-submission-${{ needs.linux.outputs.version }}
+          path: flatpak/rendered/

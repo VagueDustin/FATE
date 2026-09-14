@@ -1,6 +1,6 @@
 {
   "name": "fate-markdown-viewer",
-  "version": "1.13.1",
+  "version": "1.13.2",
   "description": "FATE (Formatted Article and Text Editor) is a Markdown viewer and text editor for technical documents.",
   "author": "VagueDustin Enterprises",
   "homepage": "https://github.com/VagueDustin/FATE",
@@ -146,14 +146,18 @@
     "deb": {
       "packageName": "fate",
       "priority": "optional",
+      "afterInstall": "build/linux/after-install-deb.sh",
       "fpm": [
-        "build/com.vaguedustin.fate.metainfo.xml=/usr/share/metainfo/com.vaguedustin.fate.metainfo.xml"
+        "build/com.vaguedustin.fate.metainfo.xml=/usr/share/metainfo/com.vaguedustin.fate.metainfo.xml",
+        "build/fate-archive-keyring.gpg=/usr/share/keyrings/fate-archive-keyring.gpg"
       ]
     },
     "rpm": {
       "packageName": "fate",
+      "afterInstall": "build/linux/after-install-rpm.sh",
       "fpm": [
-        "build/com.vaguedustin.fate.metainfo.xml=/usr/share/metainfo/com.vaguedustin.fate.metainfo.xml"
+        "build/com.vaguedustin.fate.metainfo.xml=/usr/share/metainfo/com.vaguedustin.fate.metainfo.xml",
+        "build/fate-archive-keyring.asc=/etc/pki/rpm-gpg/RPM-GPG-KEY-fate"
       ]
     },
     "nsis": {

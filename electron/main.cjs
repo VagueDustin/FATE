@@ -1001,6 +1001,35 @@ const isDev = process.env.NODE_ENV === 'development';
  */
 const isWindowsStore = process.windowsStore === true;
 
+/**
+ * Who delivers updates for THIS install.
+ *
+ * electron-updater is right for exactly two packages — the NSIS installer on Windows and the
+ * AppImage on Linux — because nothing else owns them. Every other channel has an owner that will
+ * update FATE on its own schedule, and an in-app updater would fight it: the Microsoft Store,
+ * Flathub (FLATPAK_ID is set inside the sandbox), the Snap Store (SNAP), and the .deb/.rpm, which
+ * register FATE's own apt/dnf repository in their post-install script so the system package
+ * manager takes over (electron-builder writes resources/package-type for those two). For a
+ * managed install the updater never starts and the status-bar button says who is in charge.
+ */
+function detectUpdateSource() {
+  if (isWindowsStore) return { managed: true, kind: 'windows-store', label: 'the Microsoft Store' };
+  if (process.env.FLATPAK_ID) return { managed: true, kind: 'flatpak', label: 'Flathub' };
+  if (process.env.SNAP) return { managed: true, kind: 'snap', label: 'the Snap Store' };
+  if (process.platform === 'linux' && !process.env.APPIMAGE) {
+    try {
+      const kind = fs.readFileSync(path.join(process.resourcesPath, 'package-type'), 'utf8').trim();
+      if (kind === 'deb') return { managed: true, kind, label: 'apt' };
+      if (kind === 'rpm') return { managed: true, kind, label: 'dnf' };
+      if (kind) return { managed: true, kind, label: 'your package manager' };
+    } catch {
+      // No package-type marker: an unpacked dev build or an AppImage — self-updating.
+    }
+  }
+  return { managed: false, kind: process.platform === 'linux' ? 'appimage' : 'nsis', label: null };
+}
+const updateSource = detectUpdateSource();
+
 let mainWindow;
 
 /*
@@ -1491,7 +1520,9 @@ app.whenReady().then(() => {
   /** Build facts the renderer adjusts its UI to (Store builds get Store-owned updates). */
   ipcMain.handle('get-runtime-info', () => ({
     windowsStore: isWindowsStore,
-    platform: process.platform
+    platform: process.platform,
+    /** { managed, kind, label } — who updates this install; see detectUpdateSource. */
+    updates: updateSource
   }));
 
   /*
@@ -1601,6 +1632,12 @@ app.whenReady().then(() => {
       shell.openExternal('ms-windows-store://downloadsandupdates');
       return;
     }
+    // Flatpak / Snap / apt / dnf own updates for this install (see detectUpdateSource). The
+    // button still does something useful: it shows what the newest release contains.
+    if (updateSource.managed) {
+      shell.openExternal('https://github.com/VagueDustin/FATE/releases/latest');
+      return;
+    }
     if (!isDev && store.get('autoUpdatesEnabled')) {
       autoUpdater.checkForUpdates();
     }
@@ -1630,7 +1667,7 @@ app.whenReady().then(() => {
     if(mainWindow) mainWindow.webContents.send('update-message', 'Update downloaded! Ready to install.', 'install');
   });
 
-  if (!isDev && !isWindowsStore) {
+  if (!isDev && !updateSource.managed) {
     autoUpdater.checkForUpdatesAndNotify();
   }
 
