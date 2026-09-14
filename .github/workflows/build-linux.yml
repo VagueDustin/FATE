@@ -127,13 +127,18 @@ jobs:
         run: |
           set -euo pipefail
           rpmsign --define "_gpg_name $GPG_FPR" --addsign dist-electron/*.rpm
-          # Verify the way dnf will: import the public key into the rpm database and let rpm
-          # check the signature. (Querying %{SIGPGP} is wrong here — rpm 4.14+ writes a V4
-          # header signature into RSAHEADER, and SIGPGP reads back as "(none)".)
-          sudo rpm --import build/fate-archive-keyring.asc
+          # Verify the way dnf will: import the public key into an rpm database and let rpm check
+          # the signature — in a PRIVATE database (--dbpath), because a `sudo rpm --import` lands
+          # in root's database and the unprivileged `rpm -K` that follows cannot see it (NOKEY).
+          # (Querying %{SIGPGP} is wrong here too — rpm 4.14+ writes a V4 header signature into
+          # RSAHEADER, and SIGPGP reads back as "(none)".)
+          RPMDB="$PWD/rpmdb-verify"
+          rm -rf "$RPMDB" && mkdir -p "$RPMDB"
+          rpm --dbpath "$RPMDB" --initdb
+          rpm --dbpath "$RPMDB" --import build/fate-archive-keyring.asc
           echo "--- signature on the rpm:"
-          rpm -qip dist-electron/*.rpm | grep '^Signature'
-          rpm -K dist-electron/*.rpm | tee /dev/stderr | grep -q 'signatures OK'
+          rpm --dbpath "$RPMDB" -qip dist-electron/*.rpm | grep '^Signature'
+          rpm --dbpath "$RPMDB" -K dist-electron/*.rpm | tee /dev/stderr | grep -q 'signatures OK'
 
       - name: Check the packages and their desktop integration
         run: |
