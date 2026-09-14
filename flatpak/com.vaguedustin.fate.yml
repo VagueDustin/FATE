@@ -17,10 +17,10 @@
 # ("Editing a document") and never carries file names.
 app-id: com.vaguedustin.fate
 runtime: org.freedesktop.Platform
-runtime-version: '24.08'
+runtime-version: '25.08'
 sdk: org.freedesktop.Sdk
 base: org.electronjs.Electron2.BaseApp
-base-version: '24.08'
+base-version: '25.08'
 command: fate
 separate-locales: false
 
