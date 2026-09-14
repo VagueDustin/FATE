@@ -138,7 +138,9 @@ jobs:
           rpm --dbpath "$RPMDB" --import build/fate-archive-keyring.asc
           echo "--- signature on the rpm:"
           rpm --dbpath "$RPMDB" -qip dist-electron/*.rpm | grep '^Signature'
-          rpm --dbpath "$RPMDB" -K dist-electron/*.rpm | tee /dev/stderr | grep -q 'signatures OK'
+          rpm --dbpath "$RPMDB" -K dist-electron/*.rpm > /tmp/rpm-K.txt
+          cat /tmp/rpm-K.txt
+          grep -q 'signatures OK' /tmp/rpm-K.txt
 
       - name: Check the packages and their desktop integration
         run: |
@@ -151,19 +153,24 @@ jobs:
           echo "--- deb metadata"
           dpkg-deb --info dist-electron/*.deb
 
+          # Listings go to files first: `cmd | grep -q` closes the pipe on the first match, the
+          # producer dies with a write error, and pipefail fails the step even though it matched.
+          dpkg-deb --contents dist-electron/*.deb | awk '{print $6}' > /tmp/deb-files.txt
+          rpm -qpl dist-electron/*.rpm > /tmp/rpm-files.txt 2>/dev/null
+          rpm -qp --scripts dist-electron/*.rpm > /tmp/rpm-scripts.txt 2>/dev/null
           echo "--- deb: files outside /opt"
-          dpkg-deb --contents dist-electron/*.deb | awk '{print $6}' | grep -v '^\./opt/' | grep -v '/$'
+          grep -v '^\./opt/' /tmp/deb-files.txt | grep -v '/$'
           echo "--- rpm: files outside /opt"
-          rpm -qpl dist-electron/*.rpm | grep -v '^/opt/'
-          rpm -qpl dist-electron/*.rpm | grep -q '^/usr/share/metainfo/com.vaguedustin.fate.metainfo.xml$'
-          rpm -qpl dist-electron/*.rpm | grep -q '^/usr/share/applications/FATE.desktop$'
-          rpm -qpl dist-electron/*.rpm | grep -q '^/etc/pki/rpm-gpg/RPM-GPG-KEY-fate$'
-          dpkg-deb --contents dist-electron/*.deb | grep -q 'usr/share/keyrings/fate-archive-keyring.gpg'
+          grep -v '^/opt/' /tmp/rpm-files.txt | grep -v '/\.build-id/'
+          grep -q '^/usr/share/metainfo/com.vaguedustin.fate.metainfo.xml$' /tmp/rpm-files.txt
+          grep -q '^/usr/share/applications/FATE.desktop$' /tmp/rpm-files.txt
+          grep -q '^/etc/pki/rpm-gpg/RPM-GPG-KEY-fate$' /tmp/rpm-files.txt
+          grep -q 'usr/share/keyrings/fate-archive-keyring.gpg' /tmp/deb-files.txt
 
           echo "--- post-install scripts register the repositories"
           rm -rf /tmp/debctl && mkdir -p /tmp/debctl && dpkg-deb -e dist-electron/*.deb /tmp/debctl
           grep -q 'sources.list.d/fate.sources' /tmp/debctl/postinst
-          rpm -qp --scripts dist-electron/*.rpm | grep -q 'yum.repos.d/fate.repo'
+          grep -q 'yum.repos.d/fate.repo' /tmp/rpm-scripts.txt
 
           echo "--- desktop entry"
           rm -rf /tmp/deb && mkdir -p /tmp/deb && dpkg-deb -x dist-electron/*.deb /tmp/deb
