@@ -4,8 +4,8 @@ const fs = require('fs');
 const { execFile } = require('child_process');
 const { autoUpdater } = require('electron-updater');
 const { pathToFileURL } = require('url');
-const DiscordRPC = require('discord-rpc');
 const Store = require('electron-store');
+const { describeFsError } = require('./fsAccess.cjs');
 
 /**
  * ProgId that electron-builder's NSIS installer actually registers for `.md`.
@@ -115,8 +115,11 @@ function isOpenableArg(arg) {
   let stat;
   try {
     stat = fs.statSync(arg);
-  } catch {
-    return false;
+  } catch (err) {
+    // Under snap confinement a path the sandbox may not see fails with EACCES, not ENOENT — the
+    // user still asked for that file. Keep it and let openAndWatchFile say why it will not open;
+    // up to 1.13.2 this returned false and `Open with → FATE` from a USB stick did nothing.
+    return err.code === 'EACCES' || err.code === 'EPERM';
   }
   if (!stat.isFile()) return false;
   // `electron electron/main.cjs` in dev: the entry file exists and is a file, but it is FATE.
@@ -184,11 +187,10 @@ const store = new Store({
 
 /*
  * Drop settings that no longer exist, so an upgraded install doesn't carry dead keys forever.
- *
- * `discordEnabled` backed the "Show filename on Discord" toggle, removed in 1.8.0. Deleting it here
- * rather than leaving it means the on-disk config matches what the app actually reads.
+ * Add the key of any setting you remove to this list; it is deleted from existing configs on the
+ * next launch, so the on-disk file matches what the app actually reads.
  */
-for (const staleKey of ['discordEnabled']) {
+for (const staleKey of []) {
   if (store.has(staleKey)) store.delete(staleKey);
 }
 
@@ -939,51 +941,6 @@ async function exportPdf(docName) {
   return { ok: true, filePath };
 }
 
-const discordClientId = '1513749770005381233';
-DiscordRPC.register(discordClientId);
-
-const rpc = new DiscordRPC.Client({ transport: 'ipc' });
-let rpcReady = false;
-const sessionStartTimestamp = new Date();
-
-rpc.on('ready', () => {
-  rpcReady = true;
-  setDiscordActivity();
-});
-
-let currentActivity = {};
-
-/**
- * Publish Rich Presence.
- *
- * ── Filenames are never sent ──────────────────────────────────────────────────────────────────
- * Presence is deliberately generic: "Reading Markdown" or "Idling on the home screen", and nothing
- * else. Up to 1.7.0 there was a "Show filename on Discord" toggle that put the open document's name
- * in the `state` field. It is gone as of 1.8.0 — broadcasting the name of whatever file you have
- * open to everyone on your friends list is a privacy footgun for a documents app, and it is not
- * something anyone needs a setting for.
- *
- * `state` is left unset rather than filled with a generic string, which is exactly the payload the
- * old toggle produced in its OFF position — so presence looks the same as it did for anyone who had
- * it disabled. Everything else about the integration is unchanged.
- *
- * Callers may still pass a `state`; it is ignored on purpose, so a stray call site cannot
- * reintroduce a filename leak.
- */
-function setDiscordActivity(activity) {
-  if (activity) currentActivity = activity;
-  if (!rpcReady) return;
-
-  rpc.setActivity({
-    details: currentActivity.details || 'Idling on the home screen',
-    startTimestamp: sessionStartTimestamp,
-    largeImageKey: 'fate-logo',
-    largeImageText: 'FATE',
-    instance: false,
-  }).catch(console.error);
-}
-
-rpc.login({ clientId: discordClientId }).catch(console.error);
 protocol.registerSchemesAsPrivileged([
   { scheme: 'fate-local', privileges: { bypassCSP: true, supportFetchAPI: true, secure: true, standard: true, stream: true } }
 ]);
@@ -1245,7 +1202,19 @@ function unwatchFile(filePath) {
 }
 
 async function openAndWatchFile(filePath, opts = {}) {
-  if (!fs.existsSync(filePath)) return;
+  let stat;
+  try {
+    stat = fs.statSync(filePath);
+  } catch (err) {
+    // Gone — a stale recent, a restored tab whose file was deleted since: stay quiet, as always.
+    if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return;
+    // Anything else the user needs to hear. Under snap confinement "permission denied" means an
+    // interface is not connected, and until 1.13.2 it looked exactly like "no such file".
+    const { title, message } = describeFsError(err, filePath, 'open');
+    dialog.showErrorBox(title, message);
+    return;
+  }
+  if (!stat.isFile()) return;
 
   try {
     /*
@@ -1254,7 +1223,6 @@ async function openAndWatchFile(filePath, opts = {}) {
      * activates its existing tab.) Dirty buffers are guarded where something is actually
      * discarded: closing a tab, and closing the window.
      */
-    const stat = fs.statSync(filePath);
     if (stat.size > MAX_FILE_BYTES) {
       dialog.showErrorBox(
         'File too large',
@@ -1291,6 +1259,8 @@ async function openAndWatchFile(filePath, opts = {}) {
     watchFile(filePath);
   } catch (e) {
     console.error('Error reading file:', e);
+    const { title, message } = describeFsError(e, filePath, 'open');
+    dialog.showErrorBox(title, message);
   }
 }
 
@@ -1352,10 +1322,6 @@ app.whenReady().then(() => {
     documentEdited = !!edited;
   });
 
-  ipcMain.on('set-discord-activity', (event, activity) => {
-    setDiscordActivity(activity);
-  });
-
   ipcMain.handle('store-get', (event, key) => store.get(key));
   ipcMain.handle('store-set', (event, key, val) => {
     store.set(key, val);
@@ -1390,7 +1356,7 @@ app.whenReady().then(() => {
       return { ok: true };
     } catch (err) {
       lastSavedByApp.delete(watchKey(filePath));
-      return { ok: false, error: err.message };
+      return { ok: false, error: describeFsError(err, filePath, 'save').short };
     }
   });
 
@@ -1426,7 +1392,7 @@ app.whenReady().then(() => {
       return { ok: true, filePath, name: path.basename(filePath) };
     } catch (err) {
       if (chosenPath) lastSavedByApp.delete(watchKey(chosenPath));
-      return { ok: false, error: err.message };
+      return { ok: false, error: chosenPath ? describeFsError(err, chosenPath, 'save').short : err.message };
     }
   });
 

@@ -42,7 +42,7 @@ sudo dnf install fate
 
 **Flathub** — not yet available. The manifest in `flatpak/` is ready and is built and linted on every release; the listing itself must be submitted by the maintainer personally, per Flathub's [Generative AI policy](https://docs.flathub.org/docs/for-app-authors/requirements#generative-ai-policy).
 
-**Snap Store** — `sudo snap install fate` on Ubuntu and any distro with snapd ([snapcraft.io/fate](https://snapcraft.io/fate)). snapd keeps it updated.
+**Snap Store** — `sudo snap install fate` on Ubuntu and any distro with snapd ([snapcraft.io/fate](https://snapcraft.io/fate)). snapd keeps it updated. To edit files on USB sticks and other removable drives, allow it once with `sudo snap connect fate:removable-media`; FATE reminds you if you forget.
 
 Every Linux package registers FATE for Markdown, plain text and some sixty code MIME types, so it shows up under *Open With* and can be made the default for any of them from your file manager. Packages and repository indexes are signed; the key is `fate-archive-keyring.gpg` on the `apt` release.
 
@@ -188,6 +188,10 @@ reserved — see **[BRAND.md](BRAND.md)**.
 In short: fork freely, keep it open, and **rename and re-skin before you distribute.**
 
 ## Changelog
+
+### v1.13.3
+- **[Bugfix]** **Snap: files on removable drives no longer disappear silently.** The snap declares the `removable-media` interface, but the Snap Store does not connect it on install, and FATE treated the resulting "permission denied" exactly like "no such file" — *Open with → FATE* on a document on a USB stick or a second disk did nothing at all. FATE now recognises the confinement case and shows the one command that fixes it (`sudo snap connect fate:removable-media`), checking first whether the interface is already connected so it never gives stale advice. Saving to such a path reports the same in the status bar, and hidden files in your home folder — which snap confinement never allows — get an honest explanation instead of a generic error. The same applies to any permission error on any platform: it is now reported, not swallowed.
+- **[Removed]** **Discord Rich Presence is gone entirely.** FATE no longer talks to a Discord client at all — the dependency, the IPC channel, the Settings entry and the privacy-policy section are all removed. The only connection FATE makes is the GitHub update check on installs that update themselves.
 
 ### v1.13.2
 - **[New]** **`apt install fate` and `dnf install fate`.** Every release now publishes a signed apt
@@ -388,7 +392,6 @@ In short: fork freely, keep it open, and **rename and re-skin before you distrib
 - **[Feature]** **Export as PDF** — a dedicated button in the document header, saving wherever you choose.
 - **[Feature]** Exported PDFs carry **heading bookmarks** generated from the document's own structure, **page numbers**, the document name in the header, and **tagged-PDF** structure so screen readers can navigate them.
 - **[Feature]** **Paper size and orientation** in Settings → Printing: Letter, A4, Legal, Tabloid, A3, A5, portrait or landscape. Applies to both preview and export.
-- **[Removed]** **The "Show filename on Discord" option is gone.** Broadcasting the name of whatever file you have open to your entire friends list is a poor default for a documents app and not something worth a setting. Rich Presence is unchanged otherwise — it still shows that you're reading or idle, exactly as it did with the option switched off. The filename no longer even crosses the internal IPC boundary, and the stale setting is cleaned out of existing configs on upgrade.
 - **[Bugfix]** Print and export are gated while a render is in flight, and a failed render now surfaces in the status bar instead of failing silently.
 - **[Bugfix]** If Chromium's embedded PDF viewer is unavailable in a given build, the preview falls back to the system PDF handler rather than opening an empty window.
 - **[Bugfix]** Fixed a temporal-dead-zone crash introduced while wiring the print shortcut: the keyboard effect named a `const` callback declared further down the component, which threw on every render and blanked the entire app. Caught before release.
@@ -440,23 +443,20 @@ In short: fork freely, keep it open, and **rename and re-skin before you distrib
 
 ### v1.4.2
 - **[Bugfix]** Fixed missing Dracula theme hooks for interactive UI buttons and scrollbars.
-- **[Bugfix]** Corrected Discord RPC payload mapping to accurately mask the filename when Privacy Mode is enabled.
 
 ### v1.4.1
 - **[Feature]** Added the Dracula theme option.
-- **[Enhancement]** Refactored Discord Rich Presence to use a "Privacy Filter" instead of completely disabling the client.
 - **[Enhancement]** Added a red pulsing glow to the Settings gear icon.
 - **[Bugfix]** Fixed Light theme typography contrast by applying aggressive readability overrides to markdown headers and paragraphs.
 
 ### v1.4.0
-- **[Feature]** Implemented a dynamic Settings modal featuring Theme toggling, Discord RPC control, Automatic Updates toggle, and an adjustable sidebar width.
+- **[Feature]** Implemented a dynamic Settings modal featuring Theme toggling, Automatic Updates toggle, and an adjustable sidebar width.
 - **[Feature]** Built a dynamic keyboard shortcut re-binding system.
 - **[Feature]** Added a persistent `electron-store` backend to seamlessly save all user preferences across application updates.
 - **[Feature]** Added a custom NSIS installer checkbox to automatically associate FATE with `.md` and `.markdown` files.
 - **[Maintenance]** Streamlined GitHub releases to exclusively publish the optimized `.exe` installer.
 
 ### v1.3.0
-- **[Feature]** Fully integrated Discord Rich Presence to proudly display your reading activity.
 - **[Enhancement]** Complete UI responsiveness overhaul using fluid Flexbox scaling.
 - **[Enhancement]** Rebranded core identity and window titles to explicitly declare "FATE - Markdown Viewer".
 - **[Enhancement]** Integrated premium square FATE app icons and rectangular FATE document icons for `.md` Windows File Explorer associations.
@@ -493,7 +493,7 @@ In short: fork freely, keep it open, and **rename and re-skin before you distrib
 - **[Bugfix]** Fixed a critical race condition, dynamically hid update UI when viewing a document, and re-enabled GPU rendering support.
 
 ### v1.0.2
-- **[Feature]** Added automatic update UI and resolved Discord overlay conflicts.
+- **[Feature]** Added automatic update UI.
 
 ### v1.0.1
 - **[Enhancement]** Configured automatic updates and applied MIT licensing.

@@ -13,8 +13,7 @@
 # "Open with", edits them in place and watches them for external changes, which needs real paths
 # rather than portal documents — hence --filesystem=home (and removable media). It makes no
 # network requests; electron-updater stays off inside Flatpak (FLATPAK_ID is set, see
-# electron/main.cjs). The discord-ipc socket is for Discord Rich Presence, which is generic
-# ("Editing a document") and never carries file names.
+# electron/main.cjs).
 app-id: com.vaguedustin.fate
 runtime: org.freedesktop.Platform
 runtime-version: '25.08'
@@ -33,7 +32,6 @@ finish-args:
   - --filesystem=/media
   - --filesystem=/run/media
   - --filesystem=/mnt
-  - --filesystem=xdg-run/discord-ipc-0
   - --env=ELECTRON_OZONE_PLATFORM_HINT=auto
 
 modules:

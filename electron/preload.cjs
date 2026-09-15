@@ -124,7 +124,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
    * label always starts with "FATE - Markdown Viewer". `edited` appends the unsaved-changes dot.
    */
   setTitle: (docName, edited) => ipcRenderer.send('set-title', docName, edited),
-  setDiscordActivity: (activity) => ipcRenderer.send('set-discord-activity', activity),
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   installUpdate: () => ipcRenderer.invoke('install-update'),

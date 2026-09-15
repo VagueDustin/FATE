@@ -44,6 +44,11 @@ apps:
     plugs:
       - browser-support
       - home
+      # Declared, but NOT connected on install: the Snap Store only auto-connects removable-media
+      # once it has granted this snap an assertion (a store-requests post on forum.snapcraft.io).
+      # Until then users run `sudo snap connect fate:removable-media` once — and FATE tells them
+      # so (electron/fsAccess.cjs) when a path under /media, /run/media or /mnt is denied, instead
+      # of dropping the file silently as 1.13.2 did.
       - removable-media
     environment:
       TMPDIR: $XDG_RUNTIME_DIR

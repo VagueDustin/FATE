@@ -551,17 +551,6 @@ function App() {
     if (activeId === null) refreshRecentFiles();
   }, [activeId, refreshRecentFiles]);
 
-  /* Rich Presence stays generic — never a filename (see setDiscordActivity in main.cjs). */
-  const activeKind = activeDoc ? (activeDoc.kind === 'code' || activeDoc.editMode ? 'edit' : 'read') : null;
-  useEffect(() => {
-    if (window.electronAPI) {
-      window.electronAPI.setDiscordActivity({
-        details:
-          activeKind === 'edit' ? 'Editing a document' : activeKind === 'read' ? 'Reading a document' : 'Idling on the home screen'
-      });
-    }
-  }, [activeKind]);
-
   /* ── Printing ────────────────────────────────────────────────────────────────────────────── */
 
   const executePrintJob = useCallback((invoke, label, docName) => {

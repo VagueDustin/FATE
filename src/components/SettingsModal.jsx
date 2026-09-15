@@ -860,19 +860,6 @@ function SettingsModal({
                   )}
                 </div>
 
-                <div className="setting-group">
-                  <span className="group-caption">Privacy</span>
-                  <div className="setting-item setting-item-stacked">
-                    <div className="setting-label-block">
-                      <span className="setting-label">Discord Rich Presence</span>
-                      <span className="setting-hint">
-                        FATE shows only whether you&apos;re reading, editing, or idle. Document
-                        names are never sent, and FATE makes no other network requests.
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
                 <div className="setting-group setting-group-about">
                   <div className="about-row">
                     <img src={fateLogo} alt="" className="about-badge" />

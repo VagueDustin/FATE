@@ -1,6 +1,6 @@
 # Privacy Policy for FATE - Formatted Article & Text Editor
 
-**Effective Date:** August 5, 2026 (supersedes the June 5, 2026 policy, which covered FATE - Markdown Viewer)
+**Effective Date:** September 15, 2026 (supersedes the August 5, 2026 policy)
 
 FATE is a local, offline desktop application for reading and editing documents. Your files and your
 data belong to you. This policy describes everything FATE does that could conceivably touch data —
@@ -43,22 +43,16 @@ types," and are removed on uninstall.
   (see GitHub's own privacy statement). Automatic checks can be disabled in Settings → About.
 * **Microsoft Store builds** perform no update checks at all — the Microsoft Store manages
   updates through its own pipeline.
+* **Linux packages** installed through apt, dnf, the Snap Store or Flatpak likewise perform no
+  update checks; those package managers deliver updates. The **AppImage** checks GitHub the same
+  way the Windows installer does.
 
-## 5. Discord Rich Presence
-
-If the Discord desktop app is running on your machine, FATE announces a **generic** status to it
-over a local connection: "Reading a document," "Editing a document," or "Idling on the home
-screen" — nothing more. Document names, file paths, and file contents are **never** shared, and
-the code path that could carry them was removed in version 1.8.0. If Discord is not running, no
-presence exists and no connection is made. How Discord displays and handles presence information
-is governed by Discord's own privacy policy.
-
-## 6. Changes to This Policy
+## 5. Changes to This Policy
 
 If a future version of FATE changes what this policy describes, the policy will be updated in the
 repository alongside the release, with a new effective date.
 
-## 7. Contact
+## 6. Contact
 
 Questions or concerns about this policy: please open an issue on the official GitHub repository —
 https://github.com/VagueDustin/FATE
