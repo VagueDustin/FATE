@@ -1,9 +1,10 @@
 # Flatpak manifest for FATE — the Flathub submission and the CI build test share this file.
 #
-# TEMPLATE: @VERSION@ and @DEB_SHA256@ are filled in by the Build Linux workflow (rendered copy
-# in flatpak/rendered/, built and linted on every tag). The Flathub repository holds a rendered
-# copy; flatpak-external-data-checker (x-checker-data below) bumps it automatically when a new
-# GitHub release appears, and flathub.json lets those bot PRs merge on their own.
+# TEMPLATE: the version and .deb sha256 placeholders below are filled in by the Build Linux
+# workflow (rendered copy in flatpak/rendered/, built and linted on every tag). The Flathub
+# repository holds a rendered copy; flatpak-external-data-checker (x-checker-data below) bumps it
+# automatically when a new GitHub release appears, and flathub.json lets those bot PRs merge on
+# their own.
 #
 # It repackages the released .deb rather than building Electron from source: the .deb is the
 # exact binary every other Linux channel ships, and Electron's BaseApp + zypak give it the same
