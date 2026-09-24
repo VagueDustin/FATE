@@ -25,9 +25,9 @@ description: |
   fences and a live table of contents, with an edit mode that puts the source beside a live
   preview. A repair layer fixes badly escaped LaTeX before it reaches the screen.
 
-  Eight themes plus a theme builder, a bundled font library, a command palette, rebindable
-  shortcuts, print to PDF with a real preview and session restore. Fully offline: no telemetry,
-  no network requests.
+  You also get eight themes plus a theme builder, a bundled font library, a command palette,
+  rebindable shortcuts, print to PDF with a real preview and session restore. It works fully
+  offline, with no telemetry and no network requests.
 license: AGPL-3.0-only
 website: https://github.com/VagueDustin/FATE
 source-code: https://github.com/VagueDustin/FATE

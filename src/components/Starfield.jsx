@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 
 /**
- * Starfield — the animated constellation sky behind the home screen.
+ * Starfield: the animated constellation sky behind the home screen.
  *
  * Ported from the 702 Squad Palworld portal (palworld.702squad.com), which is the ceremonial-tier
  * expression of the same brand. Same construction: a canvas of twinkling dust, a smaller set of
@@ -9,8 +9,8 @@ import { useEffect, useRef } from 'react';
  * occasional meteor.
  *
  * ── Why this is on the home screen only ───────────────────────────────────────────────────────
- * FATE sits at the brand's `utility` ornament tier, which explicitly rules out ambient motion —
- * for the reading surface, that rule is right: nothing should move behind a document you are trying
+ * FATE sits at the brand's `utility` ornament tier, which explicitly rules out ambient motion.
+ * For the reading surface, that rule is right: nothing should move behind a document you are trying
  * to read. The home screen is a different kind of surface. It is idle, it is the first thing you
  * see, and it carries the badge and the wordmark. So the split is deliberate: ceremonial home,
  * utility reader. This component is mounted only when no document is open, and its animation loop
@@ -22,7 +22,7 @@ import { useEffect, useRef } from 'react';
  *  - It also pauses while the window is hidden (`visibilitychange`), so a minimised or background
  *    window costs nothing.
  *  - `prefers-reduced-motion` renders one static frame and never starts the loop.
- *  - Device pixel ratio is capped at 2 — beyond that the cost doubles for no visible gain.
+ *  - Device pixel ratio is capped at 2; beyond that the cost doubles for no visible gain.
  */
 
 /** Star counts scale with width, but stay bounded so a wide monitor doesn't melt. */
@@ -32,7 +32,7 @@ const MAX_ANCHORS = 26;
 const ANCHORS_PER_PX = 1 / 58;
 /** Anchors closer than this (in device px) get a link drawn between them. */
 const LINK_RADIUS = 190;
-/** At most this many links per anchor, nearest first — keeps the web sparse rather than a mesh. */
+/** At most this many links per anchor, nearest first. Keeps the web sparse rather than a mesh. */
 const LINKS_PER_ANCHOR = 2;
 /** Average gap between meteors, ms. Randomised per spawn so they never feel metronomic. */
 const METEOR_INTERVAL = 7000;
@@ -251,7 +251,7 @@ export default function Starfield({ className = '' }) {
      *
      * Two reasons this is unconditional rather than only in the reduced-motion branch:
      *   1. requestAnimationFrame does not fire until the next compositor frame, so without this the
-     *      canvas is blank for a frame on mount — a visible flash of empty sky.
+     *      canvas is blank for a frame on mount: a visible flash of empty sky.
      *   2. rAF does not fire at all while the document is hidden. If the window opens minimised or
      *      on another desktop, the loop never starts and the sky stays blank until the window is
      *      focused. Drawing once here means there is always a sky, and the loop only adds motion.
@@ -259,14 +259,14 @@ export default function Starfield({ className = '' }) {
     draw(0);
     if (!reduced) play();
 
-    // Pause entirely while the window is hidden — a minimised window should cost nothing.
+    // Pause entirely while the window is hidden; a minimised window should cost nothing.
     const onVisibility = () => (document.hidden ? stop() : play());
     document.addEventListener('visibilitychange', onVisibility);
 
     /*
      * Rebuild the field. Debounced with setTimeout, NOT requestAnimationFrame: rAF does not fire
      * while the document is hidden, so an rAF-debounced rebuild is silently dropped for a window
-     * that is resized or re-themed while minimised — and then never happens at all.
+     * that is resized or re-themed while minimised, and then never happens at all.
      */
     let rebuildTimer = null;
     const scheduleRebuild = () => {
@@ -286,7 +286,7 @@ export default function Starfield({ className = '' }) {
      * Repaint when the theme changes.
      *
      * Star colours are pulled from the active theme's custom properties, so switching theme in
-     * Settings has to rebuild — otherwise the sky stays gold after switching to Dracula, which is
+     * Settings has to rebuild; otherwise the sky stays gold after switching to Dracula, which is
      * exactly the kind of half-applied theme this app spent a release removing. `data-theme` on
      * <html> is the single signal for a theme change (see resolveTheme in App.jsx).
      */

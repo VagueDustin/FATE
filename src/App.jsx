@@ -20,7 +20,7 @@ import { DEFAULT_THEME, resolveTheme, THEMES, SHORTCUT_ACTIONS, DEFAULT_SHORTCUT
 import { resolveCustomTheme, applyCustomTheme } from './themeCustom.js';
 import './App.css';
 
-/** Compact relative time for the recents list. Deliberately coarse — exact minutes aren't useful. */
+/** Compact relative time for the recents list. Deliberately coarse; exact minutes aren't useful. */
 function relativeTime(ts) {
   if (!ts) return '';
   const mins = Math.floor((Date.now() - ts) / 60000);
@@ -41,10 +41,10 @@ function shortenDir(dir, max = 38) {
   return '…' + dir.slice(-(max - 1));
 }
 
-/** Case-insensitive path key — Windows paths compare that way. */
+/** Case-insensitive path key. Windows paths compare that way. */
 /*
  * Comparable key for a path (tab dedupe, the file-changed router). Windows and macOS compare
- * paths case-insensitively; Linux does not — `Notes.md` and `notes.md` are two files there and
+ * paths case-insensitively; Linux does not: `Notes.md` and `notes.md` are two files there and
  * folding case would merge their tabs. Mirrors watchKey() in electron/main.cjs.
  */
 const CASE_INSENSITIVE_PATHS = window.electronAPI?.platform !== 'linux';
@@ -55,7 +55,7 @@ function pathKey(p) {
 
 /*
  * Display helpers for shortcut bindings. Every tooltip and keycap in the UI renders the LIVE
- * binding through these — a hardcoded "(Ctrl+N)" in a title is a lie the moment the user rebinds.
+ * binding through these; a hardcoded "(Ctrl+N)" in a title is a lie the moment the user rebinds.
  */
 function fmtShortcut(binding) {
   return (binding || '').replace('Control', 'Ctrl');
@@ -66,9 +66,9 @@ function kbdChips(binding) {
 }
 
 /**
- * MarkdownEditView — a markdown tab's EDIT mode: CodeMirror source on the left, live preview on
+ * MarkdownEditView is a markdown tab's EDIT mode: CodeMirror source on the left, live preview on
  * the right, re-rendered ~a third of a second after typing pauses. Top-level component (never
- * defined inside App — that would remount it every render).
+ * defined inside App, which would remount it every render).
  */
 function MarkdownEditView({ doc, isActive, tabSize, cursorLabelRef, onDirtyChange, onSave, registerEditor }) {
   const editorRef = useRef(null);
@@ -122,7 +122,7 @@ function App() {
    *
    * `activeId === null` with docs open = home screen behind the tab strip. `splitId` pins a second
    * doc into a right-hand pane; `diffData` (a snapshot) swaps the split for a side-by-side diff.
-   * Every pane stays MOUNTED while its tab is open — that is what preserves scroll position,
+   * Every pane stays MOUNTED while its tab is open; that is what preserves scroll position,
    * cursor, selection and undo history across switches. Do not "optimise" this into unmounting.
    */
   const [docs, setDocs] = useState([]);
@@ -144,7 +144,7 @@ function App() {
   const [isPrinting, setIsPrinting] = useState(false);
   const [statusError, setStatusError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  /** Snapshot of a code buffer rendered into a print-only <pre> — see runPrintJob. */
+  /** Snapshot of a code buffer rendered into a print-only <pre>; see runPrintJob. */
   const [codePrintText, setCodePrintText] = useState('');
 
   const [showSettings, setShowSettings] = useState(false);
@@ -239,7 +239,7 @@ function App() {
   });
 
   /**
-   * Route an opened file into a tab. All open paths funnel through here — dialog, recents, drag &
+   * Route an opened file into a tab. All open paths funnel through here: dialog, recents, drag &
    * drop, file association, second instance, session restore. A path that is already open just
    * activates (and, for a clean buffer, refreshes) its existing tab instead of duplicating it.
    */
@@ -326,7 +326,7 @@ function App() {
     if (doc.path && window.electronAPI) window.electronAPI.closeFile(doc.path);
     delete editorRefs.current[docId];
 
-    // Computed outside the setDocs updater — updaters must stay pure (StrictMode runs them twice).
+    // Computed outside the setDocs updater; updaters must stay pure (StrictMode runs them twice).
     const ds = docsRef.current;
     const idx = ds.findIndex((d) => d.id === docId);
     const next = ds.filter((d) => d.id !== docId);
@@ -443,7 +443,7 @@ function App() {
       });
 
       /*
-       * Live-reload on external disk change, routed to the owning tab by path. Registered once —
+       * Live-reload on external disk change, routed to the owning tab by path. Registered once;
        * everything it touches is a ref or a setter. Never clobbers unsaved edits: a dirty buffer
        * keeps the user's version and notes the change in the status bar.
        */
@@ -455,9 +455,9 @@ function App() {
         const editor = editorRefs.current[doc.id];
         if (editor) {
           // Code tab, or a markdown tab in edit mode.
-          if (content === editor.getContent()) return; // spurious watch event — nothing changed
+          if (content === editor.getContent()) return; // spurious watch event, nothing changed
           if (editor.isDirty()) {
-            setStatusError(`${doc.name} changed on disk — your unsaved edits were kept`);
+            setStatusError(`${doc.name} changed on disk, but your unsaved edits were kept`);
           } else {
             editor.replaceContent(content);
             if (doc.kind === 'markdown') {
@@ -501,7 +501,7 @@ function App() {
 
   /*
    * One place owns the window title and the mirrored any-tab-dirty flag. Since 1.11.0 the title is
-   * just the active document's filename (the full app name shows on the home screen only) — the
+   * just the active document's filename (the full app name shows on the home screen only); the
    * main process composes it; see composeTitle in main.cjs.
    */
   useEffect(() => {
@@ -537,7 +537,7 @@ function App() {
 
 
   /*
-   * Re-check the default-app association when the window regains focus — coming back from
+   * Re-check the default-app association when the window regains focus. Coming back from
    * Windows Settings is the exact moment the answer may have changed.
    */
   useEffect(() => {
@@ -617,7 +617,7 @@ function App() {
    * saves the buffer; view mode saves the last known source), and untitled buffers (always Save
    * As, offering every supported format). `forceAs` is the Save As action.
    *
-   * The tab is only marked clean AFTER the write succeeds — a failed save leaves the guards armed.
+   * The tab is only marked clean AFTER the write succeeds; a failed save leaves the guards armed.
    * Resolves TRUE only when the file actually reached disk; the quit walk relies on that to stop
    * dead when a Save As is cancelled rather than closing over the edits it just offered to keep.
    */
@@ -645,13 +645,13 @@ function App() {
           const newLang = detectLanguage(res.name, content)?.name ?? 'Plain text';
           setDocs((ds) =>
             ds
-              // If the chosen path was already open in another tab, that tab is now stale — drop it.
+              // If the chosen path was already open in another tab, that tab is now stale, so drop it.
               .filter((d) => d.id === id || !d.path || pathKey(d.path) !== newKey)
               .map((d) =>
                 d.id === id ? { ...d, name: res.name, path: res.filePath, untitled: false, langName: newLang } : d
               )
           );
-          // New extension may mean a new language — retune the live editor without a remount.
+          // New extension may mean a new language, so retune the live editor without a remount.
           editor?.setLanguage(res.name);
         }
       }
@@ -680,7 +680,7 @@ function App() {
 
   /*
    * Quitting with unsaved work. The main process vetoes its own close and hands the flow here,
-   * because it cannot save — the buffers live in CodeMirror. Each dirty tab is selected (so the
+   * because it cannot save: the buffers live in CodeMirror. Each dirty tab is selected (so the
    * user can see what they are being asked about) and offered Save / Don't save / Cancel; Cancel,
    * or a save that does not reach disk, calls the whole quit off.
    */
@@ -775,7 +775,7 @@ function App() {
 
     /*
      * No split: diff THIS file's unsaved edits against its last-saved state. The baseline is the
-     * editor's saved snapshot (what markSaved recorded), so it works without touching the disk —
+     * editor's saved snapshot (what markSaved recorded), so it works without touching the disk,
      * and stays correct even if the file changed externally while dirty (the baseline is what YOU
      * last had saved, which is what your edits diverged from).
      */
@@ -845,7 +845,7 @@ function App() {
     const handleKeyDown = (e) => {
       /*
        * CodeMirror handles its own keys first and calls preventDefault on anything it consumed
-       * (Escape closing its search panel, Ctrl+S from its save keymap) — acting on those here too
+       * (Escape closing its search panel, Ctrl+S from its save keymap); acting on those here too
        * would double-fire. The palette and pickers use the same convention.
        */
       if (e.defaultPrevented) return;
@@ -925,10 +925,10 @@ function App() {
 
   /*
    * ── Drag & drop, hand-rolled ────────────────────────────────────────────────────────────────
-   * The WHOLE WINDOW is the drop target (drop onto the editor, a tab, anywhere — like any
+   * The WHOLE WINDOW is the drop target (drop onto the editor, a tab, anywhere, like any
    * desktop editor), not just the home-screen box. react-dropzone is gone: its FileSystemHandle
    * path broke webUtils.getPathForFile under Electron, and a drop that missed its zone fell
-   * through to Chromium's default behaviour — NAVIGATING the app to the dropped file, which
+   * through to Chromium's default behaviour: NAVIGATING the app to the dropped file, which
    * looked exactly like "drag & drop doesn't work". Native DataTransfer.files keeps real paths,
    * and preventDefault() on window dragover/drop kills the navigation fallthrough for good (the
    * main process also refuses stray navigations now, as a second line of defence).
@@ -938,11 +938,11 @@ function App() {
       if (!file || !file.name) continue;
 
       if (file.size === 0 && file.type === '') {
-        setStatusError(`Can't open ${file.name} — it looks like a folder`);
+        setStatusError(`Can't open ${file.name}: it looks like a folder`);
         continue;
       }
 
-      // No extension check here — FATE opens any text file. With a real path the main process
+      // No extension check here; FATE opens any text file. With a real path the main process
       // applies the size cap and binary sniff (and shows a proper error box); the path-less
       // fallback below sniffs the decoded text itself.
       const resolvedPath = window.electronAPI?.getPathForFile?.(file) ?? file.path ?? null;
@@ -959,7 +959,7 @@ function App() {
         const text = ev.target.result;
         if (looksBinary(text)) {
           setIsLoading(false);
-          setStatusError(`Can't open ${file.name} — it looks like a binary file`);
+          setStatusError(`Can't open ${file.name}: it looks like a binary file`);
           return;
         }
         openDocument(text, file.name, resolvedPath);
@@ -1062,12 +1062,12 @@ function App() {
         ...THEMES.map((t) => ({
           id: `theme-${t.value}`,
           section: 'Theme',
-          label: `${t.label} — ${t.sub}`,
+          label: `${t.label} (${t.sub})`,
           icon: Palette,
           run: () => updateSetting('theme', t.value)
         })),
         ...(settings.customTheme
-          ? [{ id: 'theme-custom', section: 'Theme', label: 'Custom — your palette', icon: Palette, run: () => updateSetting('theme', 'custom') }]
+          ? [{ id: 'theme-custom', section: 'Theme', label: 'Custom (your palette)', icon: Palette, run: () => updateSetting('theme', 'custom') }]
           : [])
       ]
     : [];
@@ -1165,7 +1165,7 @@ function App() {
 
   return (
     <div className={`app-shell ${focusMode ? 'focus-mode' : ''}`}>
-      {/* ── Tab strip — visible whenever anything is open, home screen included ─────────────── */}
+      {/* ── Tab strip: visible whenever anything is open, home screen included ─────────────── */}
       {docs.length > 0 && (
         <div className="tab-strip" role="tablist" aria-label="Open documents">
           <button
@@ -1329,7 +1329,7 @@ function App() {
                           <button
                             className={`recent-item ${entry.exists ? '' : 'missing'}`}
                             onClick={() => openRecent(entry)}
-                            title={entry.exists ? entry.path : `${entry.path} — no longer exists`}
+                            title={entry.exists ? entry.path : `${entry.path} (no longer exists)`}
                           >
                             {fileKindForName(entry.name) === 'code'
                               ? <FileCode size={17} weight="duotone" className="recent-icon" />
@@ -1352,7 +1352,7 @@ function App() {
           </>
         )}
 
-        {/* ── DOCUMENT PANES — all mounted; active (and split) visible ────────────────────── */}
+        {/* ── DOCUMENT PANES: all mounted; active (and split) visible ────────────────────── */}
         {docs.length > 0 && (
           <div className="viewer-shell" style={{ display: activeDoc ? 'flex' : 'none' }}>
             {activeDoc && (
@@ -1369,7 +1369,7 @@ function App() {
 
                 <div className="header-right">
                   {activeDoc.kind === 'markdown' && (
-                    /* THE edit/view switch — deliberately a labelled button, not a mystery icon. */
+                    /* THE edit/view switch, deliberately a labelled button, not a mystery icon. */
                     <button
                       className={`btn btn-compact edit-toggle ${activeDoc.editMode ? 'btn-secondary' : 'btn-primary'}`}
                       onClick={() => toggleMarkdownEdit()}
@@ -1445,7 +1445,7 @@ function App() {
         )}
       </div>
 
-      {/* Status bar — in the layout flow, not floating (see AI_CONTEXT.md §3a). */}
+      {/* Status bar: in the layout flow, not floating (see AI_CONTEXT.md §3a). */}
       <footer className="status-bar">
         <button className="status-btn" onClick={() => setShowSettings(true)}>
           <Gear size={15} weight="duotone" />
@@ -1456,7 +1456,7 @@ function App() {
         </button>
 
         <span className="status-divider" />
-        <span className="status-version">v{appVersion || '—'}</span>
+        <span className="status-version">v{appVersion || '-'}</span>
 
         {activeDoc?.kind === 'markdown' && !activeDoc.editMode && (
           <>
@@ -1484,7 +1484,7 @@ function App() {
           <button
             className="status-badge status-badge-error"
             onClick={() => setStatusError('')}
-            title={`${statusError} — click to dismiss`}
+            title={`${statusError} (click to dismiss)`}
           >
             <Warning size={13} weight="fill" />
             {statusError}
@@ -1507,7 +1507,7 @@ function App() {
         </button>
       </footer>
 
-      {/* Whole-window drop affordance — visible whenever files are dragged over the app. */}
+      {/* Whole-window drop affordance, visible whenever files are dragged over the app. */}
       {isDragActive && (
         <div className="drop-overlay" aria-hidden="true">
           <div className="drop-overlay-badge">

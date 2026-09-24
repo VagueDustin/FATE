@@ -2,12 +2,12 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { MagnifyingGlass } from '@phosphor-icons/react';
 
 /**
- * CommandPalette — Ctrl+K. One fuzzy search over everything: open tabs, recent files, commands,
+ * CommandPalette: Ctrl+K. One fuzzy search over everything: open tabs, recent files, commands,
  * themes. The item list is assembled by App.jsx (it owns all the state a command touches); this
  * component only filters, ranks and renders it.
  *
  * Matching is subsequence-based with a small scorer (consecutive hits and word starts count
- * extra), which is the whole of what a palette needs — no fuzzy-search dependency for one loop.
+ * extra), which is the whole of what a palette needs, with no fuzzy-search dependency for one loop.
  */
 
 function scoreMatch(query, text) {
@@ -48,7 +48,7 @@ function CommandPalette({ items, onClose }) {
     inputRef.current?.focus();
   }, []);
 
-  /* Reset the selection when the query changes — render-time adjustment, not an effect. */
+  /* Reset the selection when the query changes (render-time adjustment, not an effect). */
   const [lastQuery, setLastQuery] = useState(query);
   if (lastQuery !== query) {
     setLastQuery(query);

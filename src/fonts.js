@@ -1,8 +1,8 @@
 /**
- * fonts.js — the bundled typeface registry and the font-settings plumbing.
+ * fonts.js: the bundled typeface registry and the font-settings plumbing.
  *
  * ── Fully offline, like everything else ───────────────────────────────────────────────────────
- * Every face here ships inside the app via @fontsource (latin subset, only the weights used —
+ * Every face here ships inside the app via @fontsource (latin subset, only the weights used,
  * same discipline as the Cinzel/Inter imports in main.jsx). No webfont CDN, ever; PRIVACY.md
  * promises zero network requests.
  *
@@ -10,7 +10,7 @@
  * Selections write CSS custom properties onto <html> (applyFonts below):
  *
  *   --font-sans          interface font (chrome, home screen, settings)
- *   --font-doc           markdown document body — .markdown-body reads var(--font-doc, --font-sans)
+ *   --font-doc           markdown document body; .markdown-body reads var(--font-doc, --font-sans)
  *   --font-mono          default code font (editor, md code blocks, mono status readouts)
  *   --doc-font-size      markdown body size
  *   --editor-font-size   editor size
@@ -21,7 +21,7 @@
  * var(--editor-font, var(--font-mono)). A tab of .ps1 in Cascadia and a tab of .py in Fira Code
  * can sit side by side.
  *
- * Cinzel (--font-display) is deliberately NOT user-configurable — it is the brand's display face.
+ * Cinzel (--font-display) is deliberately NOT user-configurable; it is the brand's display face.
  */
 
 // Prose / interface faces
@@ -40,7 +40,7 @@ import '@fontsource/merriweather/latin-400.css';
 import '@fontsource/merriweather/latin-700.css';
 import '@fontsource/merriweather/latin-400-italic.css';
 
-// Code faces (regular + bold + italic — the editor renders comments in italic)
+// Code faces (regular + bold + italic, since the editor renders comments in italic)
 import '@fontsource/jetbrains-mono/latin-400.css';
 import '@fontsource/jetbrains-mono/latin-700.css';
 import '@fontsource/jetbrains-mono/latin-400-italic.css';
@@ -100,7 +100,7 @@ const ALL_FONTS = [...PROSE_FONTS, ...CODE_FONTS];
  * Fonts installed on the machine are offered alongside the bundled set, stored as ids of the form
  * `system:<Family Name>`. They flow through the exact same plumbing (stacks, per-type overrides,
  * persistence); the family is simply quoted into a stack in front of the appropriate generic
- * fallback. If the font is later uninstalled, CSS font-family fallback degrades gracefully — no
+ * fallback. If the font is later uninstalled, CSS font-family fallback degrades gracefully, and no
  * validation against the live font list is needed or wanted at load time.
  */
 export const SYSTEM_FONT_PREFIX = 'system:';
@@ -129,7 +129,7 @@ export function fontStack(id, fallbackId, mono = false) {
 }
 
 /**
- * Merge stored font settings onto the defaults, dropping ids that no longer exist — a bundled
+ * Merge stored font settings onto the defaults, dropping ids that no longer exist. A bundled
  * font removed from the registry must degrade to the default, not to an unresolved CSS variable.
  * `system:` ids always pass (see the note above).
  */

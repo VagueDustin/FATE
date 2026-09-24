@@ -1,12 +1,12 @@
 /**
- * App.css — FATE application styles.
+ * App.css: FATE application styles.
  *
  * NO COLOUR LITERALS OUTSIDE `@media print`. Every on-screen colour comes from a custom property
  * defined in brand.css; adding a theme should be a ~25-line token block there, never an override
  * cascade here.
  *
  * The `@media print` block at the bottom is the one deliberate exception, and it has to be: printed
- * output is theme-independent by definition — white paper, black ink — so it must NOT follow the
+ * output is theme-independent by definition (white paper, black ink), so it must NOT follow the
  * active theme's tokens. Reading in Dracula and printing in Dracula are different requirements.
  *
  * ── Layout model (1.6.0) ──────────────────────────────────────────────────────────────────────
@@ -21,7 +21,7 @@
  * `absolute` in the bottom corners. At small window sizes they overlapped the dropzone and each
  * other. Moving them into a real status bar row makes that overlap structurally impossible rather
  * than something to keep tuning breakpoints against. `min-height: 0` on `.app-main` is what lets
- * its children scroll instead of pushing the status bar off-screen — without it a flex child
+ * its children scroll instead of pushing the status bar off-screen. Without it a flex child
  * defaults to `min-height: auto` and refuses to shrink below its content.
  *
  * Ornament tier: utility. No corner brackets, no film grain, no ambient motion. See brand.css.
@@ -68,11 +68,11 @@ body,
 
 .app-main {
   flex: 1;
-  min-height: 0; /* see the layout note above — required for inner scrolling */
+  min-height: 0; /* see the layout note above; required for inner scrolling */
   display: flex;
   flex-direction: column;
   /* Containing block for the starfield canvas. `.app-main` is used rather than `.home` because
-     `.home` scrolls — an absolutely positioned canvas inside it would scroll away. */
+     `.home` scrolls, and an absolutely positioned canvas inside it would scroll away. */
   position: relative;
 }
 
@@ -87,7 +87,7 @@ body,
   display: block;
 }
 
-/* Home content sits above the sky. Only a stacking context is needed — no z-index arms race. */
+/* Home content sits above the sky. Only a stacking context is needed, no z-index arms race. */
 .home {
   position: relative;
   z-index: 1;
@@ -321,7 +321,7 @@ kbd {
   }
 }
 
-/* The badge art already carries a gold frame, so it gets no border of its own — only a soft glow
+/* The badge art already carries a gold frame, so it gets no border of its own, only a soft glow
    to lift it off the navy. Sized in vh so it yields first when the window gets short. */
 .brand-badge {
   width: clamp(58px, 11vh, 92px);
@@ -388,7 +388,7 @@ kbd {
 }
 
 /* NOTE: the short-window (`max-height`) tightening lives in the RESPONSIVE section at the bottom of
-   this file, not here. It has to come after the `.dropzone` / `.pane-recent` rules it overrides —
+   this file, not here. It has to come after the `.dropzone` / `.pane-recent` rules it overrides:
    same specificity means source order decides, and placing it up here silently lost. */
 
 .pane {
@@ -563,7 +563,7 @@ kbd {
   white-space: nowrap;
 }
 
-/* A file that has since been moved or deleted. Kept visible rather than dropped — silently removing
+/* A file that has since been moved or deleted. Kept visible rather than dropped; silently removing
    an entry looks like the app forgot it. Still clickable; the click prunes it. */
 .recent-item.missing .recent-name {
   color: var(--text-faint);
@@ -653,7 +653,7 @@ kbd {
   border-color: var(--border-default);
 }
 
-/* An update is downloaded and ready — this is the one moment the status bar earns emphasis. */
+/* An update is downloaded and ready. This is the one moment the status bar earns emphasis. */
 .status-btn.accent {
   color: var(--text-accent);
   background: var(--accent-subtle);
@@ -719,7 +719,7 @@ kbd {
   border-color: transparent;
 }
 
-/* Below this the "Settings" word and the .md badge are the first things to go — the icon and the
+/* Below this the "Settings" word and the .md badge are the first things to go; the icon and the
    update control carry the meaning. */
 @media (max-width: 620px) {
   .status-btn-label,
@@ -730,7 +730,7 @@ kbd {
 
 /* ════════════════════════════════════════════════════════════════════════════════════════════
    TAB STRIP (1.10.0)
-   Visible whenever at least one document is open — including over the home screen, which shows
+   Visible whenever at least one document is open, including over the home screen, which shows
    when no tab is active. Sits above the progress bar in the shell column.
    ════════════════════════════════════════════════════════════════════════════════════════════ */
 
@@ -817,7 +817,7 @@ kbd {
   color: var(--text-primary);
 }
 
-/* The active tab fuses with the document surface below it — same background, gold keyline on top. */
+/* The active tab fuses with the document surface below it: same background, gold keyline on top. */
 .tab.active {
   background: var(--surface-base);
   border-color: var(--border-default);
@@ -1007,7 +1007,7 @@ kbd {
   position: relative; /* anchors .sidebar-reveal */
 }
 
-/* "Show contents" affordance when the TOC sidebar is hidden — floats over the document corner. */
+/* "Show contents" affordance when the TOC sidebar is hidden. Floats over the document corner. */
 .sidebar-reveal {
   position: absolute;
   top: 0.6rem;
@@ -1474,7 +1474,7 @@ kbd {
   margin-bottom: 0;
 }
 
-/* Gilded group caption — the small-caps label treatment, scoped to the settings pane. */
+/* Gilded group caption: the small-caps label treatment, scoped to the settings pane. */
 .group-caption {
   display: block;
   font-family: var(--font-display);
@@ -1640,7 +1640,7 @@ kbd {
   bottom: calc(100% + 4px);
 }
 
-/* A div now (search input + list), not a bare <ul> — system fonts made it searchable. */
+/* A div now (search input + list), not a bare <ul>, since system fonts made it searchable. */
 .font-picker-list {
   position: absolute;
   right: 0;
@@ -1882,7 +1882,7 @@ kbd {
   color: var(--text-primary);
 }
 
-/* A row whose explanation needs more than a few words — label and hint stack on the left, control
+/* A row whose explanation needs more than a few words: label and hint stack on the left, control
    stays on the right. */
 .setting-item-stacked {
   align-items: flex-start;
@@ -2074,7 +2074,7 @@ kbd {
    ════════════════════════════════════════════════════════════════════════════════════════════ */
 
 /* The window itself has a 680px minimum (see main.cjs), so this only fires on very short or
-   unusually narrow displays. The TOC is the first thing to go — the document is the point. */
+   unusually narrow displays. The TOC is the first thing to go; the document is the point. */
 @media (max-width: 700px) {
   .sidebar,
   .sidebar-resizer {
@@ -2083,13 +2083,13 @@ kbd {
 }
 
 /* Short windows.
-   `.home` scrolls rather than overlapping the status bar, so nothing is broken without this — but at
+   `.home` scrolls rather than overlapping the status bar, so nothing is broken without this, but at
    the enforced 520px minimum height the content needed ~564px and the home screen opened already
    scrolled, which reads as broken even though it isn't. Tightening the vertical rhythm buys that
    back. The badge and wordmark are vh-clamped and shrink on their own; what is trimmed here is
    spacing and the recents cap, never information.
 
-   MUST stay below the `.dropzone` / `.pane-recent` declarations — equal specificity means source
+   MUST stay below the `.dropzone` / `.pane-recent` declarations: equal specificity means source
    order decides the winner. */
 @media (max-height: 640px) {
   .home {
@@ -2119,7 +2119,7 @@ kbd {
     max-height: 148px;
   }
 
-  /* The empty state is the most compressible thing on the screen — it is a placeholder, not content. */
+  /* The empty state is the most compressible thing on the screen; it is a placeholder, not content. */
   .pane-empty {
     padding: 0.9rem 0.75rem;
   }
@@ -2132,7 +2132,7 @@ kbd {
 /* ════════════════════════════════════════════════════════════════════════════════════════════
    CODE EDITOR (CodeMirror)
    All chrome colour comes from the theme tokens; syntax colours come from the --syn-* tokens via
-   the HighlightStyle in CodeEditor.jsx. There is deliberately no per-theme CSS here — switching
+   the HighlightStyle in CodeEditor.jsx. There is deliberately no per-theme CSS here; switching
    themes retunes the editor exactly like the rest of the app.
    ════════════════════════════════════════════════════════════════════════════════════════════ */
 
@@ -2331,13 +2331,13 @@ kbd {
   color: var(--text-muted);
 }
 
-/* The print-only snapshot of the code buffer. Never visible on screen — see @media print. */
+/* The print-only snapshot of the code buffer. Never visible on screen; see @media print. */
 .code-print-body {
   display: none;
 }
 
 /* ════════════════════════════════════════════════════════════════════════════════════════════
-   1.11.0 SURFACES — palette, split view, diff, markdown edit mode, focus mode, custom themes
+   1.11.0 SURFACES: palette, split view, diff, markdown edit mode, focus mode, custom themes
    ════════════════════════════════════════════════════════════════════════════════════════════ */
 
 /* ── Command palette (Ctrl+K) ────────────────────────────────────────────────────────────── */
@@ -2447,7 +2447,7 @@ kbd {
 }
 
 /* ── Split view ──────────────────────────────────────────────────────────────────────────── */
-/* Layout is CSS-only so the panes never re-parent — re-parenting would remount the editors and
+/* Layout is CSS-only so the panes never re-parent, because re-parenting would remount the editors and
    lose their state. Active pane left (order 0), split pane right (order 1). */
 .doc-panes.split {
   flex-direction: row;
@@ -2799,7 +2799,7 @@ kbd {
 }
 
 /* Print: force light-on-white regardless of the active theme. Printing a navy page wastes ink and
-   reads badly — before 1.5.0 this rule printed the dark theme verbatim. */
+   reads badly. Before 1.5.0 this rule printed the dark theme verbatim. */
 @media print {
   html,
   body,
@@ -2830,7 +2830,7 @@ kbd {
 
   /*
    * Tabs: ONLY the active pane prints. Inactive panes are display:none via inline style, which
-   * nothing here overrides — but the active pane's inline flex must be flattened and unclipped
+   * nothing here overrides, but the active pane's inline flex must be flattened and unclipped
    * like the containers above, or the export clips to one viewport.
    */
   .doc-pane-active {
@@ -2867,7 +2867,7 @@ kbd {
   }
 
   /*
-   * BLANKET RESET — this is the important one.
+   * BLANKET RESET: this is the important one.
    *
    * The previous version listed individual elements to recolour and inevitably missed some. What
    * shipped in 1.8.0 printed table rows in NAVY on white paper (`table tr` uses --surface-base and
@@ -2875,7 +2875,7 @@ kbd {
    * borders, a navy `hr`, and a gold-tinted blockquote. Confirmed by decompressing the PDF content
    * stream: rows were being filled `.0275 .0431 .102` = #070B1A.
    *
-   * `print-color-adjust: exact` on the container made it worse, not better — it overrides
+   * `print-color-adjust: exact` on the container made it worse, not better: it overrides
    * `printBackground` and forces every background to paint, so the un-reset dark values were
    * guaranteed to hit paper.
    *
@@ -2976,7 +2976,7 @@ kbd {
   /*
    * ── Code files ────────────────────────────────────────────────────────────────────────────
    * The live editor is HIDDEN in print: CodeMirror virtualises long documents, so only the
-   * visible lines exist as DOM nodes — printing it would yield one truncated page. The
+   * visible lines exist as DOM nodes, so printing it would yield one truncated page. The
    * .code-print-body <pre> (populated with the full buffer by runPrintJob just before the job,
    * display:none on screen) is what actually reaches paper. Plain black on white, deliberately:
    * screen syntax colours are theme ink, not print ink.
@@ -3003,7 +3003,7 @@ kbd {
 }
 
 /* Every animation in this app is decorative.
-   The starfield canvas honours this separately in JS — it renders a single static frame and never
+   The starfield canvas honours this separately in JS: it renders a single static frame and never
    starts its rAF loop, since a CSS rule cannot stop a canvas from redrawing itself. */
 @media (prefers-reduced-motion: reduce) {
   *,

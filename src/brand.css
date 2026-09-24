@@ -1,12 +1,12 @@
 /**
- * brand.css — VagueDustin Enterprises design tokens.
+ * brand.css: VagueDustin Enterprises design tokens.
  *
  * ── VENDORED, NOT A DEPENDENCY ─────────────────────────────────────────────────────────────────
  * Derived from @vaguedustin/brand v1.0.0 (github.com/VagueDustin/vaguedustin-brand), theme
  * `gold-navy` at the `utility` ornament tier.
  *
  * These values are COPIED rather than imported because that repo is private and FATE is public
- * (MIT) — a private git dependency would make this project un-installable for anyone else. The
+ * (MIT), and a private git dependency would make this project un-installable for anyone else. The
  * canonical source of truth is still the brand repo:
  *
  *     brand repo  src/primitives.ts  +  src/themes/gold-navy.ts   →   dist/tokens.css
@@ -16,8 +16,8 @@
  * plus the :root primitives below out of its `dist/tokens.css`.
  *
  * ── WHY UTILITY TIER ──────────────────────────────────────────────────────────────────────────
- * The brand defines three ornament tiers. FATE is a document reader — density and scanning speed
- * outrank atmosphere — so it sits at `utility`: gold behaves as MATERIAL (hairlines, accents, one
+ * The brand defines three ornament tiers. FATE is a document reader (density and scanning speed
+ * outrank atmosphere), so it sits at `utility`: gold behaves as MATERIAL (hairlines, accents, one
  * gradient wordmark). No filigree, no corner brackets, no film grain, no ambient motion. Cinzel
  * appears only on the app title; Inter carries everything else.
  *
@@ -31,7 +31,7 @@
   color-scheme: dark;
 
   /* ── Type ────────────────────────────────────────────────────────────────────────────────── */
-  /* Cinzel + Inter are bundled locally via @fontsource (see main.jsx) — FATE is a fully offline
+  /* Cinzel + Inter are bundled locally via @fontsource (see main.jsx); FATE is a fully offline
      app, so webfont CDNs are not an option. */
   --font-display: 'Cinzel', 'Georgia', serif;
   --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
@@ -53,7 +53,7 @@
 }
 
 /* ════════════════════════════════════════════════════════════════════════════════════════════
-   FATE — the default theme. VagueDustin Enterprises navy & gold, utility tier.
+   FATE: the default theme. VagueDustin Enterprises navy & gold, utility tier.
    Replaces the pre-1.5.0 dark-red default.
    ════════════════════════════════════════════════════════════════════════════════════════════ */
 [data-theme='fate'] {
@@ -84,7 +84,7 @@
   --status-danger: #E8617A;
   --status-success: #A6E26A;
 
-  /* Surfaces that need a gradient rather than a flat fill. A flat navy background is off-brand —
+  /* Surfaces that need a gradient rather than a flat fill. A flat navy background is off-brand;
      the depth wash is required. */
   --gradient-depth:
     radial-gradient(ellipse 80% 50% at 50% -10%, rgba(212, 175, 55, 0.06), transparent),
@@ -103,7 +103,7 @@
   /* Code blocks: navy-tinted rather than the highlight.js default gray. */
   --code-bg: #020617;
 
-  /* Syntax highlighting (code editor). Gold carries keywords — the brand accent doing the work —
+  /* Syntax highlighting (code editor). Gold carries keywords (the brand accent doing the work),
      with cool navy-adjacent hues for everything else so the gold stays the loudest voice. */
   --syn-keyword: #F2C94C;
   --syn-string: #A6E26A;
@@ -122,7 +122,7 @@
 }
 
 /* ════════════════════════════════════════════════════════════════════════════════════════════
-   CRIMSON — the pre-1.5.0 look, kept as an explicit user choice.
+   CRIMSON: the pre-1.5.0 look, kept as an explicit user choice.
    Retained so nobody who liked the original red identity is forced off it by the rebrand. Not a
    brand theme; it is a legacy preference, same status as Dracula.
    ════════════════════════════════════════════════════════════════════════════════════════════ */
@@ -180,7 +180,7 @@
 }
 
 /* ════════════════════════════════════════════════════════════════════════════════════════════
-   LIGHT — GitHub-light surfaces with the house gold as the accent, so the brand still reads.
+   LIGHT: GitHub-light surfaces with the house gold as the accent, so the brand still reads.
    ════════════════════════════════════════════════════════════════════════════════════════════ */
 [data-theme='light'] {
   color-scheme: light;
@@ -199,7 +199,7 @@
   --text-muted: #57606A;
   --text-faint: #6E7781;
   --text-inverse: #FFFFFF;
-  /* The darkest gold on the ramp — #D4AF37 fails contrast on white. */
+  /* The darkest gold on the ramp; #D4AF37 fails contrast on white. */
   --text-accent: #8C6A26;
 
   --accent-default: #B8902B;
@@ -221,7 +221,7 @@
 
   --code-bg: #F6F8FA;
 
-  /* Syntax highlighting: the GitHub-light palette — every value clears AA on white. */
+  /* Syntax highlighting: the GitHub-light palette. Every value clears AA on white. */
   --syn-keyword: #CF222E;
   --syn-string: #0A3069;
   --syn-comment: #6E7781;
@@ -239,7 +239,7 @@
 }
 
 /* ════════════════════════════════════════════════════════════════════════════════════════════
-   NORD — the arctic community palette (nordtheme.com), verbatim. Added 1.11.0.
+   NORD: the arctic community palette (nordtheme.com), verbatim. Added 1.11.0.
    ════════════════════════════════════════════════════════════════════════════════════════════ */
 [data-theme='nord'] {
   --surface-base: #2E3440;
@@ -294,7 +294,7 @@
 }
 
 /* ════════════════════════════════════════════════════════════════════════════════════════════
-   GRUVBOX DARK — retro warmth (github.com/morhetz/gruvbox), medium contrast. Added 1.11.0.
+   GRUVBOX DARK: retro warmth (github.com/morhetz/gruvbox), medium contrast. Added 1.11.0.
    ════════════════════════════════════════════════════════════════════════════════════════════ */
 [data-theme='gruvbox'] {
   --surface-base: #282828;
@@ -349,7 +349,7 @@
 }
 
 /* ════════════════════════════════════════════════════════════════════════════════════════════
-   ONE DARK — Atom's classic editor palette. Added 1.11.0.
+   ONE DARK: Atom's classic editor palette. Added 1.11.0.
    ════════════════════════════════════════════════════════════════════════════════════════════ */
 [data-theme='onedark'] {
   --surface-base: #282C34;
@@ -404,7 +404,7 @@
 }
 
 /* ════════════════════════════════════════════════════════════════════════════════════════════
-   ROSÉ PINE — "all natural pine, faux fur and a bit of soho vibes" (rosepinetheme.com).
+   ROSÉ PINE: "all natural pine, faux fur and a bit of soho vibes" (rosepinetheme.com).
    Added 1.11.0.
    ════════════════════════════════════════════════════════════════════════════════════════════ */
 [data-theme='rosepine'] {
@@ -460,7 +460,7 @@
 }
 
 /* ════════════════════════════════════════════════════════════════════════════════════════════
-   DRACULA — the standard Dracula palette. Not a brand theme; a recognised community palette
+   DRACULA: the standard Dracula palette. Not a brand theme; a recognised community palette
    users expect to find in a developer tool.
    ════════════════════════════════════════════════════════════════════════════════════════════ */
 [data-theme='dracula'] {

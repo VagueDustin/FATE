@@ -7,7 +7,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
    * Electron 32 removed the non-standard `File.path` property; `webUtils.getPathForFile` is the
    * supported replacement. Without this, dropped documents had no path, so relative image
    * references in them could not be rewritten to the `fate-local://` protocol and silently failed
-   * to load. Files opened via the dialog or file association were unaffected — they get their path
+   * to load. Files opened via the dialog or file association were unaffected; they get their path
    * from the main process.
    */
   getPathForFile: (file) => {
@@ -23,7 +23,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('open-file');
     ipcRenderer.on('open-file', (_event, content, name, path, meta) => callback(content, name, path, meta || {}));
   },
-  // The path rides along so the renderer can route the update to the right TAB — any number of
+  // The path rides along so the renderer can route the update to the right TAB, since any number of
   // files can be watched at once since 1.10.0.
   onFileChanged: (callback) => {
     ipcRenderer.removeAllListeners('file-changed');
@@ -31,7 +31,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   openFileDialog: () => ipcRenderer.invoke('open-file-dialog'),
 
-  /** A tab closed — the main process stops watching its file. */
+  /** A tab closed: the main process stops watching its file. */
   closeFile: (filePath) => ipcRenderer.send('close-file', filePath),
 
   /**
@@ -42,7 +42,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
    * (otherwise every save would echo back as a "file changed on disk" event).
    *
    * `saveFileAs` opens a save dialog and, on success, retargets the watcher and recents to the new
-   * path WITHOUT re-sending 'open-file' — the response carries { filePath, name } and the renderer
+   * path WITHOUT re-sending 'open-file'. The response carries { filePath, name } and the renderer
    * updates its own state, keeping cursor and scroll position intact.
    */
   saveFile: (filePath, content) => ipcRenderer.invoke('save-file', filePath, content),
@@ -51,7 +51,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   /**
    * Mirror the editor's dirty flag into the main process on every transition. This is what arms
-   * the unsaved-changes guards on window close and on opening another file — the main process
+   * the unsaved-changes guards on window close and on opening another file, because the main process
    * cannot ask the renderer synchronously at decision time.
    */
   setEdited: (edited) => ipcRenderer.send('set-edited', edited),
@@ -82,7 +82,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
    *
    * NOT `window.print()`. Electron ships Chromium without the print-preview UI, so the Windows
    * print dialog shows "This app doesn't support print preview". Both of these instead render the
-   * document through `printToPDF` (same `@media print` stylesheet) — `printPreview` opens the result
+   * document through `printToPDF` (same `@media print` stylesheet): `printPreview` opens the result
    * in a viewer window, `exportPdf` writes it wherever the user picks. What you preview is what
    * prints.
    *
@@ -99,18 +99,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /**
    * How many of FATE's supported file types currently open with FATE (Settings → Windows).
    * Resolved through the shell itself (AssocQueryString), not inferred from the registry, in one
-   * hidden PowerShell pass. On demand only — too heavy for the on-focus `.md` check.
+   * hidden PowerShell pass. On demand only; too heavy for the on-focus `.md` check.
    */
   getAssociationCoverage: () => ipcRenderer.invoke('get-association-coverage'),
   /**
    * Undo the file-type damage older versions did: clear the class defaults that suppress the
    * association they were meant to create, and hand .bat/.cmd back to the command processor.
-   * Runs automatically at launch too — this is the manual trigger in Settings.
+   * Runs automatically at launch too. This is the manual trigger in Settings.
    */
   repairAssociations: () => ipcRenderer.invoke('repair-associations'),
-  /** Build facts: { windowsStore } — Store builds route updates to the Microsoft Store. */
+  /** Build facts: { windowsStore }. Store builds route updates to the Microsoft Store. */
   getRuntimeInfo: () => ipcRenderer.invoke('get-runtime-info'),
-  /** 'win32' | 'linux' | 'darwin' — synchronous, for decisions needed before any IPC resolves. */
+  /** 'win32' | 'linux' | 'darwin', synchronous, for decisions needed before any IPC resolves. */
   platform: process.platform,
   /** Font families installed on this machine (local enumeration only; cached per run). */
   getSystemFonts: () => ipcRenderer.invoke('get-system-fonts'),
@@ -120,7 +120,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   restartExplorer: () => ipcRenderer.invoke('restart-explorer'),
   /**
    * Set the window title from the open document's name, or `null` on the home screen.
-   * Pass a FILENAME, not a composed title — the main process prepends the app name so the taskbar
+   * Pass a FILENAME, not a composed title; the main process prepends the app name so the taskbar
    * label always starts with "FATE - Markdown Viewer". `edited` appends the unsaved-changes dot.
    */
   setTitle: (docName, edited) => ipcRenderer.send('set-title', docName, edited),

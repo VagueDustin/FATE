@@ -206,7 +206,7 @@
         "name": "Markdown Document",
         "description": "Markdown Document",
         "mimeType": "text/markdown",
-        "role": "Viewer",
+        "role": "Editor",
         "icon": "build/icon-doc.ico"
       }
     ]

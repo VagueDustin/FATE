@@ -260,31 +260,31 @@ What changed in each FATE release, newest first. Downloads and the same notes ar
 ## v1.4.1
 - **[Feature]** Added the Dracula theme option.
 - **[Enhancement]** Added a red pulsing glow to the Settings gear icon.
-- **[Bugfix]** Fixed Light theme typography contrast by applying aggressive readability overrides to markdown headers and paragraphs.
+- **[Bugfix]** Fixed low text contrast in the Light theme with stronger overrides for Markdown headings and paragraphs.
 
 ## v1.4.0
-- **[Feature]** Implemented a dynamic Settings modal featuring Theme toggling, Automatic Updates toggle, and an adjustable sidebar width.
-- **[Feature]** Built a dynamic keyboard shortcut re-binding system.
-- **[Feature]** Added a persistent `electron-store` backend to seamlessly save all user preferences across application updates.
-- **[Feature]** Added a custom NSIS installer checkbox to automatically associate FATE with `.md` and `.markdown` files.
-- **[Maintenance]** Streamlined GitHub releases to exclusively publish the optimized `.exe` installer.
+- **[Feature]** Added a Settings window with a theme switcher, an automatic updates toggle and an adjustable sidebar width.
+- **[Feature]** Keyboard shortcuts can now be rebound.
+- **[Feature]** Preferences are now saved with `electron-store`, so they survive app updates.
+- **[Feature]** Added an installer checkbox that associates FATE with `.md` and `.markdown` files.
+- **[Maintenance]** GitHub releases now publish only the `.exe` installer.
 
 ## v1.3.0
-- **[Enhancement]** Complete UI responsiveness overhaul using fluid Flexbox scaling.
-- **[Enhancement]** Rebranded core identity and window titles to explicitly declare "FATE - Markdown Viewer".
-- **[Enhancement]** Integrated premium square FATE app icons and rectangular FATE document icons for `.md` Windows File Explorer associations.
-- **[Enhancement]** Regenerated and unified all Microsoft Appx package tile assets.
-- **[Maintenance]** Completely purged all default boilerplate graphics from the source tree.
+- **[Enhancement]** Reworked the layout with Flexbox so the interface scales with the window.
+- **[Enhancement]** The app name and window titles now read "FATE - Markdown Viewer".
+- **[Enhancement]** New square FATE app icons, and rectangular document icons for `.md` files in File Explorer.
+- **[Enhancement]** Regenerated all Microsoft AppX tile assets so they match.
+- **[Maintenance]** Removed the leftover boilerplate graphics from the source tree.
 
 ## v1.1.0
-- **[Feature]** Injected dynamic auto-repair algorithms into the file parser to automatically reconstruct corrupted LaTeX string literals (such as missing `\` for `\theta`, `\approx`, and `\begin` cases).
-- **[Feature]** Implemented Print to PDF functionality with correctly inverted light-theme printer styles.
-- **[Feature]** Added fully scaled Microsoft Store (AppX) tile assets to replace default generic icons.
-- **[Enhancement]** Enabled `nonStandard` boundaries for the KaTeX inline parser, eliminating parse failures when equations are tightly packed against punctuation or parentheses.
-- **[Enhancement]** Upgraded the Table of Contents sidebar to natively render mathematical equations inside headings.
-- **[Enhancement]** Styled scrollbars to match the application's premium dark red aesthetic theme.
-- **[Bugfix]** Fixed viewport cutoff scaling bugs that occurred when the Table of Contents sidebar was expanded on ultrawide monitors.
-- **[Maintenance]** Cleaned up build scripts and prepared the application for production release.
+- **[Feature]** Added a repair pass to the parser that fixes broken LaTeX escapes, such as a missing `\` in `\theta`, `\approx` and `\begin`.
+- **[Feature]** Added Print to PDF, with a light stylesheet for printing.
+- **[Feature]** Added Microsoft Store (AppX) tile assets at every size in place of the generic defaults.
+- **[Enhancement]** Enabled `nonStandard` boundaries in the KaTeX inline parser, so equations packed tightly against punctuation or parentheses no longer fail to parse.
+- **[Enhancement]** The Table of Contents sidebar now renders math inside headings.
+- **[Enhancement]** Scrollbars now match the dark red theme.
+- **[Bugfix]** Fixed the layout being cut off on ultrawide monitors when the Table of Contents sidebar was open.
+- **[Maintenance]** Cleaned up the build scripts ahead of the first production release.
 
 ## v1.0.8
 - **[Compliance]** Added `PRIVACY.md` and explicitly defined `displayName` in AppX build configuration for Microsoft Store validation.
@@ -302,7 +302,7 @@ What changed in each FATE release, newest first. Downloads and the same notes ar
 - **[Bugfix]** Added explicit publisher information and fixed artifact naming conventions.
 
 ## v1.0.3
-- **[Bugfix]** Fixed a critical race condition, dynamically hid update UI when viewing a document, and re-enabled GPU rendering support.
+- **[Bugfix]** Fixed a critical race condition, hid the update UI while a document is open, and turned GPU rendering back on.
 
 ## v1.0.2
 - **[Feature]** Added automatic update UI.

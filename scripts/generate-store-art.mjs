@@ -1,7 +1,7 @@
 /**
- * generate-store-art.mjs — Microsoft Store listing artwork, derived from brand/app-icon.png.
+ * generate-store-art.mjs: Microsoft Store listing artwork, derived from brand/app-icon.png.
  *
- * Run: `node scripts/generate-store-art.mjs`  (not part of `npm run icons` — Store art is
+ * Run: `node scripts/generate-store-art.mjs`  (not part of `npm run icons`; Store art is
  * uploaded manually to Partner Center, not consumed by any build).
  *
  * Outputs (build/store-art/):
@@ -9,7 +9,7 @@
  *   box-1080x1080.png / box-2160x2160.png         1:1 Box art
  *   tile-300.png / tile-150.png / tile-71.png     1:1 Store display images (app tile overrides)
  *
- * All pieces are the gilded badge centred on the house navy with a soft gold aura — matching the
+ * All pieces are the gilded badge centred on the house navy with a soft gold aura, matching the
  * AppX tiles, just at listing resolutions. Flattened onto navy for the same reason the tiles are:
  * the Store renders these against arbitrary chrome, and transparency would pick up whatever
  * accent colour the shell supplies.
@@ -61,7 +61,7 @@ async function art(w, h, badgeFraction, outName) {
 
 await mkdir(OUT, { recursive: true });
 
-// 9:16 Poster art — the badge reads clearly at both accepted sizes.
+// 9:16 Poster art: the badge reads clearly at both accepted sizes.
 await art(720, 1080, 0.82, 'poster-720x1080.png');
 await art(1440, 2160, 0.82, 'poster-1440x2160.png');
 
