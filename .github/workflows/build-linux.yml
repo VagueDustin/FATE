@@ -6,7 +6,7 @@
 #   dnf        publish signed dnf repodata            -> `dnf install fate` / `dnf upgrade`
 #   snap       upload to the Snap Store stable channel (when SNAPCRAFT_STORE_CREDENTIALS is set)
 #   flatpak    build + lint the Flathub manifest against the released .deb (Flathub itself is
-#              updated by flatpak-external-data-checker from the release — nothing to do here)
+#              updated by flatpak-external-data-checker from the release; nothing to do here)
 #   test       install `fate` from the apt repo in a Debian container and from the dnf repo in a
 #              Fedora container, exactly as a user would
 #
@@ -21,9 +21,9 @@
 #
 #   apt   flat repo:  deb https://github.com/OWNER/REPO/releases/download/  apt/
 #         apt fetches <base>/apt/InRelease and <base>/apt/Packages; `Filename:` entries are
-#         relative to <base>, i.e. `vX.Y.Z/FATE-X.Y.Z-amd64.deb` — the release asset itself.
+#         relative to <base>, i.e. `vX.Y.Z/FATE-X.Y.Z-amd64.deb`, the release asset itself.
 #   dnf   baseurl=https://github.com/OWNER/REPO/releases/download/
-#         dnf fetches <baseurl>/repodata/repomd.xml — so the rolling tag is literally `repodata`;
+#         dnf fetches <baseurl>/repodata/repomd.xml, so the rolling tag is literally `repodata`;
 #         createrepo_c --baseurl stamps each package location with the versioned release URL.
 #
 # BOTH rolling releases are created as PRERELEASES and never marked latest. This is not
@@ -36,7 +36,7 @@
 # post-install scripts (build/linux/after-install-*.sh) can register the repositories.
 #
 # "Run workflow" (workflow_dispatch) on a branch builds everything and attaches it to the run.
-# Give it a `release_tag` to ALSO publish to that existing release and the repositories — the
+# Give it a `release_tag` to ALSO publish to that existing release and the repositories: the
 # recovery path when a tag's own run failed.
 name: Build Linux
 
@@ -95,7 +95,7 @@ jobs:
           if [ -n "${{ inputs.release_tag }}" ]; then TAG="${{ inputs.release_tag }}"; fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "release_tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "version $VERSION — publishing to release: ${TAG:-no (artifacts only)}"
+          echo "version $VERSION: publishing to release: ${TAG:-no (artifacts only)}"
 
       - name: Import the package-signing key
         env:
@@ -103,7 +103,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "$FATE_GPG_PRIVATE_KEY" ]; then
-            echo "::error::The FATE_GPG_PRIVATE_KEY repository secret is missing. Run scripts/setup-signing-key.sh once (README → How to Build → Releases)."
+            echo "::error::The FATE_GPG_PRIVATE_KEY repository secret is missing. Run scripts/setup-signing-key.sh once (README → Building from source → Releases)."
             exit 1
           fi
           printf '%s\n' "$FATE_GPG_PRIVATE_KEY" | gpg --batch --quiet --import
@@ -128,9 +128,9 @@ jobs:
           set -euo pipefail
           rpmsign --define "_gpg_name $GPG_FPR" --addsign dist-electron/*.rpm
           # Verify the way dnf will: import the public key into an rpm database and let rpm check
-          # the signature — in a PRIVATE database (--dbpath), because a `sudo rpm --import` lands
+          # the signature, in a PRIVATE database (--dbpath), because a `sudo rpm --import` lands
           # in root's database and the unprivileged `rpm -K` that follows cannot see it (NOKEY).
-          # (Querying %{SIGPGP} is wrong here too — rpm 4.14+ writes a V4 header signature into
+          # (Querying %{SIGPGP} is wrong here too: rpm 4.14+ writes a V4 header signature into
           # RSAHEADER, and SIGPGP reads back as "(none)".)
           RPMDB="$PWD/rpmdb-verify"
           rm -rf "$RPMDB" && mkdir -p "$RPMDB"
@@ -224,7 +224,7 @@ jobs:
         run: |
           set -euo pipefail
           if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "No release for $TAG yet — creating it as a draft."
+            echo "No release for $TAG yet; creating it as a draft."
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --title "$TAG" \
               --notes "Linux packages built by GitHub Actions. The Windows installer and latest.yml are attached by the maintainer."
           fi
@@ -243,7 +243,7 @@ jobs:
           rm -rf repo && mkdir -p repo/apt "repo/$TAG"
           cp dist-electron/*.deb "repo/$TAG/"
           # Filename: entries come out as ./vX.Y.Z/FATE-...deb; apt wants them relative to the
-          # base URL, so drop the ./ — the result is exactly the release asset URL.
+          # base URL, so drop the ./; the result is exactly the release asset URL.
           ( cd repo && dpkg-scanpackages --multiversion . /dev/null ) > repo/apt/Packages
           sed -i 's|^Filename: \./|Filename: |' repo/apt/Packages
           gzip -9 -k -f repo/apt/Packages
@@ -258,7 +258,7 @@ jobs:
           gpg --batch --yes --armor --detach-sign -o repo/apt/Release.gpg repo/apt/Release
           gpg --batch --yes --clearsign -o repo/apt/InRelease repo/apt/Release
           cat > repo/apt/fate.sources <<EOF
-          # FATE - Formatted Article & Text Editor — apt repository (served from GitHub Releases).
+          # FATE - Formatted Article & Text Editor: apt repository (served from GitHub Releases).
           # Keyring: $REPO_BASE/apt/fate-archive-keyring.gpg
           Types: deb
           URIs: $REPO_BASE/
@@ -269,7 +269,7 @@ jobs:
 
           if ! gh release view apt --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release create apt --repo "$GITHUB_REPOSITORY" --prerelease --latest=false \
-              --title "apt repository (index files — not a release)" \
+              --title "apt repository (index files, not a release)" \
               --notes "Index files for the FATE apt repository; the packages are the versioned releases. This is marked as a prerelease on purpose: it must never become the 'latest' release. To install: see the README, Linux → Ubuntu / Debian."
           fi
           gh release upload apt --repo "$GITHUB_REPOSITORY" --clobber \
@@ -306,7 +306,7 @@ jobs:
 
           if ! gh release view repodata --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release create repodata --repo "$GITHUB_REPOSITORY" --prerelease --latest=false \
-              --title "dnf repository (repodata — not a release)" \
+              --title "dnf repository (repodata, not a release)" \
               --notes "Repodata for the FATE dnf repository; the packages are the versioned releases. This is marked as a prerelease on purpose: it must never become the 'latest' release. To install: see the README, Linux → Fedora / RHEL."
           fi
           gh release upload repodata --repo "$GITHUB_REPOSITORY" --clobber \
@@ -355,7 +355,7 @@ jobs:
       - name: Snap Store publishing skipped
         if: steps.meta.outputs.release_tag != '' && env.HAS_SNAP_CREDENTIALS != 'true'
         run: |
-          echo "::notice::SNAPCRAFT_STORE_CREDENTIALS is not set — the snap was built and attached to the release but not uploaded to the Snap Store. See README → How to Build → Releases."
+          echo "::notice::SNAPCRAFT_STORE_CREDENTIALS is not set; the snap was built and attached to the release but not uploaded to the Snap Store. See README → Building from source → Releases."
 
   # ── Flatpak: prove the Flathub manifest builds against the released .deb ──────────────────
   flatpak:

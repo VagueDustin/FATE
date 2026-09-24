@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   AppStream metadata for the Linux packages (.deb and .rpm). This is what makes FATE a real
-  entry in GNOME Software, KDE Discover and friends — name, description, screenshots, licence —
+  entry in GNOME Software, KDE Discover and friends (name, description, screenshots, licence)
   rather than a bare desktop file. Installed to /usr/share/metainfo/ by the fpm mapping in
   package.json (build.deb.fpm / build.rpm.fpm). Validated in CI with `appstreamcli validate`.
 
@@ -12,7 +12,7 @@
   <id>com.vaguedustin.fate</id>
   <launchable type="desktop-id">FATE.desktop</launchable>
   <name>FATE</name>
-  <summary>Markdown viewer and text editor for technical documents</summary>
+  <summary>Text and code editor with live Markdown preview</summary>
   <developer id="com.vaguedustin">
     <name>VagueDustin Enterprises</name>
   </developer>
@@ -21,23 +21,24 @@
 
   <description>
     <p>
-      FATE (Formatted Article and Text Editor) renders Markdown the way technical documents need:
-      KaTeX mathematics, including multi-line matrices and equations inside headings, Mermaid
-      diagrams, syntax-highlighted code fences, and a live table of contents. A repair layer heals
-      the badly escaped LaTeX that language models and export tools produce before it reaches the
-      screen.
+      FATE (Formatted Article &amp; Text Editor) is a free and open source text and code editor, in
+      the spirit of Notepad++. Any text file opens: code, configuration files, logs, scripts and
+      files with no extension at all. The editor is built on CodeMirror, with syntax highlighting
+      for around 150 languages, tabs, find and replace, multiple cursors and column selection,
+      code folding, split view and diffs. Files changed on disk reload in place while your buffer
+      is clean, and never over unsaved edits.
     </p>
     <p>
-      It is also a full text editor. Any text file opens — code, configuration files, logs,
-      scripts, extensionless files — in a CodeMirror editor with syntax highlighting for around
-      150 languages, code folding, multiple cursors, search and replace, split view and diffs.
-      Files changed on disk reload in place while your buffer is clean, and never over unsaved
-      edits.
+      It is also a Markdown editor and viewer. Documents render as a typeset page with KaTeX
+      mathematics (including multi-line matrices and equations inside headings), Mermaid diagrams,
+      syntax-highlighted code fences and a live table of contents, and an edit mode puts the source
+      beside a live preview. A repair layer fixes badly escaped LaTeX from Markdown generators and
+      export tools before it reaches the screen.
     </p>
     <p>
       Eight themes plus a custom theme builder, a bundled font library with per-file-type
-      overrides, print to PDF with a real preview, tabs with per-tab session restore. Fully
-      offline: no telemetry, no network requests.
+      overrides, a command palette, rebindable shortcuts, print to PDF with a real preview, and
+      session restore. Fully offline: no telemetry, no network requests.
     </p>
   </description>
 
@@ -51,7 +52,13 @@
   </categories>
 
   <keywords>
+    <keyword>text editor</keyword>
+    <keyword>code editor</keyword>
+    <keyword>notepad</keyword>
+    <keyword>syntax highlighting</keyword>
     <keyword>markdown</keyword>
+    <keyword>markdown editor</keyword>
+    <keyword>markdown viewer</keyword>
     <keyword>text</keyword>
     <keyword>editor</keyword>
     <keyword>code</keyword>
@@ -72,11 +79,11 @@
       <image>https://raw.githubusercontent.com/VagueDustin/FATE/main/docs/screenshots/02-markdown-reading.png</image>
     </screenshot>
     <screenshot>
-      <caption>Editing code</caption>
+      <caption>Editing code with syntax highlighting</caption>
       <image>https://raw.githubusercontent.com/VagueDustin/FATE/main/docs/screenshots/04-code-editor.png</image>
     </screenshot>
     <screenshot>
-      <caption>Split view</caption>
+      <caption>Split view with two files side by side</caption>
       <image>https://raw.githubusercontent.com/VagueDustin/FATE/main/docs/screenshots/05-split-view.png</image>
     </screenshot>
   </screenshots>
