@@ -5,8 +5,28 @@ body:
   - type: markdown
     attributes:
       value: |
-        FATE is a Markdown **viewer** — deliberately not an editor, and deliberately offline. Requests
-        that fit that shape have the best odds.
+        FATE is a text and code editor with a built-in Markdown preview, and it is deliberately
+        offline. Requests that fit that shape have the best odds: editing features, file type and
+        language support, Markdown rendering, printing, themes and platform integration.
+
+        If you'd like to build it yourself, say so below. PRs are welcome, and CONTRIBUTING.md
+        explains the setup.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Code and text editing
+        - Tabs, split view, diff or navigation
+        - Markdown preview or rendering
+        - Printing and PDF export
+        - Themes, fonts or appearance
+        - Windows integration
+        - Linux packaging or integration
+        - Something else
+    validations:
+      required: false
 
   - type: textarea
     id: problem
@@ -27,7 +47,7 @@ body:
     id: offer
     attributes:
       label: Would you want to implement it?
-      description: No obligation either way — it just helps with planning.
+      description: No obligation either way. It just helps with planning.
       options:
         - "I'd like to open a PR for this"
         - "I'd rather someone else built it"
@@ -39,6 +59,6 @@ body:
     id: extra
     attributes:
       label: Anything else
-      description: Mockups, prior art in other viewers, links.
+      description: Mockups, how other editors (Notepad++, VS Code, Sublime Text and so on) handle it, links.
     validations:
       required: false

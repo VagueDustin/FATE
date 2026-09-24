@@ -1,7 +1,28 @@
 {
   "name": "fate-markdown-viewer",
   "version": "1.13.3",
-  "description": "FATE (Formatted Article and Text Editor) is a Markdown viewer and text editor for technical documents.",
+  "description": "FATE (Formatted Article & Text Editor) is a free, open source text and code editor for Windows and Linux: a Notepad++ alternative with tabs, syntax highlighting, find and replace, split view and a live Markdown preview with KaTeX math and Mermaid diagrams.",
+  "keywords": [
+    "text-editor",
+    "code-editor",
+    "editor",
+    "notepad-plus-plus",
+    "notepad-alternative",
+    "markdown",
+    "markdown-editor",
+    "markdown-viewer",
+    "markdown-preview",
+    "syntax-highlighting",
+    "codemirror",
+    "katex",
+    "mermaid",
+    "electron",
+    "react",
+    "desktop-app",
+    "cross-platform",
+    "windows",
+    "linux"
+  ],
   "author": "VagueDustin Enterprises",
   "homepage": "https://github.com/VagueDustin/FATE",
   "license": "AGPL-3.0-only",
@@ -76,7 +97,7 @@
       "icon": "build/icons",
       "artifactName": "FATE-${version}-${arch}.${ext}",
       "category": "Utility",
-      "synopsis": "Markdown viewer and text editor for technical documents",
+      "synopsis": "Text and code editor with live Markdown preview",
       "maintainer": "VagueDustin Enterprises <enterprises@vaguedustin.com>",
       "mimeTypes": [
         "text/x-markdown",
@@ -139,7 +160,7 @@
       "desktop": {
         "entry": {
           "GenericName": "Text Editor",
-          "Keywords": "markdown;text;editor;code;latex;katex;"
+          "Keywords": "text;editor;code;notepad;programming;markdown;preview;latex;katex;mermaid;"
         }
       }
     },
