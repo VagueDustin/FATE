@@ -7,7 +7,7 @@
 .DESCRIPTION
   snapcraft does not run natively on Windows, so this uses Canonical's official container image
   (ghcr.io/canonical/snapcraft). The container prompts for your Ubuntu One email, password and
-  two-factor code — that is snapcraft authenticating with Ubuntu One directly. Only the resulting
+  two-factor code. That is snapcraft authenticating with Ubuntu One directly. Only the resulting
   token (limited to the `fate` snap and to upload/release rights) is stored in the repository
   secret; the local copy is deleted afterwards.
 

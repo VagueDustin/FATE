@@ -1,8 +1,8 @@
 /**
- * themeCustom.js — the custom theme builder's engine.
+ * themeCustom.js: the custom theme builder's engine.
  *
- * The user picks SEVEN colours; everything else a theme block needs — borders, sunken/highest
- * surfaces, muted text tiers, glows, gradients, and a full 14-colour syntax palette — is derived
+ * The user picks SEVEN colours; everything else a theme block needs (borders, sunken/highest
+ * surfaces, muted text tiers, glows, gradients, and a full 14-colour syntax palette) is derived
  * with colour math so the result hangs together like the hand-built themes do. The output is a
  * `[data-theme='custom']` block injected as a <style> element, which makes a custom theme exactly
  * as first-class as the shipped ones: every token-driven surface (including the editor and the
@@ -112,7 +112,7 @@ export function resolveCustomTheme(stored) {
   return sawAny ? out : null;
 }
 
-/** The generated token block. Deterministic — this is also what "Copy CSS" exports. */
+/** The generated token block. Deterministic; this is also what "Copy CSS" exports. */
 export function customThemeCss(c) {
   const pressed = darken(c.accent, 0.12);
   const syn = {

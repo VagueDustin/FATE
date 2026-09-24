@@ -13,7 +13,7 @@
 #
 # The .md association checkbox is GONE (was a custom page here): defaults are managed from the
 # app's own Settings → Windows page now, which deep-links into Windows Settings. The installer
-# only *registers* capabilities; it never claims a UserChoice — Windows wouldn't honour that
+# only *registers* capabilities; it never claims a UserChoice, because Windows wouldn't honour that
 # anyway.
 
 !macro preInit
@@ -21,7 +21,7 @@
 
   ; Read the remembered install location EXPLICITLY from HKLM (perMachine build), falling back to
   ; HKCU. Deliberately not SHCTX: preInit runs before electron-builder has settled it, so SHCTX can
-  ; still point at HKCU here — which would silently skip the migration below on a machine that has
+  ; still point at HKCU here, which would silently skip the migration below on a machine that has
   ; the old install recorded in HKLM. `${INSTALL_REGISTRY_KEY}` is keyed off appId, which did NOT
   ; change across the rename, so the pre-rename install is findable at all.
   ReadRegStr $R0 HKLM "${INSTALL_REGISTRY_KEY}" "InstallLocation"
@@ -34,20 +34,20 @@
   ; Remove the pre-rename install, wherever it is. Its uninstaller cleans its own registry
   ; (including the old "FATE - Markdown Viewer" RegisteredApplications entry). `_?=` makes the
   ; uninstaller run synchronously in place, which also means it cannot delete itself or its
-  ; directory — hence the manual Delete/RMDir sweep after.
+  ; directory, hence the manual Delete/RMDir sweep after.
   ${If} $R0 != ""
     ${If} ${FileExists} "$R0\Uninstall FATE - Markdown Viewer.exe"
       ExecWait '"$R0\Uninstall FATE - Markdown Viewer.exe" /S _?=$R0'
       Delete "$R0\Uninstall FATE - Markdown Viewer.exe"
       RMDir /r "$R0"
-      ; The old layout sometimes nested under a "FATE" bucket — remove the parent only if empty.
+      ; The old layout sometimes nested under a "FATE" bucket; remove the parent only if empty.
       ${GetParent} "$R0" $R1
       RMDir "$R1"
       StrCpy $R2 "1"
     ${EndIf}
   ${EndIf}
 
-  ; Seed the default home — the publisher directory, own folder — ONLY when there is nothing to
+  ; Seed the default home (the publisher directory, own folder) ONLY when there is nothing to
   ; preserve: a first install, or one whose remembered location we just deleted. Writing this
   ; unconditionally would silently drag a user who chose their own directory back to the default on
   ; every single upgrade (allowToChangeInstallationDirectory is on, so that choice is theirs).
@@ -63,14 +63,14 @@
 # Registered POLITELY:
 #   * `OpenWithProgids` adds FATE.CodeFile to each extension's "Open with" list without touching
 #     anyone's default. For extensions where FATE ends up the ONLY registered handler, Explorer
-#     opens them with FATE with no further action — which is why the app's coverage counter counts
+#     opens them with FATE with no further action, which is why the app's coverage counter counts
 #     sole-handler fallbacks as FATE's.
 #   * Capabilities\FileAssociations puts every type on FATE's page in Windows Settings.
 #
 # NOT electron-builder's fileAssociations mechanism for these 83: that would stomp the (default)
 # ProgId of extensions owned by other tools. `.md`/`.markdown` keep the electron-builder mechanism.
 #
-# The extension list mirrors CODE_EXTENSIONS in electron/main.cjs and src/fileKinds.js — the three
+# The extension list mirrors CODE_EXTENSIONS in electron/main.cjs and src/fileKinds.js; the three
 # must be edited together. The app also self-heals this registration per-user at launch (see
 # ensureWindowsRegistration in electron/main.cjs), so a broken or raced installer state fixes
 # itself on first run.
@@ -81,7 +81,7 @@
   WriteRegStr SHCTX "Software\Classes\FATE.${EXT}\shell\open\command" "" '"$INSTDIR\FATE.exe" "%1"'
   WriteRegStr SHCTX "Software\Classes\.${EXT}\OpenWithProgids" "FATE.${EXT}" ""
   ; Migrate the 1.10-era shared ProgId out of Open With (the ProgId itself stays registered so an
-  ; existing UserChoice pointing at FATE.CodeFile keeps working — see customInstall).
+  ; existing UserChoice pointing at FATE.CodeFile keeps working; see customInstall).
   DeleteRegValue SHCTX "Software\Classes\.${EXT}\OpenWithProgids" "FATE.CodeFile"
   WriteRegStr SHCTX "Software\FATE\Capabilities\FileAssociations" ".${EXT}" "FATE.${EXT}"
 !macroend
@@ -97,7 +97,7 @@
 # second handler appears in OpenWithProgids with no UserChoice to arbitrate, Windows stops running
 # the script and shows "Pick an app" instead. Setting FATE as the default on its own Default-apps
 # page then made it unrecoverable, because that picker has no "Windows Command Processor" to
-# choose — batfile's open command is `"%1" %*`, which names no application.
+# choose: batfile's open command is `"%1" %*`, which names no application.
 #
 # Everything FATE wrote for the type comes out: the Open With entries (the actual cause), the
 # ProgId, the Capabilities entry, and any UserChoice naming a FATE ProgId. Deleting a UserChoice is
@@ -105,13 +105,13 @@
 #
 # THIS PASS IS THE ONLY ONE THAT CAN FIX HKLM. The app repeats the cleanup per-user on every launch
 # but runs unelevated, so the per-machine entries a previous installer wrote can only be removed
-# here — which is why upgrading is what actually restores .bat on a machine that had 1.11.5.
+# here, which is why upgrading is what actually restores .bat on a machine that had 1.11.5.
 #
 # A macro rather than a Function because this is inserted into customInstall, and NSIS does not
 # allow Function definitions inside a Section.
 #
 # The app repeats all of this per-user on every launch (repairAssociations in electron/main.cjs),
-# which is the reliable half — an elevated installer writes to the ADMIN's HKCU, not necessarily
+# which is the reliable half: an elevated installer writes to the ADMIN's HKCU, not necessarily
 # the profile that will actually run FATE. This pass is here so the machine is fixed even if the
 # app is never launched again.
 !macro RestoreCommandProcessorType EXT
@@ -131,7 +131,7 @@
     DeleteRegValue HKCU "Software\Classes\.${EXT}" ""
   ${EndIf}
 
-  ; The one that breaks batch files. Removed only when it is FATE's — never someone else's choice.
+  ; The one that breaks batch files. Removed only when it is FATE's, never someone else's choice.
   ReadRegStr $R8 HKCU "Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.${EXT}\UserChoice" "ProgId"
   ${If} $R8 == "FATE.${EXT}"
   ${OrIf} $R8 == "FATE.CodeFile"
@@ -146,7 +146,7 @@
   # (perMachine install).
   WriteRegStr SHCTX "Software\FATE\Capabilities" "ApplicationName" "FATE - Formatted Article & Text Editor"
   WriteRegStr SHCTX "Software\FATE\Capabilities" "ApplicationDescription" \
-    "Formatted Article & Text Editor — a Markdown viewer and code editor for technical documents."
+    "Formatted Article & Text Editor: a text and code editor with Markdown preview."
   WriteRegStr SHCTX "Software\FATE\Capabilities\FileAssociations" ".md" "Markdown Document"
   WriteRegStr SHCTX "Software\FATE\Capabilities\FileAssociations" ".markdown" "Markdown Document"
   WriteRegStr SHCTX "Software\FATE\Capabilities\FileAssociations" ".txt" "Markdown Document"
@@ -201,7 +201,7 @@
   !insertmacro RegisterCodeType "sh" "SH File (FATE)"
   !insertmacro RegisterCodeType "bash" "BASH File (FATE)"
   !insertmacro RegisterCodeType "zsh" "ZSH File (FATE)"
-  # .bat and .cmd are NOT registered — see PROTECTED_EXTENSIONS in electron/main.cjs. Windows runs
+  # .bat and .cmd are NOT registered; see PROTECTED_EXTENSIONS in electron/main.cjs. Windows runs
   # them through batfile/cmdfile, whose open command is `"%1" %*`: the script IS the executable, so
   # no application name appears for the "Choose a default" picker to offer. An editor that takes
   # the type leaves the user with no supported way to give it back, and batch files stop running.
@@ -278,12 +278,12 @@
   DeleteRegKey HKCU "Software\FATE\Capabilities"
   DeleteRegKey /ifempty HKCU "Software\FATE"
 
-  # If we were installed inside the publisher directory, remove it too — but only if empty
+  # If we were installed inside the publisher directory, remove it too, but only if empty
   # (other VagueDustin Enterprises software may live beside us).
   ${GetParent} "$INSTDIR" $R0
   RMDir "$R0"
 
-  # Per-type ProgIds and their Open-with entries. Generated block — the extension list mirrors
+  # Per-type ProgIds and their Open-with entries. Generated block; the extension list mirrors
   # CODE_EXTENSIONS in electron/main.cjs and src/fileKinds.js.
   !insertmacro UnregisterCodeType "js"
   !insertmacro UnregisterCodeType "mjs"

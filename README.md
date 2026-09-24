@@ -3,6 +3,7 @@
 [![Latest release](https://img.shields.io/github/v/release/VagueDustin/FATE)](https://github.com/VagueDustin/FATE/releases/latest)
 [![Licence: AGPL-3.0](https://img.shields.io/github/license/VagueDustin/FATE)](LICENSE)
 [![Platforms: Windows and Linux](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-1f3a5f)](#install)
+[![Get it from the Microsoft Store](https://img.shields.io/badge/Microsoft_Store-Get_it-0078D4?logo=microsoft)](https://apps.microsoft.com/detail/9n09hg8r34qd)
 [![Snap Store](https://snapcraft.io/fate/badge.svg)](https://snapcraft.io/fate)
 
 FATE is a free and open source **text editor and code editor for Windows and Linux**. It works like a
@@ -96,12 +97,12 @@ The only network request FATE makes is the update check on installs that update 
 
 ### Windows and Linux integration
 
-- **Windows:** an installer that updates itself, a Microsoft Store package, file associations for more
+- **Windows:** an installer that updates itself, a [Microsoft Store](https://apps.microsoft.com/detail/9n09hg8r34qd) package, file associations for more
   than 80 code types that you assign from Windows Settings → Default apps, a coverage check and repair
   tool in Settings → Windows, and an **Edit in FATE** entry on the right-click menu for every file.
-- **Linux:** AppImage, `.deb`, `.rpm`, signed apt and dnf repositories, and the Snap Store. The packages
-  register FATE for Markdown, plain text and some sixty code MIME types, so it appears under *Open With*
-  and can be made the default from your file manager.
+- **Linux:** the [Snap Store](https://snapcraft.io/fate), AppImage, `.deb`, `.rpm`, and signed apt and dnf
+  repositories. The packages register FATE for Markdown, plain text and some sixty code MIME types, so it
+  appears under *Open With* and can be made the default from your file manager.
 
 ## Screenshots
 
@@ -122,10 +123,20 @@ The only network request FATE makes is the update check on installs that update 
 
 ## Install
 
-Every download is on the [Releases page](https://github.com/VagueDustin/FATE/releases/latest).
+The Microsoft Store on Windows and the Snap Store on Linux are the simplest way to install, and both
+keep FATE updated for you. Every other download is on the
+[Releases page](https://github.com/VagueDustin/FATE/releases/latest).
 
-**Windows.** Download `FATE-Setup-<version>.exe` from the latest release. It updates itself. FATE is
-also available from the Microsoft Store.
+**Windows: Microsoft Store.** Get FATE from the
+[Microsoft Store](https://apps.microsoft.com/detail/9n09hg8r34qd). The Store handles updates.
+
+**Windows: installer.** If you'd rather not use the Store, download `FATE-Setup-<version>.exe` from the
+latest release. It updates itself.
+
+**Linux: Snap Store.** `sudo snap install fate` on Ubuntu and any distribution with snapd
+([snapcraft.io/fate](https://snapcraft.io/fate)). snapd keeps it updated. To edit files on USB sticks and
+other removable drives, allow it once with `sudo snap connect fate:removable-media`. FATE reminds you if
+you forget.
 
 **Ubuntu / Debian / Mint / Pop!_OS.** Install the `.deb` from the latest release, or add the repository
 once. Either way, `apt upgrade` keeps FATE current:
@@ -141,11 +152,6 @@ sudo apt update && sudo apt install fate
 sudo curl -fsSL -o /etc/yum.repos.d/fate.repo https://github.com/VagueDustin/FATE/releases/download/repodata/fate.repo
 sudo dnf install fate
 ```
-
-**Snap Store.** `sudo snap install fate` on Ubuntu and any distribution with snapd
-([snapcraft.io/fate](https://snapcraft.io/fate)). snapd keeps it updated. To edit files on USB sticks and
-other removable drives, allow it once with `sudo snap connect fate:removable-media`. FATE reminds you if
-you forget.
 
 **Any Linux.** Download `FATE-<version>-x86_64.AppImage` from the latest release, `chmod +x` it and run
 it. It updates itself.

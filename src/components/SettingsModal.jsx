@@ -11,11 +11,11 @@ import { CODE_EXTENSIONS } from '../fileKinds.js';
 import { DEFAULT_CUSTOM, CUSTOM_FIELDS, customThemeCss } from '../themeCustom.js';
 
 /**
- * SettingsModal — navigation rail + content pane (1.10.0 redesign, extended in 1.11.0 with the
+ * SettingsModal: navigation rail + content pane (1.10.0 redesign, extended in 1.11.0 with the
  * full keybinding editor, the custom theme builder, and the association tools).
  *
  * Design notes:
- *   - Theme cards render INSIDE their own theme via data-theme scoping — previews come from the
+ *   - Theme cards render INSIDE their own theme via data-theme scoping; previews come from the
  *     theme's real tokens, never hand-kept swatches. The custom theme's card works the same way
  *     because its block is injected as real CSS (see src/themeCustom.js).
  *   - FontPicker is a custom listbox because a native <select> cannot render each option in its
@@ -26,12 +26,12 @@ import { DEFAULT_CUSTOM, CUSTOM_FIELDS, customThemeCss } from '../themeCustom.js
 const PROSE_SAMPLE = 'The quick brown fox jumps over the lazy dog.';
 const CODE_SAMPLE = 'const sum = (a, b) => a !== b ? a + b : 0;';
 
-/** How many filtered system fonts to render at once — each row rasterises its own typeface. */
+/** How many filtered system fonts to render at once; each row rasterises its own typeface. */
 const SYSTEM_FONT_LIMIT = 30;
 
 function FontPicker({ value, options, onChange, mono, systemFonts = [] }) {
   const [open, setOpen] = useState(false);
-  /* Opens UPWARD when the button sits low in the viewport — the list is absolutely positioned
+  /* Opens UPWARD when the button sits low in the viewport. The list is absolutely positioned
      inside the modal's scroll pane, so opening down near the bottom clipped it (user-reported). */
   const [openUp, setOpenUp] = useState(false);
   const [query, setQuery] = useState('');
@@ -126,7 +126,7 @@ function FontPicker({ value, options, onChange, mono, systemFonts = [] }) {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => {
-                // Enter takes the first visible match — fastest path from typing to chosen.
+                // Enter takes the first visible match, the fastest path from typing to chosen.
                 if (e.key === 'Enter') {
                   e.preventDefault();
                   const first = bundled[0] ?? (systemShown[0] && systemFontEntry(`system:${systemShown[0]}`, mono));
@@ -147,7 +147,7 @@ function FontPicker({ value, options, onChange, mono, systemFonts = [] }) {
             {systemShown.map((name) => renderOption(systemFontEntry(`system:${name}`, mono)))}
             {systemMatches.length > SYSTEM_FONT_LIMIT && (
               <li className="fp-more">
-                {systemMatches.length - SYSTEM_FONT_LIMIT} more — keep typing to narrow the list
+                {systemMatches.length - SYSTEM_FONT_LIMIT} more. Keep typing to narrow the list.
               </li>
             )}
             {bundled.length === 0 && systemShown.length === 0 && (
@@ -243,7 +243,7 @@ function SettingsModal({
     }
   };
 
-  /* Association coverage runs a registry sweep — fetched only when its section opens. */
+  /* Association coverage runs a registry sweep, fetched only when its section opens. */
   useEffect(() => {
     if (section === 'windows') refreshCoverage();
   }, [section]);
@@ -271,7 +271,7 @@ function SettingsModal({
     setFonts({ perType: next });
   };
 
-  /* Duplicate bindings — flagged inline rather than silently letting first-match win. */
+  /* Duplicate bindings, flagged inline rather than silently letting first-match win. */
   const conflicts = useMemo(() => {
     const seen = {};
     const dupes = new Set();
@@ -303,7 +303,7 @@ function SettingsModal({
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
     } catch {
-      /* clipboard unavailable — nothing sensible to do */
+      /* clipboard unavailable; nothing sensible to do */
     }
   };
 
@@ -328,7 +328,7 @@ function SettingsModal({
             );
           })}
           <div className="settings-nav-foot">
-            <span className="settings-nav-version">v{appVersion || '—'}</span>
+            <span className="settings-nav-version">v{appVersion || '-'}</span>
           </div>
         </nav>
 
@@ -396,8 +396,8 @@ function SettingsModal({
                 <div className="setting-group">
                   <span className="group-caption">Custom theme</span>
                   <p className="setting-hint group-hint">
-                    Pick seven colours; FATE derives the rest — borders, glows, gradients and a full
-                    syntax palette — so the result hangs together like the built-in themes. Copy CSS
+                    Pick seven colours and FATE derives the rest (borders, glows, gradients and a full
+                    syntax palette), so the result hangs together like the built-in themes. Copy CSS
                     exports the generated token block.
                   </p>
                   <div className="custom-theme-grid">
@@ -454,7 +454,7 @@ function SettingsModal({
                       <span className="setting-label">Reopen last session&apos;s tabs on launch</span>
                       <span className="setting-hint">
                         Off means FATE closes your tabs when you quit and starts on the home screen
-                        next time — and the list of what you had open is not kept. Either way, quitting
+                        next time, without keeping the list of what you had open. Either way, quitting
                         with unsaved work asks you to save or discard it first, tab by tab.
                       </span>
                     </div>
@@ -510,7 +510,7 @@ function SettingsModal({
                 <div className="setting-group">
                   <span className="group-caption">Per-file-type fonts</span>
                   <p className="setting-hint group-hint">
-                    Give any file type its own code font — every open tab of that type follows.
+                    Give any file type its own code font, and every open tab of that type uses it.
                     Types without an override use the code font above.
                   </p>
 
@@ -568,8 +568,8 @@ function SettingsModal({
                   <div className="setting-label-block">
                     <span className="setting-label">Highlight syntax errors</span>
                     <span className="setting-hint">
-                      Underlines code the language parser can&apos;t make sense of — missing
-                      brackets, unclosed strings, stray tokens — with a marker in the gutter.
+                      Underlines code the language parser can&apos;t make sense of (missing
+                      brackets, unclosed strings, stray tokens), with a marker in the gutter.
                       Works for languages with structural parsers (JavaScript, TypeScript, HTML,
                       CSS, JSON, Python and most others); shell-style languages report nothing
                       rather than guessing.
@@ -690,13 +690,13 @@ function SettingsModal({
                     </div>
                   </div>
                   <p className="setting-hint group-hint">
-                    The count is what double-clicking would <em>actually</em> launch — FATE asks the
+                    The count is what double-clicking would <em>actually</em> launch: FATE asks the
                     shell, the same way Explorer does.
                     {coverage && coverage.unowned?.length > 0 && (
                       <> {coverage.unowned.length} type{coverage.unowned.length === 1 ? ' has' : 's have'} no
                       handler at all; {coverage.otherApp?.length || 0} belong to another app.</>
                     )}{' '}
-                    Windows only lets an application be <em>offered</em> — the confirmation itself has
+                    Windows only lets an application be <em>offered</em>; the confirmation itself has
                     to happen in Windows Settings, one type at a time. <strong>Choose in Windows</strong>
                     opens FATE&apos;s page there with every supported type listed.
                   </p>
@@ -704,7 +704,7 @@ function SettingsModal({
                     <p className="setting-hint group-hint">
                       <strong>Repair</strong> clears registry entries FATE itself wrote in 1.10–1.11.
                       They were meant to claim these types and instead left them with no handler at
-                      all — removing them lets Windows fall back to FATE.
+                      all. Removing them lets Windows fall back to FATE.
                     </p>
                   )}
                   {repairResult?.ok && (
@@ -719,7 +719,7 @@ function SettingsModal({
                   <p className="setting-hint group-hint">
                     <strong>.bat</strong> and <strong>.cmd</strong> are deliberately not in this list.
                     Windows runs them through the command processor, which is not an app you can pick
-                    again in the &quot;Choose a default&quot; dialog — so an editor that takes them
+                    again in the &quot;Choose a default&quot; dialog, so an editor that takes them
                     leaves no way back. FATE still opens both from the Open dialog, drag &amp; drop and
                     <em> Edit in FATE</em>; it just never registers to own them.
                   </p>
@@ -735,7 +735,7 @@ function SettingsModal({
                         Windows 11 tucks classic entries under <em>Show more options</em>; top-level
                         placement requires a signed system component that apps like Notepad++ ship
                         separately. The switch below is the practical alternative: it restores the
-                        full classic menu everywhere — with Edit in FATE at the top level.
+                        full classic menu everywhere, with Edit in FATE at the top level.
                       </span>
                     </div>
                   </div>
@@ -780,7 +780,7 @@ function SettingsModal({
               <>
                 <div className="setting-group">
                   <div className="shortcuts-head">
-                    <span className="group-caption">Rebindable — click a binding, press keys</span>
+                    <span className="group-caption">Rebindable: click a binding, then press keys</span>
                     <button
                       className="link-btn"
                       onClick={() => updateSetting('shortcuts', { ...DEFAULT_SHORTCUTS })}
@@ -792,7 +792,7 @@ function SettingsModal({
                   </div>
                   {conflicts.size > 0 && (
                     <p className="setting-hint group-hint shortcut-conflict">
-                      <Warning size={13} weight="fill" /> Two actions share a binding — the one
+                      <Warning size={13} weight="fill" /> Two actions share a binding. The one
                       higher in this list wins. Rebind one of them.
                     </p>
                   )}
@@ -841,7 +841,7 @@ function SettingsModal({
                         <span className="setting-hint">
                           {runtimeInfo.windowsStore
                             ? 'This copy of FATE is managed by the Microsoft Store, which delivers its updates automatically. The update button in the status bar opens the Store’s downloads page.'
-                            : `This copy of FATE was installed through ${runtimeInfo.updates.label}, which delivers its updates on its own schedule — FATE never updates itself here. The update button in the status bar opens the latest release notes.`}
+                            : `This copy of FATE was installed through ${runtimeInfo.updates.label}, which delivers its updates on its own schedule, so FATE never updates itself here. The update button in the status bar opens the latest release notes.`}
                         </span>
                       </div>
                     </div>

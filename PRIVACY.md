@@ -3,8 +3,8 @@
 **Effective Date:** September 15, 2026 (supersedes the August 5, 2026 policy)
 
 FATE is a local, offline desktop application for reading and editing documents. Your files and your
-data belong to you. This policy describes everything FATE does that could conceivably touch data —
-which is very little — in plain language.
+data belong to you. This policy describes, in plain language, everything FATE does that could
+conceivably touch data. There is very little.
 
 ## 1. Data Collection
 
@@ -18,7 +18,7 @@ which is very little — in plain language.
 ## 2. File Access
 
 FATE requests local file system access ("Full Trust") solely to open, display, edit and save the
-files **you explicitly choose** — via the open dialog, drag & drop, the recent-files list, a file
+files **you explicitly choose**: through the open dialog, drag & drop, the recent-files list, a file
 association, or the "Edit in FATE" context-menu entry. While a file is open, FATE watches it for
 external changes so the view can refresh. FATE does not scan, index, upload, or share your files.
 They never leave your device.
@@ -26,14 +26,14 @@ They never leave your device.
 ## 3. Data Stored Locally
 
 FATE keeps a small local configuration file on your machine containing your settings (theme,
-fonts, keyboard shortcuts, and similar), the paths of recently opened files, and — if session
-restore is enabled — the paths of the tabs you had open. This file stays on your device, is never
+fonts, keyboard shortcuts, and similar), the paths of recently opened files, and (if session
+restore is enabled) the paths of the tabs you had open. This file stays on your device, is never
 transmitted anywhere, and is removed if you delete the app's data folder.
 
 On Windows, FATE also writes standard registry entries so that it appears in "Open with" menus and
 on its page in Windows Settings → Default apps. These entries are local system configuration (they
-contain no personal data), are only extended when you explicitly use features like "Claim file
-types," and are removed on uninstall.
+contain no personal data), only change further when you turn on a setting that asks for it
+(such as the classic context menu switch), and are removed on uninstall.
 
 ## 4. Updates
 
@@ -41,7 +41,7 @@ types," and are removed on uninstall.
   version. This is a standard HTTPS request to GitHub's servers; it contains no personal data and
   no file contents. Like any web request, GitHub's infrastructure can see your IP address
   (see GitHub's own privacy statement). Automatic checks can be disabled in Settings → About.
-* **Microsoft Store builds** perform no update checks at all — the Microsoft Store manages
+* **Microsoft Store builds** perform no update checks at all. The Microsoft Store manages
   updates through its own pipeline.
 * **Linux packages** installed through apt, dnf, the Snap Store or Flatpak likewise perform no
   update checks; those package managers deliver updates. The **AppImage** checks GitHub the same
@@ -54,7 +54,7 @@ repository alongside the release, with a new effective date.
 
 ## 6. Contact
 
-Questions or concerns about this policy: please open an issue on the official GitHub repository —
+Questions or concerns about this policy: please open an issue on the official GitHub repository at
 https://github.com/VagueDustin/FATE
 
 FATE is published by VagueDustin Enterprises™.

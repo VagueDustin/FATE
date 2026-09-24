@@ -5,7 +5,7 @@ import { tags as t } from '@lezer/highlight';
  * The shared syntax HighlightStyle: syntax-tree tags → the --syn-* theme tokens.
  *
  * Emitting `var(--syn-…)` as literal CSS values is what makes a theme switch retune highlighted
- * code instantly with no editor reconfiguration. Used by CodeEditor and DiffView (own module —
+ * code instantly with no editor reconfiguration. Used by CodeEditor and DiffView (own module:
  * react-refresh requires component files to export only components). No colour literals here,
  * per the token rule.
  */
@@ -24,7 +24,7 @@ export const tokenHighlightStyle = HighlightStyle.define([
   { tag: [t.regexp, t.escape], color: 'var(--syn-regex)' },
   { tag: [t.self, t.atom, t.unit, t.constant(t.variableName), t.standard(t.variableName), t.labelName], color: 'var(--syn-constant)' },
   { tag: t.invalid, color: 'var(--syn-invalid)' },
-  // Markdown-ish tags — also what the markdown EDIT mode's source pane renders with.
+  // Markdown-ish tags, also what the markdown EDIT mode's source pane renders with.
   { tag: t.heading, color: 'var(--syn-keyword)', fontWeight: 'bold' },
   { tag: [t.link, t.url], color: 'var(--syn-string)', textDecoration: 'underline' },
   { tag: t.strong, fontWeight: 'bold' },

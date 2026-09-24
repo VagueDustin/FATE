@@ -1,5 +1,5 @@
 /**
- * index.css — document-level defaults.
+ * index.css: document-level defaults.
  *
  * Colour comes from brand.css tokens. The one bootstrapping exception is the `html` background:
  * that rule has to paint before React mounts and sets `data-theme` on <html>, so it cannot use a

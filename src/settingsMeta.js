@@ -1,5 +1,5 @@
 /**
- * settingsMeta.js — option lists shared by App.jsx, SettingsModal.jsx and CommandPalette.jsx.
+ * settingsMeta.js: option lists shared by App.jsx, SettingsModal.jsx and CommandPalette.jsx.
  * (Own module because react-refresh requires component files to export only components.)
  */
 
@@ -26,7 +26,7 @@ export const DEFAULT_THEME = 'fate';
 /**
  * Map a stored theme value onto one that still exists.
  *
- * Pre-1.5.0 the default was `'dark'`, which no longer has a token block — a stored `'dark'` would
+ * Pre-1.5.0 the default was `'dark'`, which no longer has a token block, so a stored `'dark'` would
  * render the app with every custom property unresolved. `'custom'` is only honoured when the user
  * actually has a custom theme saved (`hasCustom`), otherwise it degrades to the default too.
  */
@@ -53,10 +53,10 @@ export const PAGE_SIZES = [
 ];
 
 /* ════════════════════════════════════════════════════════════════════════════════════════════
-   SHORTCUTS — every rebindable action in the app (1.11.0: everything is rebindable).
+   SHORTCUTS: every rebindable action in the app (1.11.0: everything is rebindable).
    `id` is the key in settings.shortcuts; the defaults below are merged over stored values by
    resolveShortcuts(), so upgrades gain new actions without losing user rebinds.
-   Ctrl+1…9 (jump to tab N) stays fixed — nine bindings for one concept would drown the list.
+   Ctrl+1…9 (jump to tab N) stays fixed; nine bindings for one concept would drown the list.
    ════════════════════════════════════════════════════════════════════════════════════════════ */
 export const SHORTCUT_ACTIONS = [
   { id: 'newFile', label: 'New file', default: 'Control+T' },

@@ -2,7 +2,7 @@ import { LanguageDescription } from '@codemirror/language';
 import { languages } from '@codemirror/language-data';
 
 /**
- * Resolve a CodeMirror language from a filename — and, when the name says nothing, from the
+ * Resolve a CodeMirror language from a filename and, when the name says nothing, from the
  * content. Returns null for plain text.
  *
  * `languages` is the full @codemirror/language-data registry (~150 languages, PowerShell and the
@@ -10,7 +10,7 @@ import { languages } from '@codemirror/language-data';
  * Makefile, …); the actual language module is only loaded when `.load()` is called on the result.
  *
  * Since FATE opens any text file, plenty arrive with an extension the registry has never heard
- * of — `web.config` (XML), `.properties`, a `.reg` export, an extensionless script. sniffLanguage
+ * of: `web.config` (XML), `.properties`, a `.reg` export, an extensionless script. sniffLanguage
  * covers the cases a glance at the first line settles: shebangs, XML/HTML prologues, JSON, INI
  * sections. Anything else stays plain text rather than guessing wrong; a wrong highlighter is
  * worse than none.
@@ -41,7 +41,7 @@ const SHEBANG_LANGUAGES = [
 ];
 
 /**
- * Guess a language from the first couple of kilobytes of content. Conservative on purpose — see
+ * Guess a language from the first couple of kilobytes of content. Conservative on purpose; see
  * detectLanguage. Exported for tests and for the Save As re-detection in CodeEditor.
  */
 export function sniffLanguage(content) {
@@ -65,7 +65,7 @@ export function sniffLanguage(content) {
   // Any other opening tag or comment: XML. Covers web.config, .csproj, .plist, .xaml, .resx, …
   if (/^<(?:!--|[a-z_][\w:.-]*(?:[\s/>]|$))/i.test(trimmed)) return byLanguageName('XML');
 
-  // An INI section header on the first meaningful line — ahead of JSON, since both start with `[`.
+  // An INI section header on the first meaningful line, ahead of JSON, since both start with `[`.
   const firstMeaningful = trimmed.split(/\r?\n/).find((line) => line.trim() && !/^\s*[;#]/.test(line)) || '';
   if (/^\[[A-Za-z0-9 ._:\\/-]+\]\s*$/.test(firstMeaningful.trim())) return byLanguageName('Properties files');
 

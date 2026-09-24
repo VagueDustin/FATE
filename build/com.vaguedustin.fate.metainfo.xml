@@ -36,9 +36,10 @@
       export tools before it reaches the screen.
     </p>
     <p>
-      Eight themes plus a custom theme builder, a bundled font library with per-file-type
-      overrides, a command palette, rebindable shortcuts, print to PDF with a real preview, and
-      session restore. Fully offline: no telemetry, no network requests.
+      You also get eight themes plus a custom theme builder, a bundled font library with
+      per-file-type overrides, a command palette, rebindable shortcuts, print to PDF with a real
+      preview, and session restore. It works fully offline, with no telemetry and no network
+      requests.
     </p>
   </description>
 

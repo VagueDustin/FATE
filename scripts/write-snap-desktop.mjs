@@ -1,5 +1,5 @@
 /**
- * write-snap-desktop.mjs — generate snap/gui/fate.desktop and snap/gui/fate.png for the Snap
+ * write-snap-desktop.mjs: generate snap/gui/fate.desktop and snap/gui/fate.png for the Snap
  * Store build, from package.json (name, description, MIME types) and build/icons (run
  * `npm run icons` first).
  *

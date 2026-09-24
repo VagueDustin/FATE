@@ -1,5 +1,5 @@
 /**
- * generate-icons.mjs — derives every icon asset from the two artwork masters in `brand/`.
+ * generate-icons.mjs: derives every icon asset from the two artwork masters in `brand/`.
  *
  * Run: `npm run icons`
  *
@@ -8,7 +8,7 @@
  * so nothing can silently drift.
  *
  * ── Masters ───────────────────────────────────────────────────────────────────────────────────
- *   brand/app-icon.png       1178x1192  Gilded badge — gold frame, navy starfield, crescent moon,
+ *   brand/app-icon.png       1178x1192  Gilded badge: gold frame, navy starfield, crescent moon,
  *                                       open book bearing M and a down-arrow, "FATE / MARKDOWN
  *                                       VIEWER" in ornate gold serif, filigree flourishes.
  *   brand/document-icon.png   585x800   Portrait sheet with a folded corner, gold ornate M over a
@@ -20,7 +20,7 @@
  * ── Small frames ──────────────────────────────────────────────────────────────────────────────
  * The badge is intentionally ornate, which fights legibility at 16px. Three approaches were
  * rendered and compared: plain downscale, sharpened downscale, and cropping to just the book+M
- * element. Cropping was rejected — it discarded the badge silhouette and read as a different app.
+ * element. Cropping was rejected; it discarded the badge silhouette and read as a different app.
  * Sharpened downscale won, so frames at or below SHARPEN_AT_OR_BELOW get an unsharp pass. At 32px+
  * the wordmark is clearly readable; at 16px it resolves to a gold-on-navy badge, which is still
  * distinctive in an Explorer list.
@@ -77,7 +77,7 @@ async function buildIco(master, outPath) {
 
 /**
  * A wide AppX tile: the badge centred on navy. The master already contains the "FATE / MARKDOWN
- * VIEWER" wordmark, so no text is composited — that would duplicate it.
+ * VIEWER" wordmark, so no text is composited, since that would duplicate it.
  */
 async function wideTile(width, height) {
   const badge = await square(APP_MASTER, Math.round(height * 0.86));
@@ -99,7 +99,7 @@ console.log(`  build/icon-doc.ico               ${ICO_SIZES.join('/')}  .md file
 // ── AppX tiles ───────────────────────────────────────────────────────────────────────────────
 // Sizes are fixed by the Microsoft Store manifest; electron-builder passes them straight through.
 // Tiles render against the Store's own chrome, so they are flattened onto navy rather than left
-// transparent — a transparent tile picks up whatever accent colour the user's theme supplies.
+// transparent: a transparent tile picks up whatever accent colour the user's theme supplies.
 const SQUARE_TILES = [
   ['Square44x44Logo.png', 44],
   ['Square71x71Logo.png', 71],
@@ -125,7 +125,7 @@ console.log(`  build/appx/*.png                 ${SQUARE_TILES.length + 1} tiles
 // ── Linux icon set ───────────────────────────────────────────────────────────────────────────
 // electron-builder's `linux.icon` takes a directory of `<size>x<size>.png` frames; the .desktop
 // entry, AppImage integration and the deb's hicolor theme install pick per size from it.
-// Transparent like the in-app assets — desktop themes composite icons over arbitrary panels.
+// Transparent like the in-app assets; desktop themes composite icons over arbitrary panels.
 // The small frames get the same unsharp pass as the .ico frames: 16/22/24/32 are what panels and
 // file managers actually show, and the ornate badge turns to mush on a plain downscale.
 const LINUX_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512];

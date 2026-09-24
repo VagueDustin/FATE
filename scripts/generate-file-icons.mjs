@@ -1,5 +1,5 @@
 /**
- * generate-file-icons.mjs — per-file-type document icons, derived from the SAME master as
+ * generate-file-icons.mjs: per-file-type document icons, derived from the SAME master as
  * icon-doc.ico so every type keeps the gilded-sheet brand artwork.
  *
  * Run: `npm run icons` (this runs after generate-icons.mjs) or directly with node.
@@ -7,12 +7,12 @@
  * ── How a variant is made ─────────────────────────────────────────────────────────────────────
  * The document master (585×800 portrait sheet, gold border, folded corner, gold M↓) has its
  * central glyph REGION covered with a patch matching the sheet's own field gradient, and the
- * file extension is set in its place in the house gold — bright-to-deep vertical gradient, serif,
+ * file extension is set in its place in the house gold: bright-to-deep vertical gradient, serif,
  * with a soft drop shadow so it sits IN the sheet like the original M does. Nothing else about
  * the artwork is touched, so the border, corner fold and lighting stay pixel-identical to the
  * markdown icon.
  *
- * The extension list is imported from src/fileKinds.js — one source of truth. Markdown types
+ * The extension list is imported from src/fileKinds.js, one source of truth. Markdown types
  * keep the original M↓ icon (build/icon-doc.ico); every code extension gets its own
  * build/fileicons/<ext>.ico, shipped via build.extraResources to resources\fileicons\ and wired
  * to the per-type ProgIds (FATE.<ext>) by build/installer.nsh and the runtime self-heal.
@@ -39,7 +39,7 @@ const MASTER_H = 800;
 const ICO_SIZES = [16, 24, 32, 48, 64, 128, 256];
 const SHARPEN_AT_OR_BELOW = 48;
 
-/** Label font size by character count — tuned so 1..7 characters all clear the border. */
+/** Label font size by character count, tuned so 1..7 characters all clear the border. */
 const SIZE_BY_LEN = { 1: 330, 2: 250, 3: 195, 4: 152, 5: 126, 6: 108, 7: 94 };
 
 /**

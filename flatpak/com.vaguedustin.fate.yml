@@ -1,4 +1,4 @@
-# Flatpak manifest for FATE — the Flathub submission and the CI build test share this file.
+# Flatpak manifest for FATE. The Flathub submission and the CI build test share this file.
 #
 # TEMPLATE: the version and .deb sha256 placeholders below are filled in by the Build Linux
 # workflow (rendered copy in flatpak/rendered/, built and linted on every tag). The Flathub
@@ -12,7 +12,7 @@
 #
 # Permissions: FATE is a file editor. It opens files handed to it on the command line and via
 # "Open with", edits them in place and watches them for external changes, which needs real paths
-# rather than portal documents — hence --filesystem=home (and removable media). It makes no
+# rather than portal documents, hence --filesystem=home (and removable media). It makes no
 # network requests; electron-updater stays off inside Flatpak (FLATPAK_ID is set, see
 # electron/main.cjs).
 app-id: com.vaguedustin.fate

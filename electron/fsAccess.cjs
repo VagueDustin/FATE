@@ -1,6 +1,6 @@
 'use strict';
 /**
- * fsAccess.cjs — turn a file-system error into words the user can act on.
+ * fsAccess.cjs: turn a file-system error into words the user can act on.
  *
  * The cases worth naming are sandboxes. Under snap strict confinement "permission denied" almost
  * never means Unix permissions; it means one of two things FATE can state precisely:
@@ -17,7 +17,7 @@
  * Up to 1.13.2 both surfaced as nothing at all: the stat in isOpenableArg failed, the argument
  * was dropped, and `Open with → FATE` from a USB stick did not open anything.
  *
- * Free of Electron imports on purpose — it runs under plain node for tests.
+ * Free of Electron imports on purpose; it runs under plain node for tests.
  */
 const path = require('path');
 const { execFileSync } = require('child_process');
@@ -45,7 +45,7 @@ function snapPlugConnected(plug) {
  * @param {Error} err              the fs error (`.code` and `.message` are used)
  * @param {string} filePath        the path that failed
  * @param {'open'|'save'} action   what FATE was doing
- * @param {object} [deps]          `env` (default process.env) and `isConnected(plug)` — for tests
+ * @param {object} [deps]          `env` (default process.env) and `isConnected(plug)`, for tests
  * @returns {{ title: string, message: string, short: string }}
  *   `title` and `message` suit dialog.showErrorBox; `short` is a one-liner for the status bar.
  */
@@ -71,7 +71,7 @@ function describeFsError(err, filePath, action = 'open', deps = {}) {
           `${name} is on a removable drive, and this copy of FATE is a snap. Snaps cannot reach ` +
           `removable drives until you allow it, once, in a terminal:\n\n    ${cmd}\n\n` +
           `Then ${verb} the file again.`,
-        short: `Snap cannot reach removable drives — run: ${cmd}`
+        short: `Snap cannot reach removable drives. Run: ${cmd}`
       };
     }
 

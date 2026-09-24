@@ -16,7 +16,7 @@ import { detectLanguage } from '../languageDetect.js';
 import { tokenHighlightStyle } from '../editorTheme.js';
 
 /**
- * CodeEditor — the code-file counterpart to the markdown viewer.
+ * CodeEditor: the code-file counterpart to the markdown viewer.
  *
  * ── Why CodeMirror 6 and not Monaco ───────────────────────────────────────────────────────────
  * Monaco needs web workers and special bundler treatment, and weighs an order of magnitude more.
@@ -26,7 +26,7 @@ import { tokenHighlightStyle } from '../editorTheme.js';
  *
  * ── Language support ──────────────────────────────────────────────────────────────────────────
  * `@codemirror/language-data` registers ~150 languages (including PowerShell, batch and the other
- * legacy-mode ones) with *lazy* loaders — `LanguageDescription.matchFilename` picks by filename,
+ * legacy-mode ones) with *lazy* loaders: `LanguageDescription.matchFilename` picks by filename,
  * and `.load()` dynamically imports just that language's module. Vite turns each into a chunk in
  * `dist/assets/`, so everything still ships inside the app. No file type costs anything until it
  * is actually opened.
@@ -35,7 +35,7 @@ import { tokenHighlightStyle } from '../editorTheme.js';
  * All colour comes from custom properties (--syn-* and the surface/border/accent tokens), set per
  * theme in brand.css and applied to the .cm-* classes in App.css. The HighlightStyle below emits
  * `var(--syn-…)` as literal CSS values, so a theme switch retunes the highlighted code instantly
- * with NO editor reconfiguration — the same mechanism as the rest of the app, per the token rule.
+ * with NO editor reconfiguration, the same mechanism as the rest of the app, per the token rule.
  * That is also why this file must not contain colour literals.
  *
  * The one CodeMirror default deliberately excluded is `defaultHighlightStyle` (what basicSetup
@@ -44,7 +44,7 @@ import { tokenHighlightStyle } from '../editorTheme.js';
  *
  * ── React integration ─────────────────────────────────────────────────────────────────────────
  * The EditorView is imperative and lives outside React's render cycle. The parent mounts one
- * instance per opened file (keyed remount), and talks to it through the imperative ref — see the
+ * instance per opened file (keyed remount), and talks to it through the imperative ref; see the
  * handle at the bottom. Per-keystroke state (dirty flag transitions, cursor position) never
  * touches React state except on actual dirty-flag *changes*; the Ln/Col readout is written
  * straight to a status-bar DOM node, following the same rule as the scroll progress bar.
@@ -53,11 +53,11 @@ import { tokenHighlightStyle } from '../editorTheme.js';
 /**
  * Structural syntax diagnostics from the language parser itself.
  *
- * Lezer grammars mark unparseable regions with error nodes — a missing bracket, an unclosed
+ * Lezer grammars mark unparseable regions with error nodes. A missing bracket, an unclosed
  * string, a stray token all surface there. Walking the tree for those gives real "your code is
  * broken HERE" underlines for every tree-based language (JavaScript, TypeScript, HTML, CSS,
  * JSON, Python, …) with zero per-language lint dependencies. Stream-parsed legacy modes
- * (PowerShell, shell, batch) never produce error nodes, so they simply report nothing — no false
+ * (PowerShell, shell, batch) never produce error nodes, so they simply report nothing, with no false
  * positives.
  *
  * Zero-length error nodes (very common: "something is missing here") are widened by a character
@@ -76,7 +76,7 @@ const syntaxErrorLinter = linter(
           from,
           to,
           severity: 'error',
-          message: 'Syntax error — unexpected or missing token'
+          message: 'Syntax error: unexpected or missing token'
         });
       });
     return diagnostics;
@@ -95,7 +95,7 @@ const CodeEditor = forwardRef(function CodeEditor(
   const dirtyRef = useRef(false);
   /*
    * Tabs: several editors stay mounted at once, but the status bar has ONE Ln/Col node. Only the
-   * visible tab may write to it — a background tab receiving a live-reload must not clobber the
+   * visible tab may write to it; a background tab receiving a live-reload must not clobber the
    * readout of the tab the user is looking at.
    */
   const isActiveRef = useRef(isActive);
@@ -126,7 +126,7 @@ const CodeEditor = forwardRef(function CodeEditor(
   /*
    * One EditorView per mount. The parent keys this component on its open counter, so opening a
    * file (including re-opening the same path) gets a clean editor with fresh undo history.
-   * `initialContent`/`fileName` are read once here by design — hence their absence from the
+   * `initialContent`/`fileName` are read once here by design, hence their absence from the
    * dependency list.
    */
   const writeCursor = useCallback(
@@ -135,7 +135,7 @@ const CodeEditor = forwardRef(function CodeEditor(
       if (!el || !isActiveRef.current) return;
       const head = state.selection.main.head;
       const line = state.doc.lineAt(head);
-      // Direct DOM write — this updates on every keystroke and must not re-render the app.
+      // Direct DOM write: this updates on every keystroke and must not re-render the app.
       el.textContent = `Ln ${line.number}, Col ${head - line.from + 1}`;
     },
     [cursorLabelRef]
@@ -238,7 +238,7 @@ const CodeEditor = forwardRef(function CodeEditor(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* Settings changes retune the live editor through compartments — no rebuild, no history loss. */
+  /* Settings changes retune the live editor through compartments: no rebuild, no history loss. */
   useEffect(() => {
     viewRef.current?.dispatch({
       effects: wrapCompartment.reconfigure(wrap ? EditorView.lineWrapping : [])
@@ -263,10 +263,10 @@ const CodeEditor = forwardRef(function CodeEditor(
   useImperativeHandle(
     ref,
     () => ({
-      /** Current buffer contents — what Save writes to disk. */
+      /** Current buffer contents: what Save writes to disk. */
       getContent: () => viewRef.current?.state.doc.toString() ?? '',
 
-      /** The buffer as of the last save (or open) — the baseline "diff unsaved changes" compares against. */
+      /** The buffer as of the last save (or open), the baseline "diff unsaved changes" compares against. */
       getSavedContent: () => savedDocRef.current?.toString() ?? '',
 
       /** Call after a successful save: the current doc becomes the clean reference point. */
@@ -277,7 +277,7 @@ const CodeEditor = forwardRef(function CodeEditor(
       },
 
       /**
-       * Replace the buffer with content reloaded from disk (external change, clean editor only —
+       * Replace the buffer with content reloaded from disk (external change, clean editor only;
        * the caller checks). A whole-document change rather than a remount, so the undo history
        * survives and the selection is mapped instead of reset.
        */
@@ -295,7 +295,7 @@ const CodeEditor = forwardRef(function CodeEditor(
       focus: () => viewRef.current?.focus(),
 
       /**
-       * Re-detect and load the language for a (new) filename — used after Save As gives an
+       * Re-detect and load the language for a (new) filename. Used after Save As gives an
        * untitled buffer a real extension. Reconfigures the language compartment in place, so the
        * buffer, cursor and undo history all survive the rename.
        */

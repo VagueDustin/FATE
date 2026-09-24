@@ -26,7 +26,7 @@ dist-ssr
 dist-electron/
 AI_CONTEXT.md
 
-# build/ is generated output — icons, file-type icons, AppX tiles, Store art — EXCEPT the NSIS
+# build/ is generated output (icons, file-type icons, AppX tiles, Store art) EXCEPT the NSIS
 # script. `build/*` rather than `build/` so git still descends into the directory and the negation
 # below can take effect (git does not traverse an excluded directory).
 build/*
@@ -35,7 +35,7 @@ build/*
 # `npm run electron:build` cannot produce an installer at all, so a clone needs it.
 !build/installer.nsh
 
-# The AppStream metadata for the Linux packages (.deb/.rpm) — hand-authored source as well.
+# The AppStream metadata for the Linux packages (.deb/.rpm), hand-authored source as well.
 !build/com.vaguedustin.fate.metainfo.xml
 
 # Post-install scripts for the .deb/.rpm (they register the apt/dnf repositories). Source too.
@@ -56,5 +56,5 @@ flatpak/rendered/
 .flatpak-builder/
 
 # Icon artwork masters. build/ is ignored (generated), but these are the sources
-# scripts/generate-icons.mjs derives everything from — they must be tracked.
+# scripts/generate-icons.mjs derives everything from, so they must be tracked.
 !brand/

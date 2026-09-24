@@ -2,21 +2,21 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { List } from '@phosphor-icons/react';
 
 /**
- * MarkdownView — one markdown tab's pane: TOC sidebar, resizer, and the scrolling document.
+ * MarkdownView is one markdown tab's pane: TOC sidebar, resizer, and the scrolling document.
  *
  * Extracted from App.jsx when tabs arrived: each markdown tab needs its own scroll position,
  * heading cache, active-heading highlight and sidebar state, and encapsulating them here means N
  * tabs get that for free. The pane stays mounted (hidden) while inactive, so switching tabs
  * preserves scroll position exactly.
  *
- * ── Scroll performance (see AI_CONTEXT.md §5a — do not regress) ───────────────────────────────
+ * ── Scroll performance (see AI_CONTEXT.md §5a; do not regress) ───────────────────────────────
  * The rules from the single-document era carry over verbatim:
  *   - the progress bar/label are written straight to the DOM via refs, never via state;
  *   - headings are cached once per document, not queried per frame;
  *   - the active heading is compared against a ref so setState fires only on real changes,
  *     and the scroll effect must NOT depend on `activeHeading`;
  *   - one rAF in flight at a time; listener registered { passive: true }.
- * The one tab-era addition: progress writes are gated on `isActive` — the global progress bar and
+ * The one tab-era addition: progress writes are gated on `isActive`: the global progress bar and
  * "% read" belong to the visible tab, and a background tab must not fight it for the DOM node.
  */
 function MarkdownView({ doc, isActive, sidebarWidth, onSidebarWidthChange, progressBarRef, progressLabelRef }) {
@@ -31,7 +31,7 @@ function MarkdownView({ doc, isActive, sidebarWidth, onSidebarWidthChange, progr
   const isResizing = useRef(false);
 
   /*
-   * Re-evaluate the sidebar when the document's content is replaced (external reload) — the
+   * Re-evaluate the sidebar when the document's content is replaced (external reload), using the
    * render-time adjustment pattern, not an effect, so there is no flash of the stale state.
    */
   const [lastHtml, setLastHtml] = useState(doc.html);
@@ -71,7 +71,7 @@ function MarkdownView({ doc, isActive, sidebarWidth, onSidebarWidthChange, progr
 
   /*
    * Scroll progress + active-heading tracking. Runs whenever the content changes AND whenever the
-   * tab becomes active (deps below) — the latter so the global progress bar snaps to THIS tab's
+   * tab becomes active (deps below), the latter so the global progress bar snaps to THIS tab's
    * position on switch instead of showing the previous tab's number until the first scroll.
    */
   useEffect(() => {
@@ -144,13 +144,13 @@ function MarkdownView({ doc, isActive, sidebarWidth, onSidebarWidthChange, progr
   };
 
   /*
-   * Mermaid diagrams. ```mermaid fences arrive as <pre><code class="language-mermaid"> — this
+   * Mermaid diagrams. ```mermaid fences arrive as <pre><code class="language-mermaid">. This
    * effect lazily imports the mermaid renderer (its own chunk, loaded only when a document
    * actually contains a diagram, still fully offline) and swaps each fence for its SVG.
    *
    * TWO HARD-WON RULES:
    *   1. Only render while the pane is VISIBLE (`isActive` gates and re-triggers the pass).
-   *      Mermaid measures text with getBBox(), which returns zeros inside display:none — a
+   *      Mermaid measures text with getBBox(), which returns zeros inside display:none, so a
    *      background tab's diagrams failed silently and stayed as fences.
    *   2. Mark a fence done only AFTER its SVG lands (and mark failures separately). The pass
    *      mutates DOM that React owns via dangerouslySetInnerHTML; any re-render that restores the

@@ -7,15 +7,15 @@ import { tokenHighlightStyle } from '../editorTheme.js';
 import { detectLanguage } from '../languageDetect.js';
 
 /**
- * DiffView — the split view's "Diff" mode: a CodeMirror MergeView comparing the two panes'
+ * DiffView is the split view's "Diff" mode: a CodeMirror MergeView comparing the two panes'
  * buffers side by side, chunk-aligned with change highlighting.
  *
  * Read-only by design: this is a review surface. The buffers are SNAPSHOTS taken when diff mode
- * was entered — the live editors keep their state untouched underneath and everything (cursor,
+ * was entered. The live editors keep their state untouched underneath and everything (cursor,
  * undo, dirty flags) is exactly as it was when diff mode toggles off.
  *
  * Colours: the merge chunk backgrounds are styled in App.css from the status/accent tokens, and
- * syntax highlighting reuses the shared token HighlightStyle — a diff looks native in any theme.
+ * syntax highlighting reuses the shared token HighlightStyle, so a diff looks native in any theme.
  */
 function DiffView({ leftText, rightText, leftName, rightName }) {
   const hostRef = useRef(null);
