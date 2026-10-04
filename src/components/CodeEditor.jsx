@@ -1,4 +1,4 @@
-import { useEffect, useRef, useImperativeHandle, forwardRef, useCallback } from 'react';
+import { useEffect, useRef, useImperativeHandle, forwardRef, useCallback, useContext } from 'react';
 import {
   EditorView, keymap, lineNumbers, highlightActiveLineGutter, highlightSpecialChars,
   drawSelection, dropCursor, rectangularSelection, crosshairCursor, highlightActiveLine
@@ -12,9 +12,11 @@ import {
 import { linter, lintGutter } from '@codemirror/lint';
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
-import { detectLanguage } from '../languageDetect.js';
+import { detectLanguage, isJsonWithComments } from '../languageDetect.js';
 import { tokenHighlightStyle } from '../editorTheme.js';
 import { changedSpan } from '../textSpan.js';
+import { indentUnitText } from '../indentDetect.js';
+import { EditorPrefsContext } from '../editorPrefs.js';
 
 /**
  * CodeEditor: the code-file counterpart to the markdown viewer.
@@ -109,19 +111,53 @@ const lintExtensions = (lint, largeFile, nameMatched) =>
   lint && !largeFile && nameMatched ? [syntaxErrorLinter, lintGutter()] : [];
 
 /*
+ * Does this file NAME pick a language worth checking? JSON with comments (tsconfig.json,
+ * .vscode/settings.json, *.jsonc) parses with the JSON grammar, which reads every comment and
+ * trailing comma as an error, so those files are never checked.
+ */
+const lintableName = (fileName) => !!detectLanguage(fileName) && !isJsonWithComments(fileName);
+
+/*
+ * Indentation (1.14.0, M7): the width of a tab, and what one level of indentation inserts (Tab,
+ * Enter's auto-indent): a tab character or `size` spaces. See indentDetect.js.
+ */
+const indentExtensions = (useTabs, size) => [
+  EditorState.tabSize.of(size),
+  indentUnit.of(indentUnitText({ useTabs, size }))
+];
+
+/*
+ * Spell checking (Markdown Edit mode only; see editorPrefs.js). CodeMirror writes
+ * spellcheck="false" on its content element, so nothing was ever underlined; this attribute wins
+ * over that default, and the compartment flips it without rebuilding the editor.
+ */
+const spellcheckExtensions = (on) => (on ? EditorView.contentAttributes.of({ spellcheck: 'true' }) : []);
+
+/*
  * Props beyond the obvious:
  *   savedContent  the baseline text when it differs from initialContent (see "Dirty baseline")
  *   largeFile     large-file mode, fixed at mount: no lint, bracket matching, autocompletion or
  *                 selection-match highlighting, the extensions whose cost grows with the file
  *   plainText     never load a language (a Markdown file too big to render opens as plain text)
+ *   indent        the document's indentation { useTabs, size } (indentDetect.js); without it, the
+ *                 one in EditorPrefsContext, else `tabSize` spaces. Retuned live, like `wrap`.
+ *   isActive      this editor owns the status bar's Ln/Col readout: the active tab's, or the split
+ *                 pane's while that has focus. Becoming it also takes focus.
+ * Spell checking comes from EditorPrefsContext only (App enables it for Markdown Edit mode).
  */
 const CodeEditor = forwardRef(function CodeEditor(
   {
     fileName, initialContent, savedContent, wrap, tabSize, onDirtyChange, onSave, onDocChanged,
-    cursorLabelRef, isActive = true, lint = true, largeFile = false, plainText = false
+    cursorLabelRef, isActive = true, lint = true, largeFile = false, plainText = false, indent: indentProp
   },
   ref
 ) {
+  const prefs = useContext(EditorPrefsContext);
+  const indent = indentProp ?? prefs.indent ?? null;
+  const useTabs = !!indent?.useTabs;
+  const indentSize = indent?.size ?? tabSize;
+  const spellcheck = !!prefs.spellcheck;
+
   const hostRef = useRef(null);
   const viewRef = useRef(null);
   /** The baseline (a CM Text): the text last known to be on disk. Dirty = current doc ≠ this. */
@@ -133,13 +169,14 @@ const CodeEditor = forwardRef(function CodeEditor(
   const replacingRef = useRef(false);
   /*
    * Tabs: several editors stay mounted at once, but the status bar has ONE Ln/Col node. Only the
-   * visible tab may write to it; a background tab receiving a live-reload must not clobber the
-   * readout of the tab the user is looking at.
+   * editor the user is in may write to it (the active tab's, or the split pane's while it has
+   * focus); a background tab receiving a live-reload must not clobber the readout of the one the
+   * user is looking at.
    */
   const isActiveRef = useRef(isActive);
   /** Fixed at mount like largeFile; read by setLanguage after a Save As. */
   const plainTextRef = useRef(plainText);
-  /** Did the file NAME pick the language (not a content sniff)? Gates syntax checking. */
+  /** Is the file checked for syntax errors? Its NAME picked the language (see lintableName). */
   const nameMatchedRef = useRef(false);
   /** The lint inputs as last rendered, for setLanguage to reapply them under a new name. */
   const lintPropsRef = useRef({ lint, largeFile });
@@ -159,6 +196,7 @@ const CodeEditor = forwardRef(function CodeEditor(
   const wrapCompartment = useRef(new Compartment()).current;
   const tabSizeCompartment = useRef(new Compartment()).current;
   const lintCompartment = useRef(new Compartment()).current;
+  const spellcheckCompartment = useRef(new Compartment()).current;
 
   const setDirty = (dirty) => {
     if (dirty !== dirtyRef.current) {
@@ -193,7 +231,8 @@ const CodeEditor = forwardRef(function CodeEditor(
     [cursorLabelRef]
   );
 
-  /* Becoming the visible tab: reclaim the Ln/Col readout and take focus. */
+  /* Becoming the editor in use (tab switch, focus moving between split panes): reclaim the
+     Ln/Col readout and take focus. */
   useEffect(() => {
     isActiveRef.current = isActive;
     if (isActive && viewRef.current) {
@@ -203,7 +242,7 @@ const CodeEditor = forwardRef(function CodeEditor(
   }, [isActive, writeCursor]);
 
   useEffect(() => {
-    nameMatchedRef.current = !plainText && !!detectLanguage(fileName);
+    nameMatchedRef.current = !plainText && lintableName(fileName);
 
     const state = EditorState.create({
       doc: initialContent,
@@ -226,10 +265,8 @@ const CodeEditor = forwardRef(function CodeEditor(
         languageCompartment.of([]),
         lintCompartment.of(lintExtensions(lint, largeFile, nameMatchedRef.current)),
         wrapCompartment.of(wrap ? EditorView.lineWrapping : []),
-        tabSizeCompartment.of([
-          EditorState.tabSize.of(tabSize),
-          indentUnit.of(' '.repeat(tabSize))
-        ]),
+        tabSizeCompartment.of(indentExtensions(useTabs, indentSize)),
+        spellcheckCompartment.of(spellcheckExtensions(spellcheck)),
         keymap.of([
           // Save first so it wins over anything else bound to Mod-s.
           {
@@ -301,13 +338,12 @@ const CodeEditor = forwardRef(function CodeEditor(
   }, [wrap, wrapCompartment]);
 
   useEffect(() => {
-    viewRef.current?.dispatch({
-      effects: tabSizeCompartment.reconfigure([
-        EditorState.tabSize.of(tabSize),
-        indentUnit.of(' '.repeat(tabSize))
-      ])
-    });
-  }, [tabSize, tabSizeCompartment]);
+    viewRef.current?.dispatch({ effects: tabSizeCompartment.reconfigure(indentExtensions(useTabs, indentSize)) });
+  }, [useTabs, indentSize, tabSizeCompartment]);
+
+  useEffect(() => {
+    viewRef.current?.dispatch({ effects: spellcheckCompartment.reconfigure(spellcheckExtensions(spellcheck)) });
+  }, [spellcheck, spellcheckCompartment]);
 
   useEffect(() => {
     lintPropsRef.current = { lint, largeFile };
@@ -402,7 +438,7 @@ const CodeEditor = forwardRef(function CodeEditor(
        */
       setLanguage: (newFileName) => {
         if (plainTextRef.current) return;
-        nameMatchedRef.current = !!detectLanguage(newFileName);
+        nameMatchedRef.current = lintableName(newFileName);
         const { lint: lintOn, largeFile: large } = lintPropsRef.current;
         viewRef.current?.dispatch({
           effects: lintCompartment.reconfigure(lintExtensions(lintOn, large, nameMatchedRef.current))
