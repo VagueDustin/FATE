@@ -39,6 +39,8 @@ fi
 # .github/workflows/build-linux.yml); the packages themselves are the versioned release assets.
 # The signing key ships in this package as /etc/pki/rpm-gpg/RPM-GPG-KEY-fate. Written only if
 # absent; opt out entirely with `repo_add_once=false` in /etc/default/fate.
+# The file's first line is the marker after-remove-rpm.sh looks for before deleting it when the
+# package is erased (the key it names goes with the package): keep that line as it is.
 FATE_REPO=/etc/yum.repos.d/fate.repo
 FATE_DEFAULTS=/etc/default/fate
 repo_add_once=true

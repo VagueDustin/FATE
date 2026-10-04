@@ -32,6 +32,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
+    "test": "node --test",
     "preview": "vite preview",
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .\"",
     "electron:build": "vite build && electron-builder",
@@ -57,7 +58,7 @@
       "dist/**/*",
       "electron/**/*"
     ],
-    "appxManifestCreated": "scripts/escape-appx-manifest.cjs",
+    "appxManifestCreated": "scripts/appx-manifest.cjs",
     "win": {
       "icon": "build/icon.ico",
       "target": [
@@ -169,17 +170,20 @@
       "packageName": "fate",
       "priority": "optional",
       "afterInstall": "build/linux/after-install-deb.sh",
+      "afterRemove": "build/linux/after-remove-deb.sh",
       "fpm": [
         "build/com.vaguedustin.fate.metainfo.xml=/usr/share/metainfo/com.vaguedustin.fate.metainfo.xml",
-        "build/fate-archive-keyring.gpg=/usr/share/keyrings/fate-archive-keyring.gpg"
+        "build/linux/fate-archive-keyring.gpg=/usr/share/keyrings/fate-archive-keyring.gpg"
       ]
     },
     "rpm": {
       "packageName": "fate",
       "afterInstall": "build/linux/after-install-rpm.sh",
+      "afterRemove": "build/linux/after-remove-rpm.sh",
       "fpm": [
+        "--rpm-posttrans=build/linux/posttrans-rpm.sh",
         "build/com.vaguedustin.fate.metainfo.xml=/usr/share/metainfo/com.vaguedustin.fate.metainfo.xml",
-        "build/fate-archive-keyring.asc=/etc/pki/rpm-gpg/RPM-GPG-KEY-fate"
+        "build/linux/fate-archive-keyring.asc=/etc/pki/rpm-gpg/RPM-GPG-KEY-fate"
       ]
     },
     "nsis": {
