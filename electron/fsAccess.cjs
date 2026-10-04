@@ -18,11 +18,39 @@
  * was dropped, and `Open with → FATE` from a USB stick did not open anything.
  *
  * Free of Electron imports on purpose; it runs under plain node for tests.
+ *
+ * Besides `title`/`message` (an error box) and `short` (the status bar), every result carries
+ * `reason`, a few words without the file name, and `advice`, the snap remedy or null, so a
+ * summary of several failures (session restore) can list the files once and the remedy once.
  */
 const path = require('path');
 const { execFileSync } = require('child_process');
 
 const REMOVABLE_MEDIA_ROOTS = ['/media', '/run/media', '/mnt'];
+
+/**
+ * Plain words for the errors people actually hit, in place of Node's "ENOSPC: no space left on
+ * device, write". Also keeps the temporary file of an atomic save (textFiles.cjs) out of the
+ * message: it is the path in many raw messages, and means nothing to the user.
+ */
+const PLAIN_REASONS = {
+  ENOSPC: 'the disk is full',
+  EDQUOT: 'your disk quota is used up',
+  EROFS: 'the drive is read-only',
+  EBUSY: 'another program is using it',
+  ENOENT: 'it or its folder no longer exists',
+  ENOTDIR: 'it or its folder no longer exists',
+  EISDIR: 'it is a folder',
+  ENAMETOOLONG: 'the path is too long',
+  EIO: 'the drive reported a read or write error',
+  ETIMEDOUT: 'the drive did not respond',
+  EHOSTDOWN: 'the network drive is unreachable',
+  EHOSTUNREACH: 'the network drive is unreachable',
+  ENETUNREACH: 'the network drive is unreachable',
+  ENETDOWN: 'the network drive is unreachable',
+  EMFILE: 'too many files are open',
+  ENFILE: 'too many files are open'
+};
 
 /** The part of `filePath` below `root`, or null when it is not inside it. POSIX paths only. */
 function relativeWithin(root, filePath) {
@@ -46,8 +74,9 @@ function snapPlugConnected(plug) {
  * @param {string} filePath        the path that failed
  * @param {'open'|'save'} action   what FATE was doing
  * @param {object} [deps]          `env` (default process.env) and `isConnected(plug)`, for tests
- * @returns {{ title: string, message: string, short: string }}
- *   `title` and `message` suit dialog.showErrorBox; `short` is a one-liner for the status bar.
+ * @returns {{ title: string, message: string, short: string, reason: string, advice: string|null }}
+ *   `title` and `message` suit dialog.showErrorBox; `short` is a one-liner for the status bar;
+ *   `reason` and `advice` are the pieces of a multi-file summary (see the note at the top).
  */
 function describeFsError(err, filePath, action = 'open', deps = {}) {
   const env = deps.env || process.env;
@@ -71,7 +100,9 @@ function describeFsError(err, filePath, action = 'open', deps = {}) {
           `${name} is on a removable drive, and this copy of FATE is a snap. Snaps cannot reach ` +
           `removable drives until you allow it, once, in a terminal:\n\n    ${cmd}\n\n` +
           `Then ${verb} the file again.`,
-        short: `Snap cannot reach removable drives. Run: ${cmd}`
+        short: `Snap cannot reach removable drives. Run: ${cmd}`,
+        reason: 'on a removable drive the snap cannot reach yet',
+        advice: `This copy of FATE is a snap. Snaps cannot reach removable drives until you allow it, once, in a terminal:\n\n    ${cmd}`
       };
     }
 
@@ -84,7 +115,11 @@ function describeFsError(err, filePath, action = 'open', deps = {}) {
             `${name} is inside a hidden folder of your home directory (one whose name starts with ` +
             `a dot). Snap confinement does not let any snap read or write those, and no setting ` +
             `changes it.\n\nTo ${verb} files like this one, use FATE from the .deb, .rpm or AppImage instead.`,
-          short: 'Snap confinement blocks hidden files in your home folder'
+          short: 'Snap confinement blocks hidden files in your home folder',
+          reason: 'in a hidden folder of your home directory, which snaps cannot reach',
+          advice:
+            'Snap confinement does not let any snap read or write hidden folders of your home ' +
+            'directory. For files like these, use FATE from the .deb, .rpm or AppImage instead.'
         };
       }
     }
@@ -94,7 +129,11 @@ function describeFsError(err, filePath, action = 'open', deps = {}) {
       message:
         `FATE was not allowed to ${verb} ${name}.\n\n${detail}\n\nThis copy of FATE is a snap, ` +
         `which can reach your home directory (hidden files excepted) and connected removable drives only.`,
-      short: `Permission denied: ${name}`
+      short: `Permission denied: ${name}`,
+      reason: 'permission denied',
+      advice:
+        'This copy of FATE is a snap, which can reach your home directory (hidden files excepted) ' +
+        'and connected removable drives only.'
     };
   }
 
@@ -102,14 +141,19 @@ function describeFsError(err, filePath, action = 'open', deps = {}) {
     return {
       title: 'Permission denied',
       message: `FATE was not allowed to ${verb} ${name}.\n\n${detail}`,
-      short: `Permission denied: ${name}`
+      short: `Permission denied: ${name}`,
+      reason: 'permission denied',
+      advice: null
     };
   }
 
+  const plain = PLAIN_REASONS[code];
   return {
     title: action === 'save' ? 'Could not save file' : 'Could not open file',
-    message: `${name} could not be ${action === 'save' ? 'saved' : 'opened'}.\n\n${detail}`,
-    short: detail
+    message: `${name} could not be ${action === 'save' ? 'saved' : 'opened'}.\n\n${plain ? `${plain[0].toUpperCase()}${plain.slice(1)}.` : detail}`,
+    short: plain ? `Can't ${verb} ${name}: ${plain}` : detail,
+    reason: plain || detail,
+    advice: null
   };
 }
 
