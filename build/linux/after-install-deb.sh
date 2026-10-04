@@ -53,6 +53,8 @@ fi
 # .github/workflows/build-linux.yml). The signing key ships in this package as
 # /usr/share/keyrings/fate-archive-keyring.gpg. Written only if absent, so a user who deletes or
 # edits it is left alone; opt out entirely with `repo_add_once=false` in /etc/default/fate.
+# The file's first line is the marker after-remove-deb.sh looks for before deleting it when the
+# package is removed (the keyring it names goes with the package): keep that line as it is.
 FATE_SOURCES=/etc/apt/sources.list.d/fate.sources
 FATE_DEFAULTS=/etc/default/fate
 repo_add_once=true

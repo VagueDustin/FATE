@@ -15,8 +15,15 @@
 # app's own Settings → Windows page now, which deep-links into Windows Settings. The installer
 # only *registers* capabilities; it never claims a UserChoice, because Windows wouldn't honour that
 # anyway.
+#
+# BUILD_UNINSTALLER: electron-builder writes the uninstaller by compiling this script a second
+# time and RUNNING the result on the build machine, and that pass's .onInit inserts preInit too.
+# Unguarded, every build read the builder's own registry and seeded its InstallLocation, and on a
+# machine with a pre-rename FATE installed it would have run that uninstaller silently. The guard
+# empties preInit in that pass; the real installer is unchanged.
 
 !macro preInit
+!ifndef BUILD_UNINSTALLER
   SetRegView 64
 
   ; Read the remembered install location EXPLICITLY from HKLM (perMachine build), falling back to
@@ -56,6 +63,7 @@
     WriteRegExpandStr HKLM "${INSTALL_REGISTRY_KEY}" InstallLocation "$PROGRAMFILES64\VagueDustin Enterprises\FATE"
     WriteRegExpandStr HKCU "${INSTALL_REGISTRY_KEY}" InstallLocation "$PROGRAMFILES64\VagueDustin Enterprises\FATE"
   ${EndIf}
+!endif
 !macroend
 
 # ── Code-file registration ──────────────────────────────────────────────────────────────────────
@@ -86,9 +94,23 @@
   WriteRegStr SHCTX "Software\FATE\Capabilities\FileAssociations" ".${EXT}" "FATE.${EXT}"
 !macroend
 
+# Uninstall only (it uses ${isUpdated}, which exists in the uninstaller). The machine-wide entries
+# go on every run, updates included, as they always have: the new version's customInstall writes
+# them straight back. The per-user copies are the app's self-heal (ensureWindowsRegistration in
+# electron/main.cjs, one ProgId and one Open-with value per type under HKCU) and go only on a real
+# uninstall. Left behind, they still named FATE.exe after it was gone, so Windows kept offering
+# FATE and double-clicking said it couldn't find the program. During an update they must stay:
+# deleting them would break every per-type default until the new version's first launch rewrote
+# them. FATE.CodeFile is the 1.10/1.11 shared ProgId the self-heal now deletes; older profiles can
+# still have it listed.
 !macro UnregisterCodeType EXT
   DeleteRegValue SHCTX "Software\Classes\.${EXT}\OpenWithProgids" "FATE.${EXT}"
   DeleteRegKey SHCTX "Software\Classes\FATE.${EXT}"
+  ${IfNot} ${isUpdated}
+    DeleteRegValue HKCU "Software\Classes\.${EXT}\OpenWithProgids" "FATE.${EXT}"
+    DeleteRegValue HKCU "Software\Classes\.${EXT}\OpenWithProgids" "FATE.CodeFile"
+    DeleteRegKey HKCU "Software\Classes\FATE.${EXT}"
+  ${EndIf}
 !macroend
 
 # ── Retroactive repair: give .bat and .cmd back to the command processor ────────────────────────
@@ -278,13 +300,43 @@
   DeleteRegKey HKCU "Software\FATE\Capabilities"
   DeleteRegKey /ifempty HKCU "Software\FATE"
 
+  # The rest of the per-user registration, on a real uninstall only (an update keeps it; see
+  # UnregisterCodeType, which also clears the per-type ProgIds below).
+  #
+  # HKCU means ONE user here: whoever this uninstaller runs as. Elevated by an administrator who
+  # is not the person who used FATE, it is the administrator's own hive. Other accounts' hives are
+  # not loaded and can't be cleaned from here; their entries stay until FATE is installed again or
+  # they remove them, and Windows offers to pick another app when one of them is used.
+  ${IfNot} ${isUpdated}
+    # "Markdown Document" is the .md ProgId. The self-heal points its HKCU open command at FATE.exe
+    # so .md keeps opening even when the machine-wide registration is gone. The name is generic
+    # and another editor could use it too, so it goes only while the command still points into
+    # this install: "<INSTDIR>\FATE.exe" "%1". (LogicLib's == ignores case, like Windows paths.)
+    ReadRegStr $R0 HKCU "Software\Classes\Markdown Document\shell\open\command" ""
+    StrCpy $R1 '"$INSTDIR\'
+    StrLen $R2 $R1
+    StrCpy $R3 $R0 $R2
+    ${If} $R0 != ""
+    ${AndIf} $R3 == $R1
+      DeleteRegKey HKCU "Software\Classes\Markdown Document\shell\open\command"
+      DeleteRegKey /ifempty HKCU "Software\Classes\Markdown Document\shell\open"
+      DeleteRegKey /ifempty HKCU "Software\Classes\Markdown Document\shell"
+      DeleteRegKey /ifempty HKCU "Software\Classes\Markdown Document"
+    ${EndIf}
+
+    # The per-user copy of the remembered install location, which preInit seeds beside the HKLM
+    # one. electron-builder deletes only the HKLM key.
+    DeleteRegKey HKCU "${INSTALL_REGISTRY_KEY}"
+  ${EndIf}
+
   # If we were installed inside the publisher directory, remove it too, but only if empty
   # (other VagueDustin Enterprises software may live beside us).
   ${GetParent} "$INSTDIR" $R0
   RMDir "$R0"
 
-  # Per-type ProgIds and their Open-with entries. Generated block; the extension list mirrors
-  # CODE_EXTENSIONS in electron/main.cjs and src/fileKinds.js.
+  # Per-type ProgIds and their Open-with entries, machine-wide and (on a real uninstall) per-user.
+  # Generated block; the extension list mirrors CODE_EXTENSIONS in electron/main.cjs and
+  # src/fileKinds.js (test/windows-registration.test.mjs checks them against each other).
   !insertmacro UnregisterCodeType "js"
   !insertmacro UnregisterCodeType "mjs"
   !insertmacro UnregisterCodeType "cjs"

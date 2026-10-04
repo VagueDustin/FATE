@@ -46,6 +46,12 @@ apps:
     extensions: [gnome]
     plugs:
       - browser-support
+      # `home` reaches the user's non-hidden files only. Dotfiles and dot-directories in home
+      # (~/.bashrc, ~/.gitconfig, anything under ~/.config) and system files such as /etc/hosts
+      # stay out of reach of the strict snap, and opening one fails with permission denied. The
+      # personal-files and system-files interfaces would allow fixed paths, but each needs a
+      # Snap Store review per path, so the README documents the limit and points those users at
+      # the .deb, .rpm or AppImage instead.
       - home
       # Declared, but NOT connected on install: the Snap Store only auto-connects removable-media
       # once it has granted this snap an assertion (a store-requests post on forum.snapcraft.io).

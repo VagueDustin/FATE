@@ -1,11 +1,19 @@
 <#
 .SYNOPSIS
-  One-time setup: store the Microsoft Partner Center API credentials as GitHub Actions secrets so
-  the release workflow can submit each new .appx to the Microsoft Store (msstore-cli).
+  One-time setup: store the Microsoft Partner Center API credentials as GitHub Actions secrets, for
+  submitting each new .appx to the Microsoft Store from CI (msstore-cli).
 
 .DESCRIPTION
   Prompts for the five values from Partner Center and stores them as repository secrets. Nothing
-  is written to disk. Where each value comes from:
+  is written to disk.
+
+  No workflow uses these secrets yet: Build Windows (.github/workflows/build-windows.yml) builds
+  the .appx and keeps it on the run, and the submission is made by hand in Partner Center. This
+  script prepares the credentials for a submission step; it does not add one.
+
+  Works in Windows PowerShell 5.1 (the `powershell` command below) and in PowerShell 7.
+
+  Where each value comes from:
 
     Tenant ID, Client ID, Client secret
         Partner Center -> Settings (gear) -> Account settings -> User management ->
@@ -30,8 +38,14 @@ param(
 $ErrorActionPreference = 'Stop'
 
 if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { throw 'gh is not installed or not on PATH.' }
+# Windows PowerShell 5.1 turns a redirected native command's stderr into a terminating error while
+# ErrorActionPreference is Stop, so a logged-out gh would end the script with its own message
+# instead of this one. Judge gh by its exit code.
+$ErrorActionPreference = 'Continue'
 gh auth status *> $null
-if ($LASTEXITCODE -ne 0) { throw "gh is not logged in: run 'gh auth login' first." }
+$ghLoggedIn = ($LASTEXITCODE -eq 0)
+$ErrorActionPreference = 'Stop'
+if (-not $ghLoggedIn) { throw "gh is not logged in: run 'gh auth login' first." }
 
 function Read-Guid([string]$label) {
   while ($true) {
@@ -55,16 +69,32 @@ $storeId  = (Read-Host 'Store ID of FATE (starts with 9N)').Trim()
 if ($sellerId -notmatch '^\d+$') { throw 'Seller ID should be all digits.' }
 if ($storeId -notmatch '^9[A-Z0-9]{11}$') { throw 'Store ID should be 12 characters starting with 9, e.g. 9NBLGGH4R315.' }
 
-$clientSecret = ConvertFrom-SecureString -SecureString $secure -AsPlainText
+# ConvertFrom-SecureString -AsPlainText exists only in PowerShell 7; the BSTR round trip works in
+# 5.1 as well. The unmanaged copy is zeroed and freed straight away.
+$bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+try {
+  $clientSecret = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+} finally {
+  [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+}
 if ([string]::IsNullOrWhiteSpace($clientSecret)) { throw 'Client secret was empty.' }
 
+# A failing native command does not stop the script by itself, so each one is checked: the
+# message at the end must not claim secrets that were never stored.
+$failed = @()
 gh secret set PARTNER_CENTER_TENANT_ID     --repo $Repo --body $tenantId
+if ($LASTEXITCODE -ne 0) { $failed += 'PARTNER_CENTER_TENANT_ID' }
 gh secret set PARTNER_CENTER_CLIENT_ID     --repo $Repo --body $clientId
+if ($LASTEXITCODE -ne 0) { $failed += 'PARTNER_CENTER_CLIENT_ID' }
 $clientSecret | gh secret set PARTNER_CENTER_CLIENT_SECRET --repo $Repo
+if ($LASTEXITCODE -ne 0) { $failed += 'PARTNER_CENTER_CLIENT_SECRET' }
 gh secret set PARTNER_CENTER_SELLER_ID     --repo $Repo --body $sellerId
+if ($LASTEXITCODE -ne 0) { $failed += 'PARTNER_CENTER_SELLER_ID' }
 gh secret set MSSTORE_APP_ID               --repo $Repo --body $storeId
+if ($LASTEXITCODE -ne 0) { $failed += 'MSSTORE_APP_ID' }
 $clientSecret = $null
+if ($failed.Count -gt 0) { throw "gh could not store $($failed -join ', ') on $Repo. Run the script again." }
 
 Write-Host ''
 Write-Host "Stored PARTNER_CENTER_TENANT_ID, PARTNER_CENTER_CLIENT_ID, PARTNER_CENTER_CLIENT_SECRET, PARTNER_CENTER_SELLER_ID and MSSTORE_APP_ID on $Repo." -ForegroundColor Green
-Write-Host 'The release workflow will submit each new .appx to the Microsoft Store from now on.'
+Write-Host 'No workflow submits to the Microsoft Store yet. Until one does, upload the .appx from the Build Windows run in Partner Center.'
