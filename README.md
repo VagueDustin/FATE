@@ -153,9 +153,14 @@ sudo curl -fsSL -o /etc/yum.repos.d/fate.repo https://github.com/VagueDustin/FAT
 sudo dnf install fate
 ```
 
-**Arch / Manjaro / EndeavourOS / CachyOS.** Install `fate-editor-bin` from the AUR with any AUR helper,
-for example `paru -S fate-editor-bin`. It repackages the released `.deb`, and the AUR helper keeps it
-updated (FATE's own updater stays off). The launcher is `fate-editor`.
+**Arch / Manjaro / EndeavourOS / CachyOS.** An AUR package, `fate-editor-bin`, is on its way. Until it is
+published, build the same package from a clone of this repository:
+```bash
+cd FATE/aur
+makepkg -si
+```
+It repackages the released `.deb` and installs a `fate-editor` launcher. FATE's own updater stays off, so
+update with `git pull` and `makepkg -si` again.
 
 **Any Linux.** Download `FATE-<version>-x86_64.AppImage` from the latest release, `chmod +x` it and run
 it. It updates itself. AppImages need FUSE 2, which some distributions no longer install by default:
