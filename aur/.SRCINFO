@@ -1,6 +1,6 @@
 pkgbase = fate-editor-bin
 	pkgdesc = Text and code editor with tabs, split view, diffs and a live Markdown preview with KaTeX and Mermaid
-	pkgver = 1.13.3
+	pkgver = 1.13.4
 	pkgrel = 1
 	url = https://github.com/VagueDustin/FATE
 	arch = x86_64
@@ -19,12 +19,12 @@ pkgbase = fate-editor-bin
 	optdepends = libappindicator-gtk3: tray icon support
 	provides = fate-editor
 	conflicts = fate-editor
-	noextract = FATE-1.13.3-amd64.deb
+	noextract = FATE-1.13.4-amd64.deb
 	options = !strip
 	options = !debug
-	source = FATE-1.13.3-amd64.deb::https://github.com/VagueDustin/FATE/releases/download/v1.13.3/FATE-1.13.3-amd64.deb
-	source = LICENSE-1.13.3::https://raw.githubusercontent.com/VagueDustin/FATE/v1.13.3/LICENSE
-	sha256sums = cc1b96e9d79362295d4d65ccc2b8d4d6328cde3488e41bf6d1f11ba506cd8be3
+	source = FATE-1.13.4-amd64.deb::https://github.com/VagueDustin/FATE/releases/download/v1.13.4/FATE-1.13.4-amd64.deb
+	source = LICENSE-1.13.4::https://raw.githubusercontent.com/VagueDustin/FATE/v1.13.4/LICENSE
+	sha256sums = 6c8f48f9877f09601c8956d90364b975a32d7f889b3f14ca444a93feaa3997b5
 	sha256sums = 0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0
 
 pkgname = fate-editor-bin

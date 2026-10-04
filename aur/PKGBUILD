@@ -6,7 +6,7 @@
 
 pkgname=fate-editor-bin
 _pkgname=fate-editor
-pkgver=1.13.3
+pkgver=1.13.4
 pkgrel=1
 pkgdesc='Text and code editor with tabs, split view, diffs and a live Markdown preview with KaTeX and Mermaid'
 arch=('x86_64')
@@ -31,7 +31,7 @@ options=('!strip' '!debug')
 source=("FATE-${pkgver}-amd64.deb::${url}/releases/download/v${pkgver}/FATE-${pkgver}-amd64.deb"
         "LICENSE-${pkgver}::https://raw.githubusercontent.com/VagueDustin/FATE/v${pkgver}/LICENSE")
 noextract=("FATE-${pkgver}-amd64.deb")
-sha256sums=('cc1b96e9d79362295d4d65ccc2b8d4d6328cde3488e41bf6d1f11ba506cd8be3'
+sha256sums=('6c8f48f9877f09601c8956d90364b975a32d7f889b3f14ca444a93feaa3997b5'
             '0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0')
 
 prepare() {
@@ -55,14 +55,9 @@ package() {
   install -d "$pkgdir/usr/bin"
   ln -s "/opt/$_pkgname/FATE" "$pkgdir/usr/bin/$_pkgname"
 
-  # Desktop entry: point Exec at the launcher. The two seds mirror the upstream desktop-entry fix
-  # (VagueDustin/FATE#17) and can be dropped once a release includes it.
+  # Desktop entry: point Exec at the launcher.
   install -Dm644 root/usr/share/applications/FATE.desktop "$pkgdir/usr/share/applications/FATE.desktop"
-  sed -i \
-    -e "s|^Exec=.*|Exec=/usr/bin/$_pkgname %U|" \
-    -e 's|^StartupWMClass=.*|StartupWMClass=fate-markdown-viewer|' \
-    -e 's|image/svg+xml;||' \
-    "$pkgdir/usr/share/applications/FATE.desktop"
+  sed -i "s|^Exec=.*|Exec=/usr/bin/$_pkgname %U|" "$pkgdir/usr/share/applications/FATE.desktop"
 
   cp -a root/usr/share/icons "$pkgdir/usr/share/"
   install -Dm644 root/usr/share/metainfo/com.vaguedustin.fate.metainfo.xml -t "$pkgdir/usr/share/metainfo/"

@@ -14,8 +14,10 @@ unrelated project.
    ```bash
    git clone ssh://aur@aur.archlinux.org/fate-editor-bin.git
    cp PKGBUILD .SRCINFO fate-editor-bin/
-   cd fate-editor-bin && git add PKGBUILD .SRCINFO && git commit -m "Initial release: 1.13.3" && git push
+   cd fate-editor-bin && git add PKGBUILD .SRCINFO && git commit -m "Initial release: 1.13.4" && git push
    ```
+3. In the main README's Install section, replace the `makepkg -si` instructions for Arch with the AUR
+   helper line (`paru -S fate-editor-bin`).
 
 ## Each release
 
@@ -28,6 +30,3 @@ makepkg --printsrcinfo > .SRCINFO
 ```
 Commit the two files here, then copy them into the AUR clone and push with a message like
 `Update to X.Y.Z`.
-
-Once a release includes the desktop-entry fix (StartupWMClass and no SVG type, #17), the two `sed`
-lines that patch `FATE.desktop` in `package()` can go.
