@@ -25,6 +25,8 @@
  * test/fileFormat.test.cjs.
  */
 
+const crypto = require('crypto');
+
 const ENCODINGS = ['utf8', 'utf16le', 'utf16be', 'windows1252'];
 const EOLS = ['\n', '\r\n', '\r'];
 
@@ -219,6 +221,14 @@ function normalizeText(text) {
 }
 
 /**
+ * A short fingerprint of a document's text, for "has the file really changed?" checks without
+ * holding a second copy of a 25 MB log. Not a security measure; collisions are irrelevant here.
+ */
+function textDigest(text) {
+  return crypto.createHash('sha1').update(text).digest('base64');
+}
+
+/**
  * Decode a file's bytes.
  *
  * Without `forcedEncoding`: a BOM decides; else UTF-16 by its NUL pattern; else strict UTF-8;
@@ -398,6 +408,7 @@ module.exports = {
   resolveFormat,
   sameFormat,
   normalizeText,
+  textDigest,
   isProbablyBinary,
   sniffUtf16
 };

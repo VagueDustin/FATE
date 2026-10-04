@@ -199,7 +199,9 @@ test('a truncated UTF-16 file with a BOM still opens', () => {
   assert.equal(text, 'ok�');
 });
 
-test('sameFormat and normalizeText', () => {
+test('sameFormat, normalizeText and textDigest', () => {
+  assert.equal(ff.textDigest('a\nb'), ff.textDigest('a\nb'));
+  assert.notEqual(ff.textDigest('a\nb'), ff.textDigest('a\nc'));
   assert.ok(ff.sameFormat({ encoding: 'utf8', bom: false, eol: '\n' }, { encoding: 'utf8', bom: false, eol: '\n' }));
   assert.ok(!ff.sameFormat({ encoding: 'utf8', bom: false, eol: '\n' }, { encoding: 'utf8', bom: false, eol: '\r\n' }));
   assert.ok(!ff.sameFormat(null, { encoding: 'utf8', bom: false, eol: '\n' }));

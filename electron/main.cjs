@@ -1059,8 +1059,7 @@ let mainWindow;
  * rendererSettings.cjs (the settings keys the renderer may touch). Required here, beside the code
  * that uses them.
  */
-const crypto = require('crypto');
-const { ENCODINGS, ENCODING_LABELS, defaultFormat, encode, resolveFormat, sameFormat, normalizeText } = require('./fileFormat.cjs');
+const { ENCODINGS, ENCODING_LABELS, defaultFormat, encode, resolveFormat, sameFormat, normalizeText, textDigest } = require('./fileFormat.cjs');
 const { readTextFile, writeFileAtomic } = require('./textFiles.cjs');
 const { createFileWatcher } = require('./fileWatch.cjs');
 const { createBackupStore } = require('./backups.cjs');
@@ -1099,10 +1098,6 @@ const CASE_INSENSITIVE_PATHS = process.platform === 'win32' || process.platform 
 function watchKey(filePath) {
   const normalized = path.normalize(filePath || '');
   return CASE_INSENSITIVE_PATHS ? normalized.toLowerCase() : normalized;
-}
-
-function textDigest(text) {
-  return crypto.createHash('sha1').update(text).digest('base64');
 }
 
 /**
