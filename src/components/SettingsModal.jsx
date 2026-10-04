@@ -1,14 +1,19 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useId } from 'react';
 import {
   X, Palette, TextAa, Code, Printer, WindowsLogo, Keyboard, Info,
   CaretDown, Check, Trash, ArrowSquareOut, CheckCircle, Plus, Copy, ArrowCounterClockwise,
-  Warning
+  Warning, MarkdownLogo
 } from '@phosphor-icons/react';
 import fateLogo from '../assets/FATE-Square-Icon.png';
-import { THEMES, PAGE_SIZES, SHORTCUT_ACTIONS, DEFAULT_SHORTCUTS, FIXED_SHORTCUTS } from '../settingsMeta.js';
+import {
+  THEMES, PAGE_SIZES, SHORTCUT_ACTIONS, DEFAULT_SHORTCUTS, FIXED_SHORTCUTS,
+  shortcutParts, formatShortcutLabel, normalizeBinding,
+  clampSidebarWidth, SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX
+} from '../settingsMeta.js';
 import { PROSE_FONTS, CODE_FONTS, fontById, systemFontEntry } from '../fonts.js';
 import { CODE_EXTENSIONS } from '../fileKinds.js';
 import { DEFAULT_CUSTOM, CUSTOM_FIELDS, customThemeCss } from '../themeCustom.js';
+import { useDialogFocus } from '../dialogFocus.js';
 
 /**
  * SettingsModal: navigation rail + content pane (1.10.0 redesign, extended in 1.11.0 with the
@@ -21,6 +26,19 @@ import { DEFAULT_CUSTOM, CUSTOM_FIELDS, customThemeCss } from '../themeCustom.js
  *   - FontPicker is a custom listbox because a native <select> cannot render each option in its
  *     own typeface.
  *   - Everything stays token-driven; no colour literal in this file or its CSS.
+ *
+ * 1.14.0:
+ *   - A real modal (dialogFocus.js): focus moves in on open, Tab stays inside, focus goes back to
+ *     the editor on close, and Escape closes Settings itself. It used to fall through to App,
+ *     which closed a diff open behind Settings first.
+ *   - Every switch, select, slider and field is named by its setting's label (aria-labelledby),
+ *     so a screen reader says "Wrap long lines, switch, off" rather than "checkbox".
+ *   - `initialSection` opens on a given page (the palette's Keyboard shortcuts command passes
+ *     'shortcuts', the About menu item 'about').
+ *   - Shortcut keycaps and hints render the live binding (shortcutParts), never a hard-coded key;
+ *     "New files (Ctrl+N)" was wrong from the day the default became Ctrl+T.
+ *   - The shortcut recorder stops when Settings closes, and Escape cancels it instead of
+ *     becoming the new binding.
  */
 
 const PROSE_SAMPLE = 'The quick brown fox jumps over the lazy dog.';
@@ -29,7 +47,12 @@ const CODE_SAMPLE = 'const sum = (a, b) => a !== b ? a + b : 0;';
 /** How many filtered system fonts to render at once; each row rasterises its own typeface. */
 const SYSTEM_FONT_LIMIT = 30;
 
-function FontPicker({ value, options, onChange, mono, systemFonts = [] }) {
+/**
+ * `labelledBy` is the id of the setting's label: the button reads as "Code font, Fira Code" (the
+ * label, then the current font) instead of just the font's name.
+ */
+function FontPicker({ value, options, onChange, mono, systemFonts = [], labelledBy }) {
+  const currentId = useId();
   const [open, setOpen] = useState(false);
   /* Opens UPWARD when the button sits low in the viewport. The list is absolutely positioned
      inside the modal's scroll pane, so opening down near the bottom clipped it (user-reported). */
@@ -110,9 +133,10 @@ function FontPicker({ value, options, onChange, mono, systemFonts = [] }) {
         onClick={toggleOpen}
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-labelledby={labelledBy ? `${labelledBy} ${currentId}` : undefined}
         style={{ fontFamily: current.stack }}
       >
-        <span className="fp-current">{current.label}</span>
+        <span className="fp-current" id={currentId}>{current.label}</span>
         <CaretDown size={13} weight="bold" className={`fp-caret ${open ? 'up' : ''}`} />
       </button>
 
@@ -123,6 +147,7 @@ function FontPicker({ value, options, onChange, mono, systemFonts = [] }) {
               ref={filterRef}
               className="fp-filter"
               placeholder={`Search ${systemFonts.length + options.length} fonts…`}
+              aria-label="Search fonts"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => {
@@ -137,7 +162,7 @@ function FontPicker({ value, options, onChange, mono, systemFonts = [] }) {
             />
           )}
 
-          <ul role="listbox">
+          <ul role="listbox" aria-labelledby={labelledBy}>
             {bundled.length > 0 && <li className="fp-section">Bundled with FATE</li>}
             {bundled.map(renderOption)}
 
@@ -161,9 +186,10 @@ function FontPicker({ value, options, onChange, mono, systemFonts = [] }) {
 }
 
 function SizeSlider({ label, value, min, max, suffix = 'px', onChange }) {
+  const labelId = useId();
   return (
     <div className="setting-item">
-      <span className="setting-label">{label}</span>
+      <span className="setting-label" id={labelId}>{label}</span>
       <span className="size-slider">
         <input
           type="range"
@@ -171,6 +197,8 @@ function SizeSlider({ label, value, min, max, suffix = 'px', onChange }) {
           max={max}
           step={1}
           value={value}
+          aria-labelledby={labelId}
+          aria-valuetext={`${value}${suffix}`}
           onChange={(e) => onChange(parseInt(e.target.value, 10))}
         />
         <span className="size-readout">{value}{suffix}</span>
@@ -179,13 +207,87 @@ function SizeSlider({ label, value, min, max, suffix = 'px', onChange }) {
   );
 }
 
-/** Pretty-print a stored binding ("Control+Shift+S" → chips). */
+/**
+ * The toggle switch, named by its setting's label (`labelledBy`, an element id) and optionally
+ * described by its hint. role="switch" so it is announced as on/off rather than as a checkbox.
+ */
+function Switch({ checked, onChange, labelledBy, describedBy, disabled }) {
+  return (
+    <label className="switch">
+      <input
+        type="checkbox"
+        role="switch"
+        checked={checked}
+        disabled={disabled}
+        aria-labelledby={labelledBy}
+        aria-describedby={describedBy}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+      <span className="slider" aria-hidden="true"></span>
+    </label>
+  );
+}
+
+/**
+ * Pretty-print a stored binding ("Control+Shift+S" → chips). Through shortcutParts, which knows
+ * the stored format: splitting on "+" here broke on a binding of the + key itself.
+ */
 function BindingChips({ binding }) {
-  const parts = (binding || '').split('+').map((p) => (p === 'Control' ? 'Ctrl' : p));
   return (
     <span className="kbd-group">
-      {parts.map((p, i) => <kbd key={i}>{p}</kbd>)}
+      {shortcutParts(binding).map((p, i) => <kbd key={i}>{p}</kbd>)}
     </span>
+  );
+}
+
+/** A live binding inside running text: <code>Ctrl</code>+<code>T</code>. */
+function InlineBinding({ binding }) {
+  return shortcutParts(binding).map((p, i) => (
+    <span key={i}>{i > 0 && '+'}<code>{p}</code></span>
+  ));
+}
+
+/**
+ * Default sidebar width. Up to 1.13 every keystroke saved straight to the store with no bounds,
+ * so typing "450" saved 4, then 45, then 450, and the contents sidebar of every open document
+ * jumped to 4 px wide on the way. Now the field keeps a draft while you type and commits on blur
+ * or Enter, clamped to 200–600; Escape puts the saved value back. Input that isn't a number
+ * (an empty field, a lone "-") is ignored.
+ */
+function SidebarWidthField({ value, onCommit, labelledBy, describedBy }) {
+  const [draft, setDraft] = useState(null);
+
+  const commit = () => {
+    if (draft === null) return;
+    setDraft(null);
+    const n = parseInt(draft, 10);
+    if (!Number.isFinite(n)) return;
+    const width = clampSidebarWidth(n);
+    if (width !== value) onCommit(width);
+  };
+
+  return (
+    <input
+      type="number"
+      min={SIDEBAR_WIDTH_MIN}
+      max={SIDEBAR_WIDTH_MAX}
+      step={10}
+      value={draft ?? value}
+      aria-labelledby={labelledBy}
+      aria-describedby={describedBy}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commit();
+        } else if (e.key === 'Escape' && draft !== null) {
+          // First Escape reverts the edit; the next one closes Settings.
+          e.preventDefault();
+          setDraft(null);
+        }
+      }}
+    />
   );
 }
 
@@ -200,9 +302,19 @@ function SettingsModal({
   setActiveShortcutRebind,
   onSidebarWidthChange,
   runtimeInfo,
-  systemFonts
+  systemFonts,
+  initialSection = 'appearance'
 }) {
-  const [section, setSection] = useState('appearance');
+  const [section, setSection] = useState(initialSection || 'appearance');
+  /*
+   * A new initialSection while open (About chosen from the menu with Settings already up) moves
+   * to that page. Render-time adjustment rather than an effect, like CommandPalette's query.
+   */
+  const [lastInitialSection, setLastInitialSection] = useState(initialSection);
+  if (lastInitialSection !== initialSection) {
+    setLastInitialSection(initialSection);
+    if (initialSection) setSection(initialSection);
+  }
   const [coverage, setCoverage] = useState(null);
   const [repairBusy, setRepairBusy] = useState(false);
   const [repairResult, setRepairResult] = useState(null);
@@ -220,11 +332,47 @@ function SettingsModal({
     { id: 'appearance', label: 'Appearance', icon: Palette },
     { id: 'fonts', label: 'Fonts', icon: TextAa },
     { id: 'editor', label: 'Code Editor', icon: Code },
+    { id: 'markdown', label: 'Markdown', icon: MarkdownLogo },
     { id: 'printing', label: 'Printing', icon: Printer },
     ...(isWindows ? [{ id: 'windows', label: 'Windows', icon: WindowsLogo }] : []),
     { id: 'shortcuts', label: 'Shortcuts', icon: Keyboard },
     { id: 'about', label: 'About', icon: Info }
   ];
+  // An unknown or unavailable page (Windows, off Windows) opens Appearance instead.
+  const current = sections.some((s) => s.id === section) ? section : 'appearance';
+
+  /*
+   * Ids for aria-labelledby/aria-describedby: each control is named by its setting's visible
+   * label rather than by a second, hidden copy of the text.
+   */
+  const uid = useId();
+  const idFor = (key) => `${uid}-${key}`;
+
+  const platform = window.electronAPI?.platform;
+  // Until App stores them, fall back to the 1.14.0 defaults (see the settings contract).
+  const spellcheckOn = typeof settings.spellcheck === 'boolean' ? settings.spellcheck : platform === 'win32';
+  const remoteImagesOn = settings.remoteImages === true;
+
+  /* ── Modal focus: in on open, trapped while open, back to the editor on close ─────────────── */
+  const dialogRef = useRef(null);
+  useDialogFocus(dialogRef, {
+    initialFocus: () => dialogRef.current?.querySelector('.settings-nav-item.active'),
+    // While a binding is recording, Escape cancels it (and is not recorded); otherwise it closes.
+    onEscape: () => (activeShortcutRebind ? setActiveShortcutRebind(null) : onClose()),
+    // Tab may be part of the shortcut being recorded, so the recorder must get it.
+    trapTab: !activeShortcutRebind
+  });
+
+  /*
+   * Closing Settings stops the recorder. Up to 1.13 it stayed armed after Settings closed, and the
+   * next key typed anywhere, even a plain letter in the editor, became that action's shortcut.
+   * The latest setter is read through a ref so the cleanup runs once, on unmount.
+   */
+  const stopRecordingRef = useRef(setActiveShortcutRebind);
+  useEffect(() => {
+    stopRecordingRef.current = setActiveShortcutRebind;
+  });
+  useEffect(() => () => stopRecordingRef.current?.(null), []);
 
   const refreshCoverage = () => {
     if (window.electronAPI?.getAssociationCoverage) {
@@ -245,8 +393,8 @@ function SettingsModal({
 
   /* Association coverage runs a registry sweep, fetched only when its section opens. */
   useEffect(() => {
-    if (section === 'windows') refreshCoverage();
-  }, [section]);
+    if (current === 'windows') refreshCoverage();
+  }, [current]);
 
   const repairTypes = async () => {
     setRepairBusy(true);
@@ -271,12 +419,16 @@ function SettingsModal({
     setFonts({ perType: next });
   };
 
-  /* Duplicate bindings, flagged inline rather than silently letting first-match win. */
+  /*
+   * Duplicate bindings, flagged inline rather than silently letting first-match win. Compared in
+   * normalized form, so "Control+k" and "Control+K" (or a legacy "Control++" and "Control+Plus")
+   * count as the same binding.
+   */
   const conflicts = useMemo(() => {
     const seen = {};
     const dupes = new Set();
     for (const { id } of SHORTCUT_ACTIONS) {
-      const b = settings.shortcuts[id];
+      const b = normalizeBinding(settings.shortcuts[id]);
       if (!b) continue;
       if (seen[b]) {
         dupes.add(b);
@@ -285,6 +437,7 @@ function SettingsModal({
     }
     return dupes;
   }, [settings.shortcuts]);
+  const isConflicted = (id) => conflicts.has(normalizeBinding(settings.shortcuts[id]));
 
   const saveCustomTheme = () => {
     updateSetting('customTheme', customDraft);
@@ -309,17 +462,26 @@ function SettingsModal({
 
   return (
     <div className="settings-modal-backdrop" onClick={onClose}>
-      <div className="settings-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Settings">
+      <div
+        ref={dialogRef}
+        className="settings-modal"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={idFor('title')}
+        tabIndex={-1}
+      >
         <nav className="settings-nav" aria-label="Settings sections">
           <div className="settings-nav-title">
-            <h2>Settings</h2>
+            <h2 id={idFor('title')}>Settings</h2>
           </div>
           {sections.map((s) => {
             const Icon = s.icon;
             return (
               <button
                 key={s.id}
-                className={`settings-nav-item ${section === s.id ? 'active' : ''}`}
+                className={`settings-nav-item ${current === s.id ? 'active' : ''}`}
+                aria-current={current === s.id ? 'page' : undefined}
                 onClick={() => setSection(s.id)}
               >
                 <Icon size={16} weight="duotone" />
@@ -334,15 +496,15 @@ function SettingsModal({
 
         <div className="settings-content">
           <div className="settings-content-head">
-            <h3 className="section-label">{sections.find((s) => s.id === section)?.label}</h3>
-            <button className="icon-btn" onClick={onClose} title="Close (Esc)">
+            <h3 className="section-label">{sections.find((s) => s.id === current)?.label}</h3>
+            <button className="icon-btn" onClick={onClose} title="Close (Esc)" aria-label="Close settings">
               <X size={18} weight="bold" />
             </button>
           </div>
 
           <div className="settings-body">
             {/* ── APPEARANCE ─────────────────────────────────────────────────────────────── */}
-            {section === 'appearance' && (
+            {current === 'appearance' && (
               <>
                 <div className="setting-group">
                   <span className="group-caption">Theme</span>
@@ -433,60 +595,60 @@ function SettingsModal({
 
                 <div className="setting-group">
                   <span className="group-caption">Layout &amp; startup</span>
-                  <div className="setting-item">
-                    <span className="setting-label">Default sidebar width</span>
-                    <input
-                      type="number"
-                      min="150"
-                      max="800"
+                  <div className="setting-item setting-item-stacked">
+                    <div className="setting-label-block">
+                      <span className="setting-label" id={idFor('sidebar')}>Default sidebar width</span>
+                      <span className="setting-hint" id={idFor('sidebar-hint')}>
+                        Width of a Markdown document&apos;s contents sidebar, from {SIDEBAR_WIDTH_MIN} to{' '}
+                        {SIDEBAR_WIDTH_MAX} pixels.
+                      </span>
+                    </div>
+                    <SidebarWidthField
                       value={settings.sidebarWidth}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value, 10);
-                        if (Number.isFinite(val)) {
-                          updateSetting('sidebarWidth', val);
-                          onSidebarWidthChange(val);
-                        }
+                      labelledBy={idFor('sidebar')}
+                      describedBy={idFor('sidebar-hint')}
+                      onCommit={(width) => {
+                        updateSetting('sidebarWidth', width);
+                        onSidebarWidthChange(width);
                       }}
                     />
                   </div>
                   <div className="setting-item setting-item-stacked">
                     <div className="setting-label-block">
-                      <span className="setting-label">Reopen last session&apos;s tabs on launch</span>
-                      <span className="setting-hint">
+                      <span className="setting-label" id={idFor('restore')}>Reopen last session&apos;s tabs on launch</span>
+                      <span className="setting-hint" id={idFor('restore-hint')}>
                         Off means FATE closes your tabs when you quit and starts on the home screen
                         next time, without keeping the list of what you had open. Either way, quitting
                         with unsaved work asks you to save or discard it first, tab by tab.
                       </span>
                     </div>
-                    <label className="switch">
-                      <input
-                        type="checkbox"
-                        checked={settings.restoreSession}
-                        onChange={(e) => updateSetting('restoreSession', e.target.checked)}
-                      />
-                      <span className="slider"></span>
-                    </label>
+                    <Switch
+                      checked={settings.restoreSession}
+                      onChange={(v) => updateSetting('restoreSession', v)}
+                      labelledBy={idFor('restore')}
+                      describedBy={idFor('restore-hint')}
+                    />
                   </div>
                 </div>
               </>
             )}
 
             {/* ── FONTS ──────────────────────────────────────────────────────────────────── */}
-            {section === 'fonts' && (
+            {current === 'fonts' && (
               <>
                 <div className="setting-group">
                   <span className="group-caption">Interface</span>
                   <div className="setting-item">
-                    <span className="setting-label">Application font</span>
-                    <FontPicker systemFonts={systemFonts} value={fonts.ui} options={PROSE_FONTS} onChange={(id) => setFonts({ ui: id })} />
+                    <span className="setting-label" id={idFor('font-ui')}>Application font</span>
+                    <FontPicker labelledBy={idFor('font-ui')} systemFonts={systemFonts} value={fonts.ui} options={PROSE_FONTS} onChange={(id) => setFonts({ ui: id })} />
                   </div>
                 </div>
 
                 <div className="setting-group">
                   <span className="group-caption">Markdown documents</span>
                   <div className="setting-item">
-                    <span className="setting-label">Document font</span>
-                    <FontPicker systemFonts={systemFonts} value={fonts.markdown} options={PROSE_FONTS} onChange={(id) => setFonts({ markdown: id })} />
+                    <span className="setting-label" id={idFor('font-md')}>Document font</span>
+                    <FontPicker labelledBy={idFor('font-md')} systemFonts={systemFonts} value={fonts.markdown} options={PROSE_FONTS} onChange={(id) => setFonts({ markdown: id })} />
                   </div>
                   <SizeSlider label="Document text size" value={fonts.markdownSize} min={12} max={22} onChange={(v) => setFonts({ markdownSize: v })} />
                 </div>
@@ -494,16 +656,17 @@ function SettingsModal({
                 <div className="setting-group">
                   <span className="group-caption">Code</span>
                   <div className="setting-item">
-                    <span className="setting-label">Code font</span>
-                    <FontPicker mono systemFonts={systemFonts} value={fonts.code} options={CODE_FONTS} onChange={(id) => setFonts({ code: id })} />
+                    <span className="setting-label" id={idFor('font-code')}>Code font</span>
+                    <FontPicker mono labelledBy={idFor('font-code')} systemFonts={systemFonts} value={fonts.code} options={CODE_FONTS} onChange={(id) => setFonts({ code: id })} />
                   </div>
                   <SizeSlider label="Editor text size" value={fonts.editorSize} min={10} max={20} onChange={(v) => setFonts({ editorSize: v })} />
                   <div className="setting-item">
-                    <span className="setting-label">Font ligatures</span>
-                    <label className="switch">
-                      <input type="checkbox" checked={fonts.ligatures} onChange={(e) => setFonts({ ligatures: e.target.checked })} />
-                      <span className="slider"></span>
-                    </label>
+                    <span className="setting-label" id={idFor('ligatures')}>Font ligatures</span>
+                    <Switch
+                      checked={fonts.ligatures}
+                      onChange={(v) => setFonts({ ligatures: v })}
+                      labelledBy={idFor('ligatures')}
+                    />
                   </div>
                 </div>
 
@@ -516,9 +679,10 @@ function SettingsModal({
 
                   {overrides.map(([ext, fontId]) => (
                     <div className="override-row" key={ext}>
-                      <code className="override-ext">.{ext}</code>
+                      <code className="override-ext" id={idFor(`override-${ext}`)}>.{ext}</code>
                       <FontPicker
-                      systemFonts={systemFonts}
+                        labelledBy={idFor(`override-${ext}`)}
+                        systemFonts={systemFonts}
                         mono
                         value={fontId}
                         options={CODE_FONTS}
@@ -547,18 +711,23 @@ function SettingsModal({
             )}
 
             {/* ── CODE EDITOR ────────────────────────────────────────────────────────────── */}
-            {section === 'editor' && (
+            {current === 'editor' && (
               <div className="setting-group">
                 <div className="setting-item">
-                  <span className="setting-label">Wrap long lines</span>
-                  <label className="switch">
-                    <input type="checkbox" checked={settings.editorWrap} onChange={(e) => updateSetting('editorWrap', e.target.checked)} />
-                    <span className="slider"></span>
-                  </label>
+                  <span className="setting-label" id={idFor('wrap')}>Wrap long lines</span>
+                  <Switch
+                    checked={settings.editorWrap}
+                    onChange={(v) => updateSetting('editorWrap', v)}
+                    labelledBy={idFor('wrap')}
+                  />
                 </div>
                 <div className="setting-item">
-                  <span className="setting-label">Indent size</span>
-                  <select value={settings.editorTabSize} onChange={(e) => updateSetting('editorTabSize', parseInt(e.target.value, 10))}>
+                  <span className="setting-label" id={idFor('indent')}>Indent size</span>
+                  <select
+                    value={settings.editorTabSize}
+                    onChange={(e) => updateSetting('editorTabSize', parseInt(e.target.value, 10))}
+                    aria-labelledby={idFor('indent')}
+                  >
                     <option value={2}>2 spaces</option>
                     <option value={4}>4 spaces</option>
                     <option value={8}>8 spaces</option>
@@ -566,8 +735,8 @@ function SettingsModal({
                 </div>
                 <div className="setting-item setting-item-stacked">
                   <div className="setting-label-block">
-                    <span className="setting-label">Highlight syntax errors</span>
-                    <span className="setting-hint">
+                    <span className="setting-label" id={idFor('lint')}>Highlight syntax errors</span>
+                    <span className="setting-hint" id={idFor('lint-hint')}>
                       Underlines code the language parser can&apos;t make sense of (missing
                       brackets, unclosed strings, stray tokens), with a marker in the gutter.
                       Works for languages with structural parsers (JavaScript, TypeScript, HTML,
@@ -575,14 +744,12 @@ function SettingsModal({
                       rather than guessing.
                     </span>
                   </div>
-                  <label className="switch">
-                    <input
-                      type="checkbox"
-                      checked={settings.editorLint}
-                      onChange={(e) => updateSetting('editorLint', e.target.checked)}
-                    />
-                    <span className="slider"></span>
-                  </label>
+                  <Switch
+                    checked={settings.editorLint}
+                    onChange={(v) => updateSetting('editorLint', v)}
+                    labelledBy={idFor('lint')}
+                    describedBy={idFor('lint-hint')}
+                  />
                 </div>
                 <div className="setting-item setting-item-stacked">
                   <div className="setting-label-block">
@@ -590,31 +757,87 @@ function SettingsModal({
                     <span className="setting-hint">
                       Code files open straight into the editor; markdown opens in the reading view
                       with an <code>Edit</code> button (and live preview) in the header. New files
-                      (<code>Ctrl</code>+<code>N</code>) save as any supported format. Fonts live in
-                      the Fonts section; every shortcut is rebindable under Shortcuts.
+                      (<InlineBinding binding={settings.shortcuts.newFile} />) save as any supported
+                      format. Fonts live in the Fonts section; every shortcut is rebindable under
+                      Shortcuts.
                     </span>
                   </div>
                 </div>
               </div>
             )}
 
+            {/* ── MARKDOWN (1.14.0) ──────────────────────────────────────────────────────────
+                 Spell check and remote images: both are about what leaves the machine, so each
+                 hint says plainly what turning it on sends where. */}
+            {current === 'markdown' && (
+              <>
+                <div className="setting-group">
+                  <span className="group-caption">Editing</span>
+                  <div className="setting-item setting-item-stacked">
+                    <div className="setting-label-block">
+                      <span className="setting-label" id={idFor('spellcheck')}>Spell check while editing Markdown</span>
+                      <span className="setting-hint" id={idFor('spellcheck-hint')}>
+                        Underlines misspelled words in Edit mode.
+                        {platform === 'linux' && (
+                          <> Turning it on downloads a dictionary from Google once.</>
+                        )}
+                      </span>
+                    </div>
+                    <Switch
+                      checked={spellcheckOn}
+                      onChange={(v) => updateSetting('spellcheck', v)}
+                      labelledBy={idFor('spellcheck')}
+                      describedBy={idFor('spellcheck-hint')}
+                    />
+                  </div>
+                </div>
+
+                <div className="setting-group">
+                  <span className="group-caption">Privacy</span>
+                  <div className="setting-item setting-item-stacked">
+                    <div className="setting-label-block">
+                      <span className="setting-label" id={idFor('remote-images')}>
+                        Load images from the internet in Markdown documents
+                      </span>
+                      <span className="setting-hint" id={idFor('remote-images-hint')}>
+                        Off by default for privacy: loading a remote image tells its server that
+                        you opened the document, and when. Images stored on this computer are not
+                        affected.
+                      </span>
+                    </div>
+                    <Switch
+                      checked={remoteImagesOn}
+                      onChange={(v) => updateSetting('remoteImages', v)}
+                      labelledBy={idFor('remote-images')}
+                      describedBy={idFor('remote-images-hint')}
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
             {/* ── PRINTING ───────────────────────────────────────────────────────────────── */}
-            {section === 'printing' && (
+            {current === 'printing' && (
               <div className="setting-group">
                 <div className="setting-item">
-                  <span className="setting-label">Paper size</span>
-                  <select value={settings.printPageSize} onChange={(e) => updateSetting('printPageSize', e.target.value)}>
+                  <span className="setting-label" id={idFor('paper')}>Paper size</span>
+                  <select
+                    value={settings.printPageSize}
+                    onChange={(e) => updateSetting('printPageSize', e.target.value)}
+                    aria-labelledby={idFor('paper')}
+                  >
                     {PAGE_SIZES.map((p) => (
                       <option key={p.value} value={p.value}>{p.label}</option>
                     ))}
                   </select>
                 </div>
                 <div className="setting-item">
-                  <span className="setting-label">Landscape</span>
-                  <label className="switch">
-                    <input type="checkbox" checked={settings.printLandscape} onChange={(e) => updateSetting('printLandscape', e.target.checked)} />
-                    <span className="slider"></span>
-                  </label>
+                  <span className="setting-label" id={idFor('landscape')}>Landscape</span>
+                  <Switch
+                    checked={settings.printLandscape}
+                    onChange={(v) => updateSetting('printLandscape', v)}
+                    labelledBy={idFor('landscape')}
+                  />
                 </div>
                 <div className="setting-item setting-item-stacked">
                   <div className="setting-label-block">
@@ -631,7 +854,7 @@ function SettingsModal({
             )}
 
             {/* ── WINDOWS ────────────────────────────────────────────────────────────────── */}
-            {section === 'windows' && isWindows && (
+            {current === 'windows' && isWindows && (
               <>
                 <div className="setting-group">
                   <span className="group-caption">Markdown default</span>
@@ -740,16 +963,13 @@ function SettingsModal({
                     </div>
                   </div>
                   <div className="setting-item">
-                    <span className="setting-label">Always show full context menus</span>
-                    <label className="switch">
-                      <input
-                        type="checkbox"
-                        checked={classicMenu === true}
-                        disabled={classicMenu === null}
-                        onChange={(e) => toggleClassicMenu(e.target.checked)}
-                      />
-                      <span className="slider"></span>
-                    </label>
+                    <span className="setting-label" id={idFor('classic-menu')}>Always show full context menus</span>
+                    <Switch
+                      checked={classicMenu === true}
+                      disabled={classicMenu === null}
+                      onChange={toggleClassicMenu}
+                      labelledBy={idFor('classic-menu')}
+                    />
                   </div>
                   {explorerRestartNeeded && (
                     <div className="setting-item setting-item-stacked">
@@ -776,7 +996,7 @@ function SettingsModal({
             )}
 
             {/* ── SHORTCUTS ──────────────────────────────────────────────────────────────── */}
-            {section === 'shortcuts' && (
+            {current === 'shortcuts' && (
               <>
                 <div className="setting-group">
                   <div className="shortcuts-head">
@@ -796,21 +1016,33 @@ function SettingsModal({
                       higher in this list wins. Rebind one of them.
                     </p>
                   )}
-                  {SHORTCUT_ACTIONS.map((a) => (
-                    <div className="setting-item" key={a.id}>
-                      <span className={`setting-label ${conflicts.has(settings.shortcuts[a.id]) ? 'conflicted' : ''}`}>
-                        {a.label}
-                      </span>
-                      <button
-                        className={`shortcut-btn ${activeShortcutRebind === a.id ? 'recording' : ''} ${conflicts.has(settings.shortcuts[a.id]) ? 'conflicted' : ''}`}
-                        onClick={() => setActiveShortcutRebind(activeShortcutRebind === a.id ? null : a.id)}
-                      >
-                        {activeShortcutRebind === a.id
-                          ? 'Press keys…'
-                          : <BindingChips binding={settings.shortcuts[a.id]} />}
-                      </button>
-                    </div>
-                  ))}
+                  {/* Announced when recording starts, so a screen reader user knows what to press. */}
+                  <p className="setting-hint group-hint shortcut-recording-hint" role="status">
+                    {activeShortcutRebind
+                      ? 'Press the new shortcut: Ctrl or Alt with a key, or a function key (F1–F12). Esc cancels.'
+                      : ''}
+                  </p>
+                  {SHORTCUT_ACTIONS.map((a) => {
+                    const recording = activeShortcutRebind === a.id;
+                    const conflicted = isConflicted(a.id);
+                    return (
+                      <div className="setting-item" key={a.id}>
+                        <span className={`setting-label ${conflicted ? 'conflicted' : ''}`} id={idFor(`sc-${a.id}`)}>
+                          {a.label}
+                        </span>
+                        <button
+                          className={`shortcut-btn ${recording ? 'recording' : ''} ${conflicted ? 'conflicted' : ''}`}
+                          onClick={() => setActiveShortcutRebind(recording ? null : a.id)}
+                          aria-pressed={recording}
+                          aria-label={`${a.label}: ${recording ? 'press the new shortcut' : formatShortcutLabel(settings.shortcuts[a.id])}`}
+                        >
+                          {recording
+                            ? 'Press keys…'
+                            : <BindingChips binding={settings.shortcuts[a.id]} />}
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
 
                 <div className="setting-group">
@@ -828,7 +1060,7 @@ function SettingsModal({
             )}
 
             {/* ── ABOUT ──────────────────────────────────────────────────────────────────── */}
-            {section === 'about' && (
+            {current === 'about' && (
               <>
                 <div className="setting-group">
                   <span className="group-caption">Updates</span>
@@ -847,15 +1079,12 @@ function SettingsModal({
                     </div>
                   ) : (
                     <div className="setting-item">
-                      <span className="setting-label">Automatic updates</span>
-                      <label className="switch">
-                        <input
-                          type="checkbox"
-                          checked={settings.autoUpdatesEnabled}
-                          onChange={(e) => updateSetting('autoUpdatesEnabled', e.target.checked)}
-                        />
-                        <span className="slider"></span>
-                      </label>
+                      <span className="setting-label" id={idFor('updates')}>Automatic updates</span>
+                      <Switch
+                        checked={settings.autoUpdatesEnabled}
+                        onChange={(v) => updateSetting('autoUpdatesEnabled', v)}
+                        labelledBy={idFor('updates')}
+                      />
                     </div>
                   )}
                 </div>

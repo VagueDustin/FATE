@@ -22,6 +22,8 @@ import { languages } from '@codemirror/language-data';
 export function detectLanguage(fileName, content) {
   const byName = fileName ? LanguageDescription.matchFilename(languages, fileName) : null;
   if (byName) return byName;
+  // JSONC names the registry doesn't know (.jsonc, .eslintrc, .code-workspace) are JSON to look at.
+  if (isJsonWithComments(fileName)) return byLanguageName('JSON');
   return sniffLanguage(content);
 }
 
@@ -69,7 +71,71 @@ export function sniffLanguage(content) {
   const firstMeaningful = trimmed.split(/\r?\n/).find((line) => line.trim() && !/^\s*[;#]/.test(line)) || '';
   if (/^\[[A-Za-z0-9 ._:\\/-]+\]\s*$/.test(firstMeaningful.trim())) return byLanguageName('Properties files');
 
-  if (/^[{[]/.test(trimmed)) return byLanguageName('JSON');
+  if (looksLikeJson(trimmed, content)) return byLanguageName('JSON');
 
   return null;
+}
+
+/** Files up to this size get a full JSON.parse when their first token doesn't settle it. */
+const JSON_PARSE_LIMIT = 1024 * 1024;
+
+/** Whitespace and JSONC comments, which may sit between JSON tokens. */
+const GAP = String.raw`(?:\s|//[^\n]*(?:\n|$)|/\*[\s\S]*?\*/)*`;
+const SCALAR = String.raw`(?:-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)`;
+const OBJECT_HEAD = new RegExp(String.raw`^\{${GAP}["}]`);
+const ARRAY_HEAD = new RegExp(String.raw`^\[${GAP}(?:[[{"]|${SCALAR}${GAP}[,\]]|\]${GAP}$)`);
+
+/**
+ * Is this JSON? Up to 1.13 anything starting with `[` or `{` was, so a log whose lines start
+ * `[2026-10-04 12:00:01] INFO` or `[INFO]` opened as JSON and syntax checking underlined hundreds
+ * of "errors". Now the first token after the bracket has to be one JSON allows there (comments
+ * may come first, for JSONC):
+ *
+ *   `[` then  `{`  `[`  `"`, a number / true / false / null followed by `,` or `]`, or `]` that
+ *            ends the file
+ *   `{` then  `"`  `}`
+ *
+ * A number has to be followed by `,` or `]` because a timestamp starts with digits too
+ * (`[2026-10-04` is the number 2026 followed by `-`), and an empty array has to be the whole file
+ * because `[ ] task` is a checklist. When the head doesn't settle it, a file under 1 MB that
+ * parses as a whole still counts. `head` is the trimmed start of the file.
+ */
+export function looksLikeJson(head, content = head) {
+  if (typeof head !== 'string') return false;
+  if (head[0] === '{') return OBJECT_HEAD.test(head) || parsesAsJson(content);
+  if (head[0] === '[') return ARRAY_HEAD.test(head) || parsesAsJson(content);
+  return false;
+}
+
+function parsesAsJson(content) {
+  if (typeof content !== 'string' || content.length > JSON_PARSE_LIMIT) return false;
+  try {
+    JSON.parse(content.replace(/^\uFEFF/, ''));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Exact basenames of JSON files whose tools accept comments (lower-cased). */
+const JSONC_NAMES = new Set([
+  '.eslintrc', '.eslintrc.json',
+  // VS Code's own files: .vscode/settings.json, keybindings.json, launch.json, tasks.json.
+  'settings.json', 'keybindings.json', 'launch.json', 'tasks.json',
+  'devcontainer.json', '.devcontainer.json'
+]);
+
+/**
+ * Is this a JSON-with-comments file (JSONC)? Comments and trailing commas there are allowed by
+ * the tool that reads the file, so a syntax checker must not flag them as JSON errors: `.jsonc`,
+ * tsconfig*.json and jsconfig*.json (TypeScript reads them as JSONC), .eslintrc(.json), VS Code's
+ * settings/keybindings/launch/tasks.json and .code-workspace files, and devcontainer.json.
+ * Takes a bare name or a full path.
+ */
+export function isJsonWithComments(fileName) {
+  if (typeof fileName !== 'string' || !fileName) return false;
+  const base = fileName.split(/[\\/]/).pop().toLowerCase();
+  if (base.endsWith('.jsonc') || base.endsWith('.code-workspace')) return true;
+  if (/^(?:ts|js)config.*\.json$/.test(base)) return true;
+  return JSONC_NAMES.has(base);
 }

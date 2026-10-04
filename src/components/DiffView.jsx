@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { MergeView } from '@codemirror/merge';
 import { EditorView, lineNumbers, highlightSpecialChars } from '@codemirror/view';
-import { EditorState } from '@codemirror/state';
+import { EditorState, StateEffect } from '@codemirror/state';
 import { syntaxHighlighting } from '@codemirror/language';
 import { tokenHighlightStyle } from '../editorTheme.js';
 import { detectLanguage } from '../languageDetect.js';
@@ -16,8 +16,14 @@ import { detectLanguage } from '../languageDetect.js';
  *
  * Colours: the merge chunk backgrounds are styled in App.css from the status/accent tokens, and
  * syntax highlighting reuses the shared token HighlightStyle, so a diff looks native in any theme.
+ *
+ * Names: `leftName`/`rightName` are the column titles, which can be decorated ("app.js (saved)"
+ * for a diff of unsaved changes). `leftFileName`/`rightFileName` are the real file names, used to
+ * pick each side's language; they default to the titles. Up to 1.13 the titles were all there
+ * was, and "app.js (saved)" matched no language. Each side's text rides along too, so an
+ * extensionless file can still be sniffed (see languageDetect).
  */
-function DiffView({ leftText, rightText, leftName, rightName }) {
+function DiffView({ leftText, rightText, leftName, rightName, leftFileName, rightFileName }) {
   const hostRef = useRef(null);
 
   useEffect(() => {
@@ -42,28 +48,30 @@ function DiffView({ leftText, rightText, leftName, rightName }) {
     /*
      * Language support is loaded async per side (it may be a lazy chunk); dispatched into the
      * merge editors when it lands. appendConfig avoids rebuilding the MergeView.
+     *
+     * It is StateEffect.appendConfig. Up to 1.13 this called EditorState.appendConfig, which
+     * doesn't exist: the dispatch threw inside the promise (an unhandled rejection nobody saw) and
+     * no diff, split or unsaved, was ever highlighted.
      */
     let cancelled = false;
-    const loadLang = (name, editor) => {
-      const desc = detectLanguage(name);
+    const loadLang = (name, text, editor) => {
+      const desc = detectLanguage(name, text);
       if (!desc) return;
-      desc.load().then(
-        (support) => {
-          if (!cancelled) {
-            editor.dispatch({ effects: EditorState.appendConfig.of(support) });
-          }
-        },
-        () => {}
-      );
+      desc
+        .load()
+        .then((support) => {
+          if (!cancelled) editor.dispatch({ effects: StateEffect.appendConfig.of(support) });
+        })
+        .catch((err) => console.error(`Failed to load language ${desc.name} for the diff:`, err));
     };
-    loadLang(leftName, view.a);
-    loadLang(rightName, view.b);
+    loadLang(leftFileName || leftName, leftText, view.a);
+    loadLang(rightFileName || rightName, rightText, view.b);
 
     return () => {
       cancelled = true;
       view.destroy();
     };
-  }, [leftText, rightText, leftName, rightName]);
+  }, [leftText, rightText, leftName, rightName, leftFileName, rightFileName]);
 
   return (
     <div className="diff-view">
