@@ -38,7 +38,8 @@ const MAX_RECENT_FILES = 8;
 /* ════════════════════════════════════════════════════════════════════════════════════════════
    FILE TYPES
    The main process reads bytes and watches paths; it does not care what a file *is*. FATE opens
-   ANY text file. The only gates are size (MAX_FILE_BYTES) and a binary sniff (isProbablyBinary).
+   ANY text file. The only gates are size (MAX_FILE_BYTES) and a binary sniff (isProbablyBinary,
+   in fileFormat.cjs).
    These lists exist for the curated open-dialog filters and for Windows registration (which
    types the installer advertises FATE for). Up to 1.12.0 they ALSO gated the command line and
    drag & drop, so "Edit in FATE" on a `.config`, `.properties`, `.reg`, `.csv` or any other
@@ -128,15 +129,6 @@ function isOpenableArg(arg) {
 }
 
 /**
- * Cheap binary sniff: a NUL byte in the first 8 KB. Text encodings FATE can read (UTF-8, ASCII)
- * never contain NUL; executables, images and archives contain them almost immediately. This is a
- * guard against "Open with FATE" on the wrong file, not a general-purpose detector.
- */
-function isProbablyBinary(buffer) {
-  return buffer.subarray(0, 8192).includes(0);
-}
-
-/**
  * The registered application name (Windows Settings, RegisteredApplications) and the home-screen
  * window title. Renamed from "FATE - Markdown Viewer" in 1.11.0, since the app is a full editor now.
  */
@@ -199,17 +191,81 @@ for (const staleKey of []) {
    ════════════════════════════════════════════════════════════════════════════════════════════ */
 
 /**
+ * The stored list, minus anything malformed. Every open records itself here, so one bad entry
+ * (a hand-edited config.json, or one written before the renderer lost write access to this key)
+ * must not be able to throw and break opening files.
+ */
+function storedRecents() {
+  const entries = store.get('recentFiles');
+  return Array.isArray(entries) ? entries.filter((entry) => entry && typeof entry.path === 'string' && entry.path) : [];
+}
+
+/**
+ * The recents list changed (an open, a Save As, Clear, a dead entry dropped). The application
+ * menu's Open Recent rebuilds from this event; it carries the stored list, [{ path, openedAt }],
+ * newest first.
+ */
+function recentsChanged() {
+  app.emit('fate-recents-changed', storedRecents());
+}
+
+/**
  * Record a document in the recents list: newest first, de-duplicated by path, capped.
  * Stores only the path and a timestamp. The display name and existence check are derived on read,
  * so a moved or renamed file cannot leave a stale name behind in the store.
+ *
+ * On Windows the document also goes into the Recent category of FATE's taskbar Jump List.
  */
 function rememberRecentFile(filePath) {
-  const existing = store.get('recentFiles') || [];
+  const existing = storedRecents();
   const normalized = path.normalize(filePath);
   const key = watchKey(filePath);
   const deduped = existing.filter((entry) => watchKey(entry.path) !== key);
   deduped.unshift({ path: normalized, openedAt: Date.now() });
   store.set('recentFiles', deduped.slice(0, MAX_RECENT_FILES));
+  if (process.platform === 'win32') app.addRecentDocument(normalized);
+  recentsChanged();
+}
+
+/** Drop one entry whose file is gone, so the list heals itself instead of offering it again. */
+function forgetRecentFile(filePath) {
+  const existing = storedRecents();
+  const key = watchKey(filePath);
+  const remaining = existing.filter((entry) => watchKey(entry.path) !== key);
+  if (remaining.length === existing.length) return;
+  store.set('recentFiles', remaining);
+  recentsChanged();
+}
+
+/** Clear the list, and on Windows the Jump List too: whoever clears one expects both gone. */
+function clearRecentFiles() {
+  store.set('recentFiles', []);
+  if (process.platform === 'win32') app.clearRecentDocuments();
+  recentsChanged();
+}
+
+/*
+ * The home screen's existence checks run in parallel and off the main thread. Up to 1.13.4 they
+ * were fs.existsSync in a loop, so one entry on a disconnected network drive froze the window for
+ * the whole network timeout. They also stop waiting after RECENT_CHECK_TIMEOUT_MS: an entry with
+ * no answer by then shows as present, because opening it will say what is wrong, while greying it
+ * out as "File not found" just because a server is slow would be false. A check still running
+ * from an earlier visit is reused rather than repeated, so a dead share ties up one libuv thread,
+ * not one more per visit.
+ */
+const RECENT_CHECK_TIMEOUT_MS = 1500;
+const existenceChecks = new Map();
+
+function isExistingFile(filePath) {
+  let check = existenceChecks.get(filePath);
+  if (!check) {
+    check = fs.promises
+      .stat(filePath)
+      .then((stat) => stat.isFile(), () => false)
+      .finally(() => existenceChecks.delete(filePath));
+    existenceChecks.set(filePath, check);
+  }
+  return check;
 }
 
 /**
@@ -217,15 +273,18 @@ function rememberRecentFile(filePath) {
  * Missing files are returned rather than filtered out so the UI can show them greyed with a reason:
  * silently dropping an entry looks like the app forgot the file.
  */
-function readRecentFiles() {
-  const entries = store.get('recentFiles') || [];
-  return entries.map((entry) => ({
-    path: entry.path,
-    name: path.basename(entry.path),
-    dir: path.dirname(entry.path),
-    openedAt: entry.openedAt,
-    exists: fs.existsSync(entry.path)
-  }));
+async function readRecentFiles() {
+  const entries = storedRecents();
+  const deadline = new Promise((resolve) => setTimeout(resolve, RECENT_CHECK_TIMEOUT_MS, true));
+  return Promise.all(
+    entries.map(async (entry) => ({
+      path: entry.path,
+      name: path.basename(entry.path),
+      dir: path.dirname(entry.path),
+      openedAt: entry.openedAt,
+      exists: await Promise.race([isExistingFile(entry.path), deadline])
+    }))
+  );
 }
 
 /* ════════════════════════════════════════════════════════════════════════════════════════════
@@ -993,23 +1052,45 @@ const updateSource = detectUpdateSource();
 let mainWindow;
 
 /*
- * ── Multi-tab file tracking ───────────────────────────────────────────────────────────────────
- * Since tabs (1.10.0) any number of files can be open at once, so watching is per-path:
- *
- *   fileWatchers    path → fs.FSWatcher. One live watcher per open tab.
- *   lastSavedByApp  path → content of the last write FATE itself made to that file. Saving from
- *                   the editor fires the same fs.watch 'change' an external edit does; without
- *                   this, every save would bounce back to the renderer as a "file changed on
- *                   disk" event. The watcher compares what it read against this and stays silent
- *                   on a match.
- *
- * Paths are normalized+lowercased as map keys (Windows paths are case-insensitive).
+ * ── Open documents ────────────────────────────────────────────────────────────────────────────
+ * The file I/O lives in small modules beside this one, each free of Electron and tested under
+ * plain node (test/): fileFormat.cjs (encodings, byte-order marks, line endings), textFiles.cjs
+ * (async reads, atomic saves), fileWatch.cjs (live reload), backups.cjs (hot exit) and
+ * rendererSettings.cjs (the settings keys the renderer may touch). Required here, beside the code
+ * that uses them.
  */
-const fileWatchers = new Map();
-const lastSavedByApp = new Map();
+const { ENCODINGS, ENCODING_LABELS, defaultFormat, encode, resolveFormat, sameFormat, normalizeText, textDigest } = require('./fileFormat.cjs');
+const { readTextFile, writeFileAtomic } = require('./textFiles.cjs');
+const { createFileWatcher } = require('./fileWatch.cjs');
+const { createBackupStore } = require('./backups.cjs');
+const { isRendererSettingKey, checkRendererSetting } = require('./rendererSettings.cjs');
+
+/*
+ * Since tabs (1.10.0) any number of files can be open at once, so all of this is per path, keyed
+ * by watchKey():
+ *
+ *   fileFormats      path → the file's format on disk, { encoding, bom, eol } (fileFormat.cjs).
+ *                    Recorded on open, on every save and on every reload; dropped when the tab
+ *                    closes. A save that names no format writes this one, which is what keeps a
+ *                    CRLF or UTF-16 file that way. Doubles as the list of paths the renderer may
+ *                    save to: see isOpenPath.
+ *   knownText        path → digest of the text the renderer last received for the file, or last
+ *                    saved to it. Saving fires the same watch events an external edit does, and
+ *                    Windows fires them for Defender scans and indexing too; a reload whose text
+ *                    matches is not a change and is not sent. (This was lastSavedByApp, which knew
+ *                    only FATE's own saves and compared raw text, so a CRLF file reloaded on every
+ *                    stray event: its \r\n text never equalled the editor's \n text.) A digest,
+ *                    so a 25 MB log is not held a second time.
+ *   forcedEncodings  path → the encoding picked with Reopen with encoding. Reloads keep decoding
+ *                    with it; Windows-1252 text that happens to be valid UTF-8 would otherwise
+ *                    flip back to UTF-8 at the next watch event.
+ */
+const fileFormats = new Map();
+const knownText = new Map();
+const forcedEncodings = new Map();
 
 /**
- * The comparable key for a path, used for the watcher map, recents dedupe and tab dedupe.
+ * The comparable key for a path, used for the per-path maps, recents dedupe and tab dedupe.
  * Windows and (by default) macOS compare paths case-insensitively; Linux does not, where
  * `Notes.md` and `notes.md` are two files and folding case would give them one watcher.
  */
@@ -1018,6 +1099,81 @@ function watchKey(filePath) {
   const normalized = path.normalize(filePath || '');
   return CASE_INSENSITIVE_PATHS ? normalized.toLowerCase() : normalized;
 }
+
+/**
+ * May the renderer save to (or reopen) this path? Only when FATE opened it, by any route, or the
+ * user chose it in Save As, and its tab is still open. Up to 1.13.4 save-file wrote wherever it
+ * was told, which a renderer compromised through a document could have used to drop a script
+ * into the Startup folder.
+ */
+function isOpenPath(filePath) {
+  return typeof filePath === 'string' && filePath !== '' && fileFormats.has(watchKey(filePath));
+}
+
+/**
+ * Read a document the way its tab expects: in the user's forced encoding if there is one (back to
+ * detection if the file no longer decodes that way) and, for a file without a line break, with
+ * the line ending it already had rather than the platform's.
+ */
+async function readDocument(filePath) {
+  const key = watchKey(filePath);
+  const opts = { maxBytes: MAX_FILE_BYTES, defaultEol: fileFormats.get(key)?.eol };
+  const forced = forcedEncodings.get(key);
+  if (forced) {
+    try {
+      return await readTextFile(filePath, { ...opts, forcedEncoding: forced });
+    } catch (err) {
+      if (err.code !== 'INVALID' && err.code !== 'BINARY') throw err;
+      forcedEncodings.delete(key);
+    }
+  }
+  return readTextFile(filePath, opts);
+}
+
+/**
+ * The format to record for text just read. Detection is ambiguous in a way that must not flip a
+ * file's format back and forth: plain ASCII reads as UTF-8 whatever it was saved as. When the
+ * recorded format still produces exactly these bytes, it stays.
+ */
+function adoptFormat(key, doc) {
+  const recorded = fileFormats.get(key);
+  if (!recorded || sameFormat(recorded, doc.format)) return doc.format;
+  try {
+    if (encode(doc.text, recorded).equals(doc.bytes)) return recorded;
+  } catch {
+    /* the recorded format cannot even hold this text */
+  }
+  return doc.format;
+}
+
+/**
+ * Live reload, one watcher per open file (fileWatch.cjs): bursts coalesced, files replaced by
+ * atomic saves followed, deleted files retried and reported if they stay gone, and only the
+ * newest read ever delivered.
+ */
+const fileWatcher = createFileWatcher({
+  keyOf: watchKey,
+  read: readDocument,
+  onRead: (filePath, doc) => {
+    const key = watchKey(filePath);
+    if (!fileFormats.has(key)) return; // the tab closed meanwhile
+    const format = adoptFormat(key, doc);
+    const digest = textDigest(doc.text);
+    // Our own save landing, or a scan or indexer touching the file: not a change.
+    if (digest === knownText.get(key) && sameFormat(format, fileFormats.get(key))) return;
+    fileFormats.set(key, format);
+    knownText.set(key, digest);
+    /*
+     * The path rides along so the renderer can route the update to the right tab; the format,
+     * because it can change on its own (a CRLF → LF conversion arrives with the text unchanged).
+     */
+    if (mainWindow) mainWindow.webContents.send('file-changed', doc.text, filePath, { format });
+  },
+  onDeleted: (filePath) => {
+    if (mainWindow && isOpenPath(filePath)) mainWindow.webContents.send('file-deleted', filePath);
+  },
+  onError: (filePath, err) => console.error(`Live reload of ${filePath} failed:`, err.message)
+});
 
 /**
  * Whether ANY open tab holds unsaved edits. Mirrored over the 'set-edited' channel on every
@@ -1171,129 +1327,208 @@ function createWindow() {
 }
 
 /**
- * Start (or keep) a live-reload watcher for a path. One watcher per open tab; closing the tab
- * removes it via 'close-file'. Separate from openAndWatchFile because Save As needs to adopt a
- * new path WITHOUT re-sending 'open-file' (the renderer already holds the content, and reloading it
- * would throw away the cursor and scroll position for no reason).
+ * Stop tracking a path: its tab closed, or Save As moved the tab elsewhere. The watcher goes, and
+ * so does the path's place among the files the renderer may save to.
  */
-function watchFile(filePath) {
+function forgetPath(filePath) {
+  if (typeof filePath !== 'string' || !filePath) return;
   const key = watchKey(filePath);
-  if (fileWatchers.has(key)) return; // already watching (e.g. the same file reopened)
-
-  const readAndNotify = () => {
-    try {
-      const updatedContent = fs.readFileSync(filePath, 'utf-8');
-      // Our own save just landing back on us, not an external change. See lastSavedByApp.
-      if (updatedContent === lastSavedByApp.get(key)) return;
-      if (mainWindow) {
-        // The path rides along so the renderer can route the update to the right tab.
-        mainWindow.webContents.send('file-changed', updatedContent, filePath);
-      }
-    } catch (err) {
-      console.error('Error reading updated file:', err);
-    }
-  };
-
-  const watcher = fs.watch(filePath, (eventType) => {
-    if (eventType === 'change') {
-      readAndNotify();
-    } else if (eventType === 'rename') {
-      /*
-       * ATOMIC SAVES arrive as 'rename', not 'change': most editors (VS Code among them) write a
-       * temp file and rename it over the original, which replaces the inode this watcher is bound
-       * to. Ignoring 'rename' meant edits from such editors never live-reloaded. Re-attach to the
-       * new inode (after a beat; the rename may still be mid-flight) and read it.
-       */
-      setTimeout(() => {
-        if (!fileWatchers.has(key)) return; // tab closed in the meantime
-        if (!fs.existsSync(filePath)) return; // genuinely deleted/moved away
-        try {
-          fileWatchers.get(key)?.close();
-        } catch {
-          /* already dead */
-        }
-        fileWatchers.delete(key);
-        watchFile(filePath);
-        readAndNotify();
-      }, 100);
-    }
-  });
-
-  fileWatchers.set(key, watcher);
+  fileWatcher.unwatch(filePath);
+  fileFormats.delete(key);
+  knownText.delete(key);
+  forcedEncodings.delete(key);
 }
 
-/** Stop watching a path (its tab closed) and drop its save-suppression record. */
-function unwatchFile(filePath) {
-  if (!filePath) return;
-  const key = watchKey(filePath);
-  const watcher = fileWatchers.get(key);
-  if (watcher) {
-    watcher.close();
-    fileWatchers.delete(key);
+/*
+ * ── Opening ───────────────────────────────────────────────────────────────────────────────────
+ * Every open funnels through openAndWatchFile: the dialog, argv and second instances, and
+ * open-recent-file (recents, drag and drop, session restore).
+ *
+ * Reads run in parallel, but tabs are delivered in the order the opens were asked for. Session
+ * restore asks for every path at once, and with async reads a small file would otherwise
+ * overtake a large one and shuffle the user's tabs. The wait for an earlier open is capped at
+ * OPEN_ORDER_WAIT_MS, so one tab on a dead network share cannot hold every other tab back for
+ * the whole network timeout; it arrives late, in its own time.
+ */
+const OPEN_ORDER_WAIT_MS = 2000;
+let openDelivery = Promise.resolve();
+
+/**
+ * Open a file in a tab and watch it. Resolves { ok: true }, or { ok: false, reason }: 'missing'
+ * (gone, or not a file; quiet, as always, since a stale recent or a restored tab whose file was
+ * deleted is not news) or 'error' (the user has been told why).
+ */
+function openAndWatchFile(filePath, opts = {}) {
+  const reading = readDocument(filePath).then((doc) => ({ doc }), (err) => ({ err }));
+  const turn = Promise.race([openDelivery, new Promise((resolve) => setTimeout(resolve, OPEN_ORDER_WAIT_MS))]);
+  const delivered = turn
+    .then(() => reading)
+    .then(({ doc, err }) => deliverOpenedFile(filePath, opts, doc, err))
+    .catch((err) => {
+      console.error('Error opening file:', err);
+      return { ok: false, reason: 'error' };
+    });
+  openDelivery = delivered;
+  return delivered;
+}
+
+function deliverOpenedFile(filePath, opts, doc, err) {
+  if (err) {
+    if (err.code === 'ENOENT' || err.code === 'ENOTDIR' || err.code === 'NOT_FILE') return { ok: false, reason: 'missing' };
+    reportOpenFailure(filePath, err, opts);
+    return { ok: false, reason: 'error' };
   }
-  lastSavedByApp.delete(key);
+  /*
+   * Since tabs, opening a file ADDS a tab rather than replacing anything, so there is no
+   * unsaved-changes gate here any more. (If the file is already open, the renderer just
+   * activates its existing tab.) Dirty buffers are guarded where something is actually
+   * discarded: closing a tab, and closing the window.
+   */
+  const key = watchKey(filePath);
+  const format = adoptFormat(key, doc);
+  fileFormats.set(key, format);
+  knownText.set(key, textDigest(doc.text));
+  rememberRecentFile(filePath);
+
+  if (mainWindow) {
+    /*
+     * `fromRestore` rides along so the renderer can tell a tab the user just asked for from one
+     * it is merely reinstating. Session restore replays every path from last time, and each
+     * replay used to activate its tab, so double-clicking a file to LAUNCH FATE landed you on
+     * whichever restored tab happened to arrive last, not on the file you opened.
+     * `format` is how the file is stored; the text itself is already decoded, BOM-free, `\n`.
+     */
+    mainWindow.webContents.send('open-file', doc.text, path.basename(filePath), filePath, {
+      fromRestore: !!opts.fromRestore,
+      format
+    });
+  }
+  fileWatcher.watch(filePath);
+  return { ok: true };
 }
 
-async function openAndWatchFile(filePath, opts = {}) {
-  let stat;
-  try {
-    stat = fs.statSync(filePath);
-  } catch (err) {
-    // Gone (a stale recent, or a restored tab whose file was deleted since): stay quiet, as always.
-    if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return;
-    // Anything else the user needs to hear. Under snap confinement "permission denied" means an
-    // interface is not connected, and until 1.13.2 it looked exactly like "no such file".
-    const { title, message } = describeFsError(err, filePath, 'open');
-    dialog.showErrorBox(title, message);
+/** Error-box wording for a file that would not open, plus the reason/advice a summary lists. */
+function describeOpenFailure(filePath, err) {
+  const name = path.basename(filePath);
+  const limitMb = MAX_FILE_BYTES / 1048576;
+  if (err.code === 'TOO_LARGE') {
+    const mb = (err.size / 1048576).toFixed(1);
+    return {
+      title: 'File too large',
+      message: `${name} is ${mb} MB. FATE opens text files up to ${limitMb} MB.`,
+      reason: `${mb} MB, over the ${limitMb} MB limit`,
+      advice: null
+    };
+  }
+  if (err.code === 'BINARY') {
+    return {
+      title: 'Not a text file',
+      message: `${name} appears to be a binary file, which FATE cannot display.`,
+      reason: 'looks like a binary file',
+      advice: null
+    };
+  }
+  // Under snap confinement "permission denied" means an interface is not connected, and until
+  // 1.13.2 it looked exactly like "no such file"; describeFsError says which.
+  const { title, message, reason, advice } = describeFsError(err, filePath, 'open');
+  return { title, message, reason, advice };
+}
+
+/*
+ * Session restore reopens every tab at once, and each one that failed used to raise its own modal
+ * error box: a session on an unplugged drive meant clicking through a box per file. Failures of
+ * restored tabs are collected instead and reported in ONE dialog once they stop arriving: each
+ * file with its reason, then each distinct remedy (such as the snap guidance) once.
+ */
+const RESTORE_REPORT_DELAY_MS = 600;
+const restoreFailures = [];
+let restoreReportTimer = null;
+
+function reportOpenFailure(filePath, err, opts) {
+  const failure = describeOpenFailure(filePath, err);
+  if (!opts.fromRestore) {
+    dialog.showErrorBox(failure.title, failure.message);
     return;
   }
-  if (!stat.isFile()) return;
+  restoreFailures.push({ name: path.basename(filePath), ...failure });
+  clearTimeout(restoreReportTimer);
+  restoreReportTimer = setTimeout(showRestoreFailures, RESTORE_REPORT_DELAY_MS);
+}
 
+function showRestoreFailures() {
+  restoreReportTimer = null;
+  const failures = restoreFailures.splice(0);
+  if (failures.length === 0) return;
+  let options;
+  if (failures.length === 1) {
+    const [failure] = failures;
+    options = { type: 'error', title: failure.title, message: failure.title, detail: failure.message };
+  } else {
+    const remedies = [...new Set(failures.map((f) => f.advice).filter(Boolean))];
+    options = {
+      type: 'warning',
+      title: 'Some tabs could not be restored',
+      message: `FATE couldn't reopen ${failures.length} files from your last session.`,
+      detail: [failures.map((f) => `${f.name}: ${f.reason}`).join('\n'), ...remedies].join('\n\n')
+    };
+  }
+  const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+  (win ? dialog.showMessageBox(win, options) : dialog.showMessageBox(options)).catch(() => {});
+}
+
+/**
+ * Open a path the renderer names (a recents entry, a dropped file, a restored session tab); also
+ * the way in for an Open Recent menu. A missing file is dropped from recents so the list heals
+ * itself instead of offering it again. Resolves { ok } or { ok: false, reason }.
+ */
+async function openRecentFile(filePath, opts) {
+  if (typeof filePath !== 'string' || !filePath) return { ok: false, reason: 'missing' };
+  const result = await openAndWatchFile(filePath, { fromRestore: !!(opts && opts.fromRestore) });
+  if (result.reason === 'missing') forgetRecentFile(filePath);
+  return result;
+}
+
+/*
+ * ── Saving ────────────────────────────────────────────────────────────────────────────────────
+ * The renderer hands over `\n` text and, optionally, the format to write it in. Without one, the
+ * format the path was opened or last saved with applies (fileFormats), and for a path FATE has
+ * never read, the platform default, so a CRLF or UTF-16 file goes back the way it came.
+ */
+const saveFailure = (code, error) => ({ ok: false, code, error });
+
+/** Settle the format and encode, before anything touches the disk: { ok, format, data } or a failure. */
+function prepareSave(name, content, passedFormat, recordedFormat) {
   try {
-    /*
-     * Since tabs, opening a file ADDS a tab rather than replacing anything, so there is no
-     * unsaved-changes gate here any more. (If the file is already open, the renderer just
-     * activates its existing tab.) Dirty buffers are guarded where something is actually
-     * discarded: closing a tab, and closing the window.
-     */
-    if (stat.size > MAX_FILE_BYTES) {
-      dialog.showErrorBox(
-        'File too large',
-        `${path.basename(filePath)} is ${(stat.size / 1048576).toFixed(1)} MB. ` +
-        `FATE opens text files up to ${MAX_FILE_BYTES / 1048576} MB.`
-      );
-      return;
-    }
+    const format = resolveFormat(passedFormat, recordedFormat || defaultFormat());
+    return { ok: true, format, data: encode(content, format) };
+  } catch (err) {
+    // UNENCODABLE's message says what and where: "“→” (U+2192) on line 3 can't be saved in
+    // Windows-1252. Save the file as UTF-8 instead."
+    if (err.code === 'UNENCODABLE') return saveFailure(err.code, `${name}: ${err.message}`);
+    return saveFailure(err.code || 'BAD_FORMAT', `Can't save ${name}: ${err.message}`);
+  }
+}
 
-    const buffer = fs.readFileSync(filePath);
-    if (isProbablyBinary(buffer)) {
-      dialog.showErrorBox(
-        'Not a text file',
-        `${path.basename(filePath)} appears to be a binary file, which FATE cannot display.`
-      );
-      return;
-    }
-
-    const content = buffer.toString('utf-8');
-    const name = path.basename(filePath);
-    lastSavedByApp.delete(watchKey(filePath)); // fresh read, nothing saved from the app yet
-    rememberRecentFile(filePath);
-
-    if (mainWindow) {
-      /*
-       * `fromRestore` rides along so the renderer can tell a tab the user just asked for from one
-       * it is merely reinstating. Session restore replays every path from last time, and each
-       * replay used to activate its tab, so double-clicking a file to LAUNCH FATE landed you on
-       * whichever restored tab happened to arrive last, not on the file you opened.
-       */
-      mainWindow.webContents.send('open-file', content, name, filePath, { fromRestore: !!opts.fromRestore });
-    }
-
-    watchFile(filePath);
-  } catch (e) {
-    console.error('Error reading file:', e);
-    const { title, message } = describeFsError(e, filePath, 'open');
-    dialog.showErrorBox(title, message);
+/**
+ * Write encoded bytes atomically (textFiles.cjs) and record what is now on disk. The path's
+ * watcher is held meanwhile, so neither a reload racing the write nor the write's own events can
+ * come back to the renderer as an external change; then it is re-armed, because an atomic save
+ * leaves a new file at the path.
+ */
+async function commitSave(filePath, prepared, content) {
+  const key = watchKey(filePath);
+  const release = fileWatcher.hold(filePath);
+  try {
+    await writeFileAtomic(filePath, prepared.data);
+    fileFormats.set(key, prepared.format);
+    knownText.set(key, textDigest(normalizeText(content)));
+    if (forcedEncodings.get(key) !== prepared.format.encoding) forcedEncodings.delete(key);
+    fileWatcher.watch(filePath, { rearm: true });
+    return { ok: true, format: prepared.format };
+  } catch (err) {
+    return saveFailure(err.code || 'EIO', describeFsError(err, filePath, 'save').short);
+  } finally {
+    release();
   }
 }
 
@@ -1355,9 +1590,19 @@ app.whenReady().then(() => {
     documentEdited = !!edited;
   });
 
-  ipcMain.handle('store-get', (event, key) => store.get(key));
+  /*
+   * Settings: only the keys the renderer owns, each type-checked (rendererSettings.cjs). Main-only
+   * state such as recentFiles and the Windows registrationStamp is out of the renderer's reach.
+   */
+  ipcMain.handle('store-get', (event, key) => (isRendererSettingKey(key) ? store.get(key) : undefined));
   ipcMain.handle('store-set', (event, key, val) => {
+    const check = checkRendererSetting(key, val);
+    if (!check.ok) {
+      console.warn(`store-set refused: ${check.error}`);
+      return check;
+    }
     store.set(key, val);
+    return { ok: true };
   });
 
   ipcMain.handle('open-file-dialog', async () => {
@@ -1379,18 +1624,22 @@ app.whenReady().then(() => {
     }
   });
 
-  // ── Saving (code editor) ──────────────────────────────────────────────────────────────────
-  ipcMain.handle('save-file', (event, filePath, content) => {
-    try {
-      if (!filePath) return { ok: false, error: 'No file path to save to' };
-      // Record BEFORE writing: fs.watch can fire before writeFileSync returns.
-      lastSavedByApp.set(watchKey(filePath), content);
-      fs.writeFileSync(filePath, content, 'utf-8');
-      return { ok: true };
-    } catch (err) {
-      lastSavedByApp.delete(watchKey(filePath));
-      return { ok: false, error: describeFsError(err, filePath, 'save').short };
+  // ── Saving ────────────────────────────────────────────────────────────────────────────────
+  /**
+   * Save a tab to its own path, in the format passed or else the path's recorded one. Only paths
+   * FATE has open are accepted (isOpenPath); anywhere else is refused, and Save As is the way to
+   * write somewhere new. Resolves { ok: true, format } with the format actually written, or
+   * { ok: false, code, error }.
+   */
+  ipcMain.handle('save-file', async (event, filePath, content, format) => {
+    if (typeof filePath !== 'string' || !filePath) return saveFailure('BAD_ARGS', 'No file path to save to');
+    if (typeof content !== 'string') return saveFailure('BAD_ARGS', 'Nothing to save');
+    const name = path.basename(filePath);
+    if (!isOpenPath(filePath)) {
+      return saveFailure('NOT_OPEN', `Can't save ${name}: it isn't a file FATE has open. Use Save As instead.`);
     }
+    const prepared = prepareSave(name, content, format, fileFormats.get(watchKey(filePath)));
+    return prepared.ok ? commitSave(filePath, prepared, content) : prepared;
   });
 
   /**
@@ -1398,13 +1647,22 @@ app.whenReady().then(() => {
    * the new path without re-sending 'open-file'. The renderer already holds the content, and a
    * reload would discard the cursor and scroll position. The renderer updates its own name/path
    * from the response instead. `oldPath` (the tab's previous path, if any) stops being watched.
+   *
+   * The format is the one passed, else `oldPath`'s, else the default, and the text is encoded
+   * BEFORE the dialog opens, so text that Windows-1252 can't hold fails without a wasted dialog.
    */
-  ipcMain.handle('save-file-as', async (event, suggestedName, content, oldPath) => {
-    let chosenPath = null;
+  ipcMain.handle('save-file-as', async (event, suggestedName, content, oldPath, format) => {
+    if (typeof content !== 'string') return saveFailure('BAD_ARGS', 'Nothing to save');
+    const suggested = typeof suggestedName === 'string' && suggestedName ? suggestedName : 'untitled.txt';
+    const fromPath = isOpenPath(oldPath) ? oldPath : null;
+    const prepared = prepareSave(suggested, content, format, fromPath && fileFormats.get(watchKey(fromPath)));
+    if (!prepared.ok) return prepared;
+
+    let filePath;
     try {
-      const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+      const result = await dialog.showSaveDialog(mainWindow, {
         title: 'Save As',
-        defaultPath: suggestedName || 'untitled.txt',
+        defaultPath: suggested,
         // "All files" first: with a curated filter selected, Windows appends that filter's first
         // extension to any name typed without one, so saving a new buffer as `Dockerfile` or
         // `.env` produced `Dockerfile.md`. The typed name is now taken literally.
@@ -1414,24 +1672,57 @@ app.whenReady().then(() => {
           { name: 'Code files', extensions: [...CODE_EXTENSIONS] }
         ]
       });
-      if (canceled || !filePath) return { ok: false, canceled: true };
-      chosenPath = filePath;
-
-      lastSavedByApp.set(watchKey(filePath), content);
-      fs.writeFileSync(filePath, content, 'utf-8');
-      if (oldPath && watchKey(oldPath) !== watchKey(filePath)) unwatchFile(oldPath);
-      rememberRecentFile(filePath);
-      watchFile(filePath);
-      return { ok: true, filePath, name: path.basename(filePath) };
+      if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+      filePath = result.filePath;
     } catch (err) {
-      if (chosenPath) lastSavedByApp.delete(watchKey(chosenPath));
-      return { ok: false, error: chosenPath ? describeFsError(err, chosenPath, 'save').short : err.message };
+      return saveFailure('DIALOG', err.message);
     }
+
+    const saved = await commitSave(filePath, prepared, content);
+    if (!saved.ok) return saved;
+    if (fromPath && watchKey(fromPath) !== watchKey(filePath)) forgetPath(fromPath);
+    rememberRecentFile(filePath);
+    return { ok: true, filePath, name: path.basename(filePath), format: saved.format };
   });
 
-  /** A tab closed: stop watching its file. */
+  /** A tab closed: stop watching its file, and stop accepting saves to it (forgetPath). */
   ipcMain.on('close-file', (event, filePath) => {
-    unwatchFile(filePath);
+    forgetPath(filePath);
+  });
+
+  /**
+   * Re-read an open file decoding it as `encoding`, for a file whose encoding was guessed wrong.
+   * Refused rather than opened lossy when that decoding could not be saved back unchanged (see
+   * fileFormat.decode). The choice sticks for the tab's later reloads (forcedEncodings). The
+   * watcher is held so a reload already in flight, decoded the old way, cannot land afterwards.
+   * Resolves { ok: true, content, format } or { ok: false, code, error }.
+   */
+  ipcMain.handle('reopen-with-encoding', async (event, filePath, encoding) => {
+    if (!isOpenPath(filePath)) return { ok: false, code: 'NOT_OPEN', error: "That file isn't open in FATE" };
+    if (!ENCODINGS.includes(encoding)) return { ok: false, code: 'BAD_ENCODING', error: `Unknown encoding: ${String(encoding)}` };
+    const key = watchKey(filePath);
+    const name = path.basename(filePath);
+    const release = fileWatcher.hold(filePath);
+    try {
+      const doc = await readTextFile(filePath, {
+        maxBytes: MAX_FILE_BYTES,
+        forcedEncoding: encoding,
+        defaultEol: fileFormats.get(key)?.eol
+      });
+      if (!isOpenPath(filePath)) return { ok: false, code: 'NOT_OPEN', error: `${name} was closed` };
+      fileFormats.set(key, doc.format);
+      knownText.set(key, textDigest(doc.text));
+      forcedEncodings.set(key, encoding);
+      return { ok: true, content: doc.text, format: doc.format };
+    } catch (err) {
+      if (err.code === 'BINARY' || err.code === 'INVALID') {
+        return { ok: false, code: err.code, error: `Can't reopen ${name} as ${ENCODING_LABELS[encoding]}: ${err.message}.` };
+      }
+      if (err.code === 'TOO_LARGE') return { ok: false, code: err.code, error: describeOpenFailure(filePath, err).message };
+      return { ok: false, code: err.code, error: describeFsError(err, filePath, 'open').short };
+    } finally {
+      release();
+    }
   });
 
   /**
@@ -1474,23 +1765,35 @@ app.whenReady().then(() => {
   // ── Recent documents ──────────────────────────────────────────────────────────────────────
   ipcMain.handle('get-recent-files', () => readRecentFiles());
 
-  ipcMain.handle('open-recent-file', (event, filePath, opts) => {
-    // Re-check existence here rather than trusting the renderer's cached `exists` flag; the file
-    // may have been deleted since the list was rendered.
-    if (!filePath || !fs.existsSync(filePath)) {
-      // Drop the dead entry so the list self-heals instead of offering it again.
-      const remaining = (store.get('recentFiles') || []).filter((e) => watchKey(e.path) !== watchKey(filePath));
-      store.set('recentFiles', remaining);
-      return { ok: false, reason: 'missing' };
-    }
-    openAndWatchFile(filePath, opts || {});
+  // Recents, drag and drop and session restore all open through here (see openRecentFile).
+  ipcMain.handle('open-recent-file', (event, filePath, opts) => openRecentFile(filePath, opts));
+
+  ipcMain.handle('clear-recent-files', () => {
+    clearRecentFiles();
     return { ok: true };
   });
 
-  ipcMain.handle('clear-recent-files', () => {
-    store.set('recentFiles', []);
-    return { ok: true };
-  });
+  // ── Hot exit ──────────────────────────────────────────────────────────────────────────────
+  /*
+   * Unsaved buffers, backed up by the renderer a moment after each change and offered back after
+   * a crash (backups.cjs owns the file format, the id rules and the size caps). Failures resolve
+   * { ok: false, code, error } rather than reject; a backup folder that can't be read lists as [].
+   */
+  const backups = createBackupStore(path.join(app.getPath('userData'), 'backups'));
+  const backupResult = (job) =>
+    job.then(
+      (value) => ({ ok: true, ...value }),
+      (err) => ({ ok: false, code: err.code, error: err.message })
+    );
+  ipcMain.handle('backup-write', (event, id, data) => backupResult(backups.write(id, data)));
+  ipcMain.handle('backup-remove', (event, id) => backupResult(backups.remove(id)));
+  ipcMain.handle('backup-clear', () => backupResult(backups.clear()));
+  ipcMain.handle('backup-list', () =>
+    backups.list().catch((err) => {
+      console.error('Could not list backups:', err.message);
+      return [];
+    })
+  );
 
   // ── Printing & PDF export ─────────────────────────────────────────────────────────────────
   // Both are wrapped so a render failure surfaces in the UI instead of rejecting into the void.
