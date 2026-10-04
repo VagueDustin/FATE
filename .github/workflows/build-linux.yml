@@ -23,8 +23,8 @@
 #   * The tag must be v + package.json's version (the same check as build-windows.yml), or a tag
 #     without a version bump would republish the old build under the new name. Checked before
 #     anything is built.
-#   * A recovery run (Run workflow with release_tag) builds THAT TAG's commit, not the branch the
-#     run was started from.
+#   * A recovery run is started from the release's tag (Run workflow → Use workflow from → Tags)
+#     and builds that commit; a `release_tag` naming any other tag is refused.
 #   * apt, dnf and the Snap Store are stable channels. They are updated only when the release is
 #     published (not a draft: draft assets 404 for everyone), is not a prerelease (and the tag has
 #     no "-": v1.15.0-beta.1 never goes there), and is the repository's latest release (so a
@@ -66,8 +66,8 @@
 # SECURITY.md → Package signing key.
 #
 # "Run workflow" (workflow_dispatch) on a branch builds everything and attaches it to the run;
-# the .rpm on the run is unsigned (only release runs touch the key). Give it a `release_tag` to
-# publish that existing release: the recovery path when a tag's own run failed.
+# the .rpm on the run is unsigned (only release runs touch the key). Started from a release's tag
+# instead, it publishes that release: the recovery path when a tag's own run failed.
 name: Build Linux
 
 on:
@@ -76,7 +76,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Existing release tag to publish, e.g. v1.14.0 (empty = build only; the packages stay on the run)'
+        description: 'Optional check: the release tag this run was started from (Use workflow from → Tags). Started from a branch, the run only builds.'
         required: false
         default: ''
         type: string
@@ -119,22 +119,21 @@ jobs:
           set -euo pipefail
           TAG=""
           case "$GITHUB_REF" in refs/tags/*) TAG="$GITHUB_REF_NAME" ;; esac
-          if [ -n "$RELEASE_TAG_INPUT" ]; then TAG="$RELEASE_TAG_INPUT"; fi
-          REF=""
-          if [ -n "$TAG" ]; then
-            if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-              echo "::error::The release tag must look like v1.2.3 or v1.2.3-beta.1."
-              exit 1
-            fi
-            # Build the tagged commit, also when Run workflow was started from a branch.
-            REF="refs/tags/$TAG"
+          # A recovery run builds the commit it was STARTED from, so it is started from the tag
+          # (Run workflow → Use workflow from → Tags). Checking out a ref named in an input instead
+          # would run that ref's code in a job whose caches land in the default branch's scope.
+          if [ -n "$RELEASE_TAG_INPUT" ] && [ "$RELEASE_TAG_INPUT" != "$TAG" ]; then
+            echo "::error::To rebuild $RELEASE_TAG_INPUT, start Run workflow from that tag: Use workflow from → Tags → $RELEASE_TAG_INPUT. This run started from $GITHUB_REF_NAME."
+            exit 1
+          fi
+          if [ -n "$TAG" ] && ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::The release tag must look like v1.2.3 or v1.2.3-beta.1."
+            exit 1
           fi
           echo "release_tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "ref=$REF" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          ref: ${{ steps.target.outputs.ref }}
           persist-credentials: false
 
       # TODO(pin): replace @v4 with the full commit SHA: gh api repos/actions/setup-node/commits/v4 --jq .sha
@@ -419,7 +418,7 @@ jobs:
             unit=keep
             echo "::notice::$TAG already has ${UNIT[*]}; leaving them in place (Run workflow with force to replace them)."
           else
-            echo "::error::$TAG has only some of ${UNIT[*]}. This build's bytes differ from the ones there, and latest-linux.yml must match all of them. Run workflow with release_tag=$TAG and force to replace them all."
+            echo "::error::$TAG has only some of ${UNIT[*]}. This build's bytes differ from the ones there, and latest-linux.yml must match all of them. Run workflow from the tag $TAG and force to replace them all."
             exit 1
           fi
 
@@ -532,7 +531,7 @@ jobs:
       - name: Stop at a draft
         if: steps.release.outputs.draft == 'true'
         run: |
-          echo "::error::$TAG is a draft. Its files are attached, but apt, dnf, the Snap Store and the Flatpak check did not run: their indexes would point at draft assets, which nobody can download. Publish the release, then re-run this job (or Run workflow with release_tag=$TAG)."
+          echo "::error::$TAG is a draft. Its files are attached, but apt, dnf, the Snap Store and the Flatpak check did not run: their indexes would point at draft assets, which nobody can download. Publish the release, then re-run this job (or Run workflow from the tag $TAG)."
           exit 1
 
       # The indexes describe the files users actually download: the ones on the release, which a
