@@ -17,19 +17,40 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return null;
     }
   },
+  /*
+   * ── File formats ─────────────────────────────────────────────────────────────────────────────
+   * The main process owns how a file is stored on disk. The renderer only ever sees clean text:
+   * LF line breaks, no byte-order mark, already decoded. Each open carries the file's FORMAT,
+   *   { encoding: 'utf8' | 'utf16le' | 'utf16be' | 'windows1252', bom: boolean, eol: '\n' | '\r\n' | '\r' }
+   * and a save writes the text back in a format: the one passed, or else the one the file was
+   * opened with. So a CRLF file stays CRLF and a UTF-16 file stays UTF-16 without the renderer
+   * doing anything.
+   */
+
   // `meta.fromRestore` marks a tab being reinstated from last session rather than one the user
   // just asked for, so restoring tabs cannot steal focus from the file that launched the app.
+  // `meta.format` is the file's on-disk format (see above).
   onOpenFile: (callback) => {
     ipcRenderer.removeAllListeners('open-file');
     ipcRenderer.on('open-file', (_event, content, name, path, meta) => callback(content, name, path, meta || {}));
   },
   // The path rides along so the renderer can route the update to the right TAB, since any number of
-  // files can be watched at once since 1.10.0.
+  // files can be watched at once since 1.10.0. `meta.format` as for onOpenFile.
   onFileChanged: (callback) => {
     ipcRenderer.removeAllListeners('file-changed');
-    ipcRenderer.on('file-changed', (_event, content, path) => callback(content, path));
+    ipcRenderer.on('file-changed', (_event, content, path, meta) => callback(content, path, meta || {}));
+  },
+  /** A watched file is gone from disk and did not come back (deleted, or moved away). */
+  onFileDeleted: (callback) => {
+    ipcRenderer.removeAllListeners('file-deleted');
+    ipcRenderer.on('file-deleted', (_event, path) => callback(path));
   },
   openFileDialog: () => ipcRenderer.invoke('open-file-dialog'),
+  /**
+   * Re-read a file decoding it as `encoding` (for a file whose encoding was guessed wrong).
+   * Resolves { ok, content, format } or { ok: false, error }; the renderer swaps the buffer itself.
+   */
+  reopenWithEncoding: (filePath, encoding) => ipcRenderer.invoke('reopen-with-encoding', filePath, encoding),
 
   /** A tab closed: the main process stops watching its file. */
   closeFile: (filePath) => ipcRenderer.send('close-file', filePath),
@@ -45,9 +66,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
    * path WITHOUT re-sending 'open-file'. The response carries { filePath, name } and the renderer
    * updates its own state, keeping cursor and scroll position intact.
    */
-  saveFile: (filePath, content) => ipcRenderer.invoke('save-file', filePath, content),
-  saveFileAs: (suggestedName, content, oldPath) =>
-    ipcRenderer.invoke('save-file-as', suggestedName, content, oldPath),
+  saveFile: (filePath, content, format) => ipcRenderer.invoke('save-file', filePath, content, format),
+  saveFileAs: (suggestedName, content, oldPath, format) =>
+    ipcRenderer.invoke('save-file-as', suggestedName, content, oldPath, format),
+
+  /**
+   * Hot exit: unsaved buffers (Untitled ones included) are copied to the app's data folder a moment
+   * after each change, so a crash or a reload loses nothing. `id` is the renderer's own stable key
+   * for a tab; `data` is { kind, name, path, content, format, savedContent, untitled }.
+   * `list()` resolves the backups left over from a session that did not end cleanly.
+   */
+  backups: {
+    write: (id, data) => ipcRenderer.invoke('backup-write', id, data),
+    remove: (id) => ipcRenderer.invoke('backup-remove', id),
+    list: () => ipcRenderer.invoke('backup-list'),
+    clear: () => ipcRenderer.invoke('backup-clear')
+  },
 
   /**
    * Mirror the editor's dirty flag into the main process on every transition. This is what arms
@@ -135,5 +169,32 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onUpdateMessage: (callback) => {
     ipcRenderer.removeAllListeners('update-message');
     ipcRenderer.on('update-message', (_event, message, action) => callback(message, action));
-  }
+  },
+
+  /**
+   * Open a link outside FATE: http(s) after the same confirmation an in-page navigation gets,
+   * mailto: directly. Anything else is refused. Resolves { ok }.
+   */
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
+  /** Show a file in the system file manager (only for files FATE has open). */
+  showItemInFolder: (filePath) => ipcRenderer.invoke('show-item-in-folder', filePath),
+  /**
+   * Native menu for a tab's right-click. `info` is { path, name }; resolves the chosen action,
+   * 'copyPath' | 'reveal' | 'close' | 'closeOthers' | 'closeRight', or null when dismissed.
+   * The renderer carries the action out.
+   */
+  showTabContextMenu: (info) => ipcRenderer.invoke('show-tab-context-menu', info),
+  /**
+   * The application menu (Alt shows it) sends commands here: 'newFile', 'openFile', 'save',
+   * 'saveAs', 'print', 'exportPdf', 'closeTab', 'toggleEdit', 'toggleSplit', 'focusMode',
+   * 'palette', 'settings', 'shortcuts', 'about', 'find', 'gotoLine', 'gotoSymbol', 'undo', 'redo'.
+   */
+  onMenuCommand: (callback) => {
+    ipcRenderer.removeAllListeners('menu-command');
+    ipcRenderer.on('menu-command', (_event, command, arg) => callback(command, arg));
+  },
+  /** Tell the menu the user's current shortcut bindings (shown as labels; the renderer handles the keys). */
+  updateMenu: (state) => ipcRenderer.send('update-menu', state),
+  /** Turn the spellchecker on or off. Off by default on Linux, where it downloads dictionaries. */
+  setSpellcheck: (enabled) => ipcRenderer.invoke('set-spellcheck', enabled)
 });

@@ -1,6 +1,6 @@
 {
   "name": "fate-markdown-viewer",
-  "version": "1.13.4",
+  "version": "1.14.0",
   "description": "FATE (Formatted Article & Text Editor) is a free, open source text and code editor for Windows and Linux: a Notepad++ alternative with tabs, syntax highlighting, find and replace, split view and a live Markdown preview with KaTeX math and Mermaid diagrams.",
   "keywords": [
     "text-editor",
@@ -32,6 +32,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
+    "test": "node --test",
     "preview": "vite preview",
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .\"",
     "electron:build": "vite build && electron-builder",
@@ -57,7 +58,7 @@
       "dist/**/*",
       "electron/**/*"
     ],
-    "appxManifestCreated": "scripts/escape-appx-manifest.cjs",
+    "appxManifestCreated": "scripts/appx-manifest.cjs",
     "win": {
       "icon": "build/icon.ico",
       "target": [
@@ -169,17 +170,20 @@
       "packageName": "fate",
       "priority": "optional",
       "afterInstall": "build/linux/after-install-deb.sh",
+      "afterRemove": "build/linux/after-remove-deb.sh",
       "fpm": [
         "build/com.vaguedustin.fate.metainfo.xml=/usr/share/metainfo/com.vaguedustin.fate.metainfo.xml",
-        "build/fate-archive-keyring.gpg=/usr/share/keyrings/fate-archive-keyring.gpg"
+        "build/linux/fate-archive-keyring.gpg=/usr/share/keyrings/fate-archive-keyring.gpg"
       ]
     },
     "rpm": {
       "packageName": "fate",
       "afterInstall": "build/linux/after-install-rpm.sh",
+      "afterRemove": "build/linux/after-remove-rpm.sh",
       "fpm": [
+        "--rpm-posttrans=build/linux/posttrans-rpm.sh",
         "build/com.vaguedustin.fate.metainfo.xml=/usr/share/metainfo/com.vaguedustin.fate.metainfo.xml",
-        "build/fate-archive-keyring.asc=/etc/pki/rpm-gpg/RPM-GPG-KEY-fate"
+        "build/linux/fate-archive-keyring.asc=/etc/pki/rpm-gpg/RPM-GPG-KEY-fate"
       ]
     },
     "nsis": {
@@ -213,6 +217,10 @@
     ]
   },
   "dependencies": {
+    "electron-store": "^8.1.0",
+    "electron-updater": "^6.8.3"
+  },
+  "devDependencies": {
     "@codemirror/autocomplete": "^6.20.3",
     "@codemirror/commands": "^6.10.4",
     "@codemirror/language": "^6.12.4",
@@ -222,6 +230,7 @@
     "@codemirror/search": "^6.7.1",
     "@codemirror/state": "^6.7.1",
     "@codemirror/view": "^6.43.8",
+    "@eslint/js": "^10.0.1",
     "@fontsource/cascadia-code": "^5.3.0",
     "@fontsource/cinzel": "^5.3.0",
     "@fontsource/fira-code": "^5.3.0",
@@ -236,37 +245,32 @@
     "@fontsource/source-serif-4": "^5.3.0",
     "@lezer/highlight": "^1.2.3",
     "@phosphor-icons/react": "^2.1.10",
-    "codemirror": "^6.0.2",
-    "dompurify": "^3.4.16",
-    "electron-store": "^8.1.0",
-    "electron-updater": "^6.8.3",
-    "highlight.js": "^11.11.1",
-    "katex": "^0.17.0",
-    "marked": "^18.0.5",
-    "marked-highlight": "^2.2.4",
-    "marked-katex-extension": "^5.1.10",
-    "mermaid": "^11.16.1",
-    "react": "^19.2.6",
-    "react-dom": "^19.2.6"
-  },
-  "devDependencies": {
-    "@eslint/js": "^10.0.1",
     "@types/dompurify": "^3.0.5",
     "@types/highlight.js": "^9.12.4",
     "@types/marked": "^5.0.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
+    "codemirror": "^6.0.2",
     "concurrently": "^10.0.3",
     "cross-env": "^10.1.0",
+    "dompurify": "^3.4.16",
     "electron": "^42.3.3",
     "electron-builder": "^26.8.1",
     "eslint": "^10.3.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.6.0",
+    "highlight.js": "^11.11.1",
+    "katex": "^0.17.0",
+    "marked": "^18.0.5",
+    "marked-highlight": "^2.2.4",
+    "marked-katex-extension": "^5.1.10",
+    "mermaid": "^11.16.1",
     "png-to-ico": "^3.0.2",
     "puppeteer-core": "^25.5.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
     "sharp": "^0.35.3",
     "vite": "^8.0.12",
     "wait-on": "^9.0.10"

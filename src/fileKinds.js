@@ -15,8 +15,31 @@
  * the per-type document icons (scripts/generate-file-icons.mjs).
  */
 
-/** These render through the markdown pipeline. Everything else FATE opens goes to the code editor. */
-export const MARKDOWN_EXTENSIONS = ['md', 'markdown', 'txt'];
+/**
+ * These render through the markdown pipeline. Everything else FATE opens goes to the code editor.
+ *
+ * `.txt` left this list in 1.14.0. Plain text is mostly logs, exports and notes that were never
+ * written as Markdown: the pipeline reflowed them (single line breaks, `#` and `*` read as markup),
+ * and a 10 MB log overflowed the parser's stack and blanked the window. A .txt that IS Markdown is
+ * one "Render as Markdown" away (see couldBeMarkdown). electron/main.cjs keeps `txt` in its own
+ * list: there it only drives the open dialog's filter and the Windows registration.
+ */
+export const MARKDOWN_EXTENSIONS = ['md', 'markdown'];
+
+/*
+ * Size routing, in characters (UTF-16 units, close enough to bytes for the purpose).
+ *
+ * MARKDOWN_RENDER_LIMIT: a Markdown file larger than this opens in the editor as plain text, with
+ * a notice offering "Render as Markdown". Rendering runs on the UI thread in one go (marked, KaTeX,
+ * highlight.js and the sanitiser), so past a couple of megabytes the window freezes for seconds
+ * before showing anything, and pathological input can exhaust the stack.
+ *
+ * LARGE_FILE_LIMIT: past this the code editor runs in large-file mode, without the extensions
+ * whose cost grows with the document or the selection (syntax-error lint, bracket matching,
+ * selection-match highlighting, autocompletion). Big logs open and scroll like small ones.
+ */
+export const MARKDOWN_RENDER_LIMIT = 2 * 1024 * 1024;
+export const LARGE_FILE_LIMIT = 5 * 1024 * 1024;
 
 /** The curated "Code files" filter, and the types FATE registers for on Windows. */
 export const CODE_EXTENSIONS = [
@@ -42,6 +65,23 @@ export function extensionOf(name) {
 /** 'markdown' or 'code': which surface renders this file. */
 export function fileKindForName(name) {
   return MARKDOWN_EXTENSIONS.includes(extensionOf(name)) ? 'markdown' : 'code';
+}
+
+/** Which surface a file opens in, given its name AND its size (see MARKDOWN_RENDER_LIMIT). */
+export function kindForOpen(name, length) {
+  return fileKindForName(name) === 'markdown' && length <= MARKDOWN_RENDER_LIMIT ? 'markdown' : 'code';
+}
+
+/**
+ * Could this code tab be Markdown, so "Render as Markdown" is worth offering? Markdown files that
+ * opened as plain text for their size, `.txt`, and extensionless names (README, NOTES). Dotfiles
+ * (.env, .gitignore) have no extension either, but they are configuration, never prose.
+ */
+export function couldBeMarkdown(name) {
+  const base = (name || '').replace(/^.*[\\/]/, '');
+  if (base.startsWith('.')) return false;
+  const ext = extensionOf(base);
+  return ext === '' || ext === 'txt' || MARKDOWN_EXTENSIONS.includes(ext);
 }
 
 /**

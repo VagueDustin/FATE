@@ -773,8 +773,7 @@ kbd {
   box-shadow: inset 0 -2px 0 var(--accent-default);
 }
 
-.tab-home:focus-visible,
-.tab:focus-visible {
+.tab-home:focus-visible {
   outline: 2px solid var(--border-emphasis);
   outline-offset: -2px;
 }
@@ -799,7 +798,7 @@ kbd {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  padding: 0 0.4rem 0 0.7rem;
+  padding: 0 0.4rem 0 0;
   min-width: 96px;
   max-width: 200px;
   border: 1px solid transparent;
@@ -810,6 +809,28 @@ kbd {
   cursor: pointer;
   user-select: none;
   transition: background 0.14s var(--ease), color 0.14s var(--ease);
+}
+
+/*
+ * 1.14.0 (accessible tabs): `.tab` is a presentational wrapper; the role="tab" element is
+ * .tab-main (icon, name, dirty dot) and the close button sits beside it. .tab-main fills the tab
+ * from its left edge, so the tab looks exactly as before, and the focus ring is drawn on the
+ * wrapper so it still frames the whole tab, close button included.
+ */
+.tab-main {
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding-left: 0.7rem;
+  outline: none;
+}
+
+.tab:has(> .tab-main:focus-visible) {
+  outline: 2px solid var(--border-emphasis);
+  outline-offset: -2px;
 }
 
 .tab:hover {
@@ -951,13 +972,26 @@ kbd {
   flex: 1;
 }
 
+/* Each entry is a <button> in its <li>, so the contents can be reached and used from the keyboard.
+   The li carries the per-level indent, weight and colour; the button draws the row and inherits
+   the rest, so entries look exactly as they did when the li itself was clickable. */
 .toc-list li {
-  padding: 0.4rem 0.5rem;
   margin-bottom: 0.1rem;
-  border-radius: var(--radius-sm);
-  border-left: 3px solid transparent;
   color: var(--text-muted);
   font-size: 0.85rem;
+}
+
+.toc-link {
+  display: block;
+  width: 100%;
+  padding: 0.4rem 0.5rem;
+  border: 0;
+  border-left: 3px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
   transition: background 0.16s var(--ease), color 0.16s var(--ease);
   white-space: nowrap;
@@ -965,14 +999,23 @@ kbd {
   text-overflow: ellipsis;
 }
 
-.toc-list li:hover {
+.toc-link:hover {
   background: var(--accent-subtle);
   color: var(--text-primary);
+}
+
+.toc-link:focus-visible {
+  outline: 2px solid var(--border-emphasis);
+  outline-offset: -2px;
 }
 
 .toc-list li.active {
   color: var(--text-accent);
   font-weight: 600;
+}
+
+.toc-list li.active .toc-link {
+  color: inherit;
   border-left-color: var(--accent-default);
   background: var(--accent-subtle);
 }
@@ -1071,6 +1114,189 @@ kbd {
   overflow-y: auto;
   padding: 2.25rem 2rem 4rem;
   scroll-behavior: smooth;
+}
+
+/* ── Reading view: remote images, find, links ────────────────────────────────────────────────
+   .viewer-doc wraps the scrolling document so the find bar can float over its top-right corner
+   while the remote-images bar above it takes its own row. Remote images are placeholders until
+   the user loads them (src/markdown.js); find paints matches with the CSS Custom Highlight API
+   (src/previewFind.js), so the matches are ::highlight() rules, not elements. */
+.viewer-doc {
+  position: relative; /* anchors .find-bar */
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.remote-images-bar {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.6rem;
+  padding: 0.45rem 1rem;
+  background: var(--surface-raised);
+  border-bottom: 1px solid var(--border-default);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+/* Clear of the floating "Show contents" button. */
+.remote-images-bar.with-reveal {
+  padding-left: 3.4rem;
+}
+
+.remote-images-icon {
+  flex-shrink: 0;
+  color: var(--accent-default);
+}
+
+.remote-images-text {
+  flex: 1 1 12rem;
+}
+
+.remote-images-btn {
+  padding: 0.25rem 0.7rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--surface-highest);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.18s var(--ease), color 0.18s var(--ease);
+}
+
+.remote-images-btn:hover {
+  border-color: var(--border-emphasis);
+  color: var(--text-accent);
+}
+
+.remote-images-btn:focus-visible {
+  outline: 2px solid var(--border-emphasis);
+  outline-offset: 2px;
+}
+
+/* An image that wasn't loaded: its alt text and where it would have come from. */
+.markdown-body .remote-image {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  max-width: 100%;
+  padding: 0.2rem 0.6rem;
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  font-size: 0.85em;
+  line-height: 1.5;
+  vertical-align: middle;
+}
+
+.markdown-body .remote-image::before {
+  content: '';
+  flex-shrink: 0;
+  align-self: center;
+  width: 14px;
+  height: 14px;
+  background-color: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cpath d='M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40Zm0,16V158.75l-26.07-26.06a16,16,0,0,0-22.63,0l-20,20-44-44a16,16,0,0,0-22.62,0L40,149.37V56ZM40,172l52-52,80,80H40Zm176,28H194.63l-36-36,20-20L216,181.38V200ZM144,100a12,12,0,1,1,12,12A12,12,0,0,1,144,100Z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+.markdown-body .remote-image-alt {
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.markdown-body .remote-image-host {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+/* A relative link whose file doesn't exist (set when the click finds out). */
+.markdown-body a[data-link-state='missing'] {
+  color: var(--status-danger);
+  border-bottom-color: var(--status-danger);
+  text-decoration: line-through;
+}
+
+.find-bar {
+  position: absolute;
+  top: 0.6rem;
+  right: 1.4rem; /* clear of the document's scrollbar */
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  max-width: calc(100% - 2rem);
+  padding: 0.3rem 0.35rem 0.3rem 0.45rem;
+  background: var(--surface-overlay);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-panel);
+}
+
+.find-input {
+  flex: 1 1 14rem;
+  width: 14rem;
+  min-width: 4rem;
+  padding: 0.3rem 0.5rem;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  outline: none;
+}
+
+.find-input:focus {
+  border-color: var(--border-emphasis);
+}
+
+.find-input::placeholder {
+  color: var(--text-faint);
+}
+
+.find-count {
+  flex-shrink: 0;
+  min-width: 4.75rem;
+  padding: 0 0.35rem;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.find-count.none {
+  color: var(--status-danger);
+}
+
+.find-bar .icon-btn {
+  width: 26px;
+  height: 26px;
+}
+
+.find-bar .icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+  color: var(--text-muted);
+  background: transparent;
+  border-color: transparent;
+}
+
+::highlight(fate-find) {
+  background-color: color-mix(in srgb, var(--accent-default) 35%, transparent);
+}
+
+::highlight(fate-find-current) {
+  background-color: var(--accent-default);
+  color: var(--text-inverse);
 }
 
 /* ════════════════════════════════════════════════════════════════════════════════════════════
@@ -1210,6 +1436,73 @@ kbd {
   white-space: pre;
   background: transparent;
   border: 0;
+}
+
+/* ── Code block Copy button ──────────────────────────────────────────────────────────────────
+   Added to every block by renderMarkdown, handled by previewClipboard.js. The button is EMPTY and
+   its icon is a CSS mask, so it contributes no text to a selection that runs across the block. It
+   sits on the wrapper rather than inside the <pre>, so it stays put while a wide block scrolls
+   sideways under it. Shown on hover and keyboard focus, and held while it reports a result. */
+.markdown-body .code-block {
+  position: relative;
+}
+
+.markdown-body .code-copy {
+  position: absolute;
+  top: 0.45rem;
+  right: 0.45rem;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+  opacity: 0;
+  transition: opacity 0.18s var(--ease), color 0.18s var(--ease), border-color 0.18s var(--ease);
+}
+
+.markdown-body .code-copy::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 16px;
+  height: 16px;
+  background-color: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cpath d='M216,32H88a8,8,0,0,0-8,8V80H40a8,8,0,0,0-8,8V216a8,8,0,0,0,8,8H168a8,8,0,0,0,8-8V176h40a8,8,0,0,0,8-8V40A8,8,0,0,0,216,32ZM160,208H48V96H160Zm48-48H176V88a8,8,0,0,0-8-8H96V48H208Z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+.markdown-body .code-block:hover .code-copy,
+.markdown-body .code-copy:focus-visible,
+.markdown-body .code-copy[data-state] {
+  opacity: 1;
+}
+
+.markdown-body .code-copy:hover {
+  color: var(--accent-default);
+  border-color: var(--border-emphasis);
+}
+
+.markdown-body .code-copy:focus-visible {
+  outline: 2px solid var(--border-emphasis);
+  outline-offset: 2px;
+}
+
+.markdown-body .code-copy[data-state='copied'] {
+  color: var(--status-success);
+  border-color: var(--status-success);
+}
+
+.markdown-body .code-copy[data-state='copied']::before {
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cpath d='M229.66,77.66l-128,128a8,8,0,0,1-11.32,0l-56-56a8,8,0,0,1,11.32-11.32L96,188.69,218.34,66.34a8,8,0,0,1,11.32,11.32Z'/%3E%3C/svg%3E");
+}
+
+.markdown-body .code-copy[data-state='failed'] {
+  color: var(--status-danger);
+  border-color: var(--status-danger);
 }
 
 .markdown-body table {
@@ -2337,6 +2630,279 @@ kbd {
 }
 
 /* ════════════════════════════════════════════════════════════════════════════════════════════
+   1.14.0 DOCUMENT SAFETY SURFACES (renderer-docs)
+   Bars over a pane (changed on disk, deleted, notices), the status bar's encoding / line-ending
+   items and their menu, Follow, the Markdown print snapshot, the render fallback, and the crash
+   screen. Kept together; every colour is a token, so every theme carries them.
+   ════════════════════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Pane bars (components/DocBar.jsx) ─────────────────────────────────────────────────────── */
+.doc-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.6rem;
+  padding: 0.4rem 0.6rem 0.4rem 0.85rem;
+  background: var(--accent-subtle);
+  border-bottom: 1px solid var(--border-default);
+  color: var(--text-primary);
+  font-size: 0.8rem;
+}
+
+.doc-bar-warning {
+  background: color-mix(in srgb, var(--accent-default) 14%, var(--surface-raised));
+  border-bottom-color: var(--border-emphasis);
+}
+
+.doc-bar-danger {
+  background: color-mix(in srgb, var(--status-danger) 14%, var(--surface-raised));
+  border-bottom-color: color-mix(in srgb, var(--status-danger) 50%, transparent);
+}
+
+.doc-bar-icon {
+  flex-shrink: 0;
+  color: var(--text-accent);
+}
+
+.doc-bar-danger .doc-bar-icon {
+  color: var(--status-danger);
+}
+
+.doc-bar-message {
+  flex: 1;
+  min-width: 12rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.doc-bar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.doc-bar-btn {
+  height: 24px;
+  padding: 0 0.65rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-default);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.16s var(--ease), color 0.16s var(--ease), background 0.16s var(--ease);
+}
+
+.doc-bar-btn:hover {
+  border-color: var(--border-emphasis);
+  color: var(--text-accent);
+}
+
+.doc-bar-btn-primary {
+  background: var(--accent-default);
+  border-color: var(--accent-default);
+  color: var(--text-inverse);
+}
+
+.doc-bar-btn-primary:hover {
+  background: var(--accent-hover);
+  color: var(--text-inverse);
+}
+
+.doc-bar-dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.doc-bar-dismiss:hover {
+  color: var(--text-accent);
+  border-color: var(--border-default);
+}
+
+.doc-bar-btn:focus-visible,
+.doc-bar-dismiss:focus-visible,
+.format-menu-item:focus-visible {
+  outline: 2px solid var(--border-emphasis);
+  outline-offset: 1px;
+}
+
+/* ── Status bar: encoding, line endings, Follow (components/FormatStatus.jsx) ──────────────── */
+.status-format {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 0.7rem;
+  flex-shrink: 0;
+}
+
+.status-format.open {
+  color: var(--text-accent);
+  background: var(--accent-subtle);
+  border-color: var(--border-default);
+}
+
+.status-follow {
+  flex-shrink: 0;
+}
+
+/* Fixed and portalled to <body>: the status bar clips overflow, so it can't hold a popover. */
+.format-menu {
+  position: fixed;
+  z-index: 1300;
+  display: flex;
+  flex-direction: column;
+  padding: 0.3rem;
+  background: var(--surface-overlay);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-panel);
+  font-family: var(--font-sans);
+}
+
+.format-menu-heading {
+  padding: 0.35rem 0.55rem 0.2rem;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.format-menu-hint {
+  padding: 0 0.55rem 0.25rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.format-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  padding: 0.32rem 0.55rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.format-menu-item:hover:not(:disabled),
+.format-menu-item:focus-visible {
+  background: var(--accent-subtle);
+  color: var(--text-accent);
+}
+
+.format-menu-item:disabled {
+  color: var(--text-faint);
+  cursor: default;
+}
+
+.format-menu-check {
+  display: inline-flex;
+  width: 12px;
+  flex-shrink: 0;
+  color: var(--text-accent);
+}
+
+.format-menu-sep {
+  height: 1px;
+  margin: 0.3rem 0.2rem;
+  background: var(--border-default);
+}
+
+/* ── Markdown that couldn't render: shown as its text, wrapped like prose ──────────────────── */
+.markdown-body pre.md-plain-fallback {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ── Markdown in Edit mode prints RENDERED: this snapshot, never visible on screen ──────────── */
+.md-print-body {
+  display: none;
+}
+
+@media print {
+  .md-print-body {
+    display: block !important;
+  }
+
+  .doc-bar,
+  .format-menu {
+    display: none !important;
+  }
+}
+
+/* ── Crash screen (components/ErrorBoundary.jsx) ────────────────────────────────────────────── */
+.crash-screen {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: var(--surface-base);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+}
+
+.crash-card {
+  display: grid;
+  gap: 0.85rem;
+  width: min(560px, 100%);
+  padding: 1.5rem 1.75rem;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-panel);
+}
+
+.crash-title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.crash-text {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.crash-detail {
+  margin: 0;
+  max-height: 9rem;
+  overflow: auto;
+  padding: 0.6rem 0.75rem;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.crash-reload {
+  justify-self: start;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════════════════════
    1.11.0 SURFACES: palette, split view, diff, markdown edit mode, focus mode, custom themes
    ════════════════════════════════════════════════════════════════════════════════════════════ */
 
@@ -2444,6 +3010,75 @@ kbd {
   text-align: center;
   color: var(--text-faint);
   font-size: 0.85rem;
+}
+
+/* ── 1.14.0: palette modes, dialog focus, shortcut recording ─────────────────────────────────
+   Palette: the badge naming the active mode (":" Go to line, "@" Go to symbol, "#" Search open
+   tabs), the rows a mode shows as hints or input errors, and the quiet footer that lists the
+   prefixes while the query is empty. Settings and the palette now take focus themselves
+   (src/dialogFocus.js); the dialog box only holds it after a click on empty space, so it gets
+   no focus ring. The shortcut recording hint is an always-present live region, empty (and
+   taking no space) until a binding is being recorded. */
+.palette:focus,
+.settings-modal:focus {
+  outline: none;
+}
+
+.palette-mode {
+  flex-shrink: 0;
+  padding: 0.12rem 0.5rem;
+  border-radius: var(--radius-pill);
+  background: var(--accent-subtle);
+  color: var(--text-accent);
+  font-size: 0.7rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.palette-item.disabled {
+  cursor: default;
+  color: var(--text-muted);
+}
+
+.palette-item.disabled.selected {
+  background: var(--surface-highest);
+  color: var(--text-muted);
+}
+
+.palette-item.error .palette-icon {
+  color: var(--status-danger);
+}
+
+.palette-detail {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.palette-hint {
+  flex-shrink: 0;
+  padding: 0.45rem 0.9rem;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 0.72rem;
+  line-height: 1.6;
+  color: var(--text-faint);
+}
+
+.palette-hint kbd {
+  margin-right: 0.1rem;
+}
+
+.shortcut-recording-hint {
+  color: var(--text-accent);
+}
+
+.shortcut-recording-hint:empty {
+  margin: 0;
+}
+
+.shortcuts-head + .shortcut-recording-hint {
+  margin-top: 0.75rem;
 }
 
 /* ── Split view ──────────────────────────────────────────────────────────────────────────── */
@@ -2815,6 +3450,7 @@ kbd {
   .doc-panes,
   .viewer-layout,
   .viewer-main,
+  .viewer-doc,
   .markdown-container,
   .markdown-body {
     background: #fff !important;
@@ -2851,13 +3487,35 @@ kbd {
   .palette-backdrop,
   .split-bar,
   .diff-view,
-  .md-edit-split {
+  .md-edit-split,
+  .markdown-body .code-copy,
+  .remote-images-bar,
+  .find-bar {
     display: none !important;
+  }
+
+  /* Find matches stay on screen; paper gets the plain text. */
+  ::highlight(fate-find),
+  ::highlight(fate-find-current) {
+    background-color: transparent;
+    color: inherit;
   }
 
   /* A split prints only the active pane, full width. */
   .doc-panes.split .doc-pane-split-right {
     display: none !important;
+  }
+
+  /* ...unless the job is for the split pane's doc (it had focus; L3): then that one, instead. */
+  .doc-panes.split.print-right .doc-pane-active {
+    display: none !important;
+  }
+
+  .doc-panes.split.print-right .doc-pane-split-right {
+    display: block !important;
+    background: #fff !important;
+    height: auto !important;
+    overflow: visible !important;
   }
 
   .markdown-body {
@@ -2940,7 +3598,8 @@ kbd {
   }
 
   .markdown-body table th,
-  .markdown-body table td {
+  .markdown-body table td,
+  .markdown-body .remote-image {
     border-color: #bbb !important;
   }
 

@@ -1,10 +1,14 @@
 # Windows release build. One tag push does this, alongside build-linux.yml:
 #
-#   build      the NSIS installer (FATE-Setup-X.Y.Z.exe + latest.yml) and the Microsoft Store .appx
-#   attach     the installer and latest.yml to the GitHub release for the tag; electron-updater on
-#              Windows reads latest.yml from the latest release, so this is what existing installs
-#              update from
-#   artifact   all three on the run, the .appx for the Store submission (Partner Center)
+#   build      the NSIS installer (FATE-Setup-X.Y.Z.exe, its .blockmap, latest.yml) and the Microsoft
+#              Store .appx. Read-only: this job runs `npm ci` and electron-builder.
+#   publish    attaches the installer, the blockmap and latest.yml to the GitHub release; the only
+#              job with write access, and it runs nothing but download-artifact and gh.
+#              electron-updater on Windows reads latest.yml from the latest release, so this is
+#              what existing installs update from, and the blockmap lets them download only the
+#              blocks that changed (differential updates need it on both the old and the new
+#              release, so they start from the release after the first one that carries it).
+#   artifact   everything on the run, the .appx for the Store submission (Partner Center)
 #
 # The maintainer's part is
 #     gh release create vX.Y.Z --title ... --notes ...
@@ -12,80 +16,128 @@
 # ten minutes), update checks on Windows report that latest.yml is missing and succeed on the next
 # check; the AppImage has always had the same gap for latest-linux.yml.
 #
-# A release that already carries FATE-Setup-X.Y.Z.exe and latest.yml (built locally and passed to
-# `gh release create`, the old way) is left alone: replacing a live installer under a running
-# update check would hand out a latest.yml whose hash matches neither file for a moment.
-#
-# The tag must be v + package.json's version, or the installer would be named for a different
-# release than the one it is attached to; the job stops before uploading anything if they differ.
+# Guards, as in build-linux.yml:
+#   * The tag must be v + package.json's version, or the installer would be named for a different
+#     release than the one it is attached to; the build stops before anything else if they differ.
+#   * A recovery run is started from the release's tag (Run workflow → Use workflow from → Tags)
+#     and builds that commit; a `release_tag` naming any other tag is refused.
+#   * A prerelease version (a "-" in the tag) is attached only to a release marked prerelease.
+#     Otherwise it would be the latest release, and its latest.yml would update every install.
+#   * The installer, its blockmap and latest.yml go up together, and latest.yml last, because it
+#     names the installer and its hash. A release that already carries FATE-Setup-X.Y.Z.exe and
+#     latest.yml (a re-run, or built locally and passed to `gh release create`, the old way) is left
+#     alone: replacing a live installer under a running update check would hand out a latest.yml
+#     whose hash matches neither file for a moment. A release holding only some of them stops the
+#     job; Run workflow with force replaces all three.
 #
 # "Run workflow" (workflow_dispatch) on a branch builds everything and attaches it to the run.
-# Give it a `release_tag` to ALSO attach the installer to that existing release: the recovery path
-# when a tag's own run failed.
+# Started from a release's tag instead, it ALSO attaches the installer to that release: the recovery
+# path when a tag's own run failed.
 name: Build Windows
 
 on:
   push:
     tags: ['v*']
-  # A PR that changes this workflow or the Windows build configuration builds too (artifacts only),
-  # so a broken installer or Store package shows up on the PR rather than at release time.
+  # A PR that touches anything that goes into the installer or the Store package builds too
+  # (artifacts only), so a broken installer shows up on the PR rather than at release time.
   pull_request:
     paths:
       - '.github/workflows/build-windows.yml'
       - 'package.json'
+      - 'package-lock.json'
       - 'build/installer.nsh'
-      - 'scripts/escape-appx-manifest.cjs'
+      - 'electron/**'
+      - 'src/fileKinds.js'
+      - 'scripts/appx-manifest.cjs'
+      - 'scripts/generate-*'
+      - 'brand/**'
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Existing release tag to attach the installer to (empty = run artifacts only)'
+        description: 'Optional check: the release tag this run was started from (Use workflow from → Tags). Started from a branch, the run only builds.'
         required: false
         default: ''
         type: string
+      force:
+        description: 'Replace the installer, blockmap and latest.yml already on that release'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: build-windows-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  windows:
+  build:
+    name: Build the installer and the Store package
     runs-on: windows-latest
     timeout-minutes: 45
     defaults:
       run:
         shell: bash
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      release_tag: ${{ steps.target.outputs.release_tag }}
+      artifact: ${{ steps.meta.outputs.artifact }}
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Release metadata
-        id: meta
+      # Inputs reach scripts only through env, never pasted into the script text.
+      - name: Resolve the release tag
+        id: target
         env:
           RELEASE_TAG_INPUT: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
-          VERSION="$(node -p "require('./package.json').version")"
           TAG=""
           case "$GITHUB_REF" in refs/tags/*) TAG="$GITHUB_REF_NAME" ;; esac
-          if [ -n "$RELEASE_TAG_INPUT" ]; then TAG="$RELEASE_TAG_INPUT"; fi
+          # A recovery run builds the commit it was STARTED from, so it is started from the tag
+          # (Run workflow → Use workflow from → Tags). Checking out a ref named in an input instead
+          # would run that ref's code in a job whose caches land in the default branch's scope.
+          if [ -n "$RELEASE_TAG_INPUT" ] && [ "$RELEASE_TAG_INPUT" != "$TAG" ]; then
+            echo "::error::To rebuild $RELEASE_TAG_INPUT, start Run workflow from that tag: Use workflow from → Tags → $RELEASE_TAG_INPUT. This run started from $GITHUB_REF_NAME."
+            exit 1
+          fi
+          if [ -n "$TAG" ] && ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::The release tag must look like v1.2.3 or v1.2.3-beta.1."
+            exit 1
+          fi
+          echo "release_tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      # TODO(pin): replace @v4 with the full commit SHA: gh api repos/actions/setup-node/commits/v4 --jq .sha
+      # No npm cache in release builds: a Run workflow recovery checks out a tag the dispatcher
+      # chose, and a cache saved by that run would land in the default branch's scope for later
+      # runs to restore (cache poisoning). Releases are rare; a cold npm ci costs a minute.
+      - uses: actions/setup-node@v4 # v4
+        with:
+          node-version: 22
+
+      - name: Release metadata
+        id: meta
+        env:
+          TAG: ${{ steps.target.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./package.json').version")"
           if [ -n "$TAG" ] && [ "$TAG" != "v$VERSION" ]; then
             echo "::error::Tag $TAG does not match package.json's version $VERSION. Bump the version before tagging."
             exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "release_tag=$TAG" >> "$GITHUB_OUTPUT"
+          # Not github.ref_name: on a PR that is "N/merge", and artifact names cannot contain "/".
+          echo "artifact=FATE-windows-$VERSION-run$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
           echo "version $VERSION: publishing to release: ${TAG:-no (artifacts only)}"
 
       - run: npm ci
       - run: npm run icons
       - run: npm run lint
+      - run: npm test
 
       # Targets come from package.json: nsis and appx. Neither is code-signed (the Store signs the
       # .appx on submission), the same as the installers built locally before this workflow.
@@ -97,46 +149,101 @@ jobs:
           VERSION: ${{ steps.meta.outputs.version }}
         run: |
           set -euo pipefail
-          ls -la dist-electron/*.exe dist-electron/*.appx dist-electron/latest.yml
+          ls -la dist-electron/*.exe dist-electron/*.blockmap dist-electron/*.appx dist-electron/latest.yml
           test -f "dist-electron/FATE-Setup-$VERSION.exe"
+          test -f "dist-electron/FATE-Setup-$VERSION.exe.blockmap"
           tr -d '\r' < dist-electron/latest.yml > latest.check
           cat latest.check
           grep -qx "version: $VERSION" latest.check
           grep -qx "path: FATE-Setup-$VERSION.exe" latest.check
 
-      - uses: actions/upload-artifact@v4
+          # The Store package's file types (scripts/appx-manifest.cjs): Markdown, text and the code
+          # types the installer registers, and never .bat or .cmd.
+          APPX=(dist-electron/*.appx)
+          python -c "import sys, zipfile; sys.stdout.write(zipfile.ZipFile(sys.argv[1]).read('AppxManifest.xml').decode('utf-8'))" \
+            "${APPX[0]}" > appx-manifest.check
+          echo "--- Store file types: $(grep -c '<uap:FileType>' appx-manifest.check)"
+          grep -q '<uap:FileType>\.md</uap:FileType>' appx-manifest.check
+          grep -q '<uap:FileType>\.markdown</uap:FileType>' appx-manifest.check
+          grep -q '<uap:FileType>\.py</uap:FileType>' appx-manifest.check
+          if grep -Eq '<uap:FileType>\.(bat|cmd)</uap:FileType>' appx-manifest.check; then
+            echo "::error::The Store package declares .bat or .cmd."
+            exit 1
+          fi
+
+      # TODO(pin): replace @v4 with the full commit SHA: gh api repos/actions/upload-artifact/commits/v4 --jq .sha
+      - uses: actions/upload-artifact@v4 # v4
         with:
-          # Not github.ref_name: on a PR that is "N/merge", and artifact names cannot contain "/".
-          name: FATE-windows-${{ steps.meta.outputs.version }}-run${{ github.run_number }}
+          name: ${{ steps.meta.outputs.artifact }}
           if-no-files-found: error
           path: |
             dist-electron/FATE-Setup-*.exe
+            dist-electron/FATE-Setup-*.exe.blockmap
             dist-electron/latest.yml
             dist-electron/*.appx
 
-      # ── Release ────────────────────────────────────────────────────────────────────────────
+  # ── Release: the only job with write access. No npm, no third-party actions. ───────────────
+  publish:
+    name: Attach to the release
+    needs: build
+    if: needs.build.outputs.release_tag != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    # One fixed group: a tag run and a recovery run never attach at the same time.
+    concurrency:
+      group: build-windows-publish
+      cancel-in-progress: false
+    env:
+      TAG: ${{ needs.build.outputs.release_tag }}
+      VERSION: ${{ needs.build.outputs.version }}
+      FORCE: ${{ inputs.force }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ needs.build.outputs.artifact }}
+          path: dist
+
       - name: Attach the installer to the GitHub release
-        if: steps.meta.outputs.release_tag != ''
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.meta.outputs.release_tag }}
-          EXE: FATE-Setup-${{ steps.meta.outputs.version }}.exe
         run: |
           set -euo pipefail
+          EXE="FATE-Setup-$VERSION.exe"
+          BLOCKMAP="$EXE.blockmap"
+          ls -la dist
           # No draft is created here: build-linux.yml creates one when a bare tag is pushed, and two
           # jobs racing to create it would leave two drafts for the same tag.
-          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "::error::No release for $TAG. Create it with gh release create, then re-run this job or Run workflow with release_tag=$TAG."
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json tagName >/dev/null 2>&1; then
+            echo "::error::No release for $TAG. Create it with gh release create, then re-run this job or Run workflow from the tag $TAG."
             exit 1
           fi
+          PRERELEASE="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq .isPrerelease)"
+          case "$TAG" in
+            *-*)
+              if [ "$PRERELEASE" != true ]; then
+                echo "::error::$TAG is a prerelease version, but its GitHub release is not marked as a prerelease, so its latest.yml would update every install. Mark it (gh release edit $TAG --prerelease), then re-run this job."
+                exit 1
+              fi
+              ;;
+          esac
+
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' > assets.txt
-          if grep -qx "$EXE" assets.txt && grep -qx latest.yml assets.txt; then
-            echo "::notice::$TAG already has $EXE and latest.yml; leaving them in place."
+          have() { grep -qxF "$1" assets.txt; }
+          if [ "$FORCE" = true ]; then
+            CLOBBER=(--clobber)
+          elif have "$EXE" && have latest.yml; then
+            echo "::notice::$TAG already has $EXE and latest.yml; leaving them in place (Run workflow with force to replace them)."
             exit 0
+          elif have "$EXE" || have latest.yml || have "$BLOCKMAP"; then
+            echo "::error::$TAG has only some of $EXE, $BLOCKMAP and latest.yml. latest.yml names the installer by hash, so they must come from one build. Run workflow from the tag $TAG and force to replace them all."
+            exit 1
+          else
+            CLOBBER=()
           fi
-          # Installer first, then latest.yml: electron-updater follows latest.yml, so it must never
-          # name an installer that is not there yet.
-          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "dist-electron/$EXE"
-          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist-electron/latest.yml
+          # Installer and blockmap first, then latest.yml: electron-updater follows latest.yml, so it
+          # must never name an installer that is not there yet.
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" "${CLOBBER[@]}" "dist/$EXE" "dist/$BLOCKMAP"
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" "${CLOBBER[@]}" dist/latest.yml
           echo "Release assets now:"
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name'

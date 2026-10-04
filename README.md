@@ -31,6 +31,10 @@ The only network request FATE makes is the update check on installs that update 
 
 - **Opens any text file.** Nothing is gated on the extension. The only limits are a 25 MB size cap and a
   check that refuses binary files, and both explain themselves.
+- **Files stay the way they were.** Line endings (CRLF or LF), encoding (UTF-8 with or without a byte-order
+  mark, UTF-16 and Windows-1252) and indentation (tabs or spaces, and how wide) are detected and written
+  back unchanged. The status bar shows all three, and a click converts the line endings, saves with
+  another encoding, reopens a file whose encoding was guessed wrong, or switches tabs and spaces.
 - **Syntax highlighting for around 150 languages**, each loaded the first time you open a file of that
   type. Files with unfamiliar extensions are detected from their content (XML and HTML prologues, JSON,
   INI sections, registry exports, shebang lines), and anything ambiguous stays plain text.
@@ -42,21 +46,31 @@ The only network request FATE makes is the update check on installs that update 
   configs to set up. You can turn this off in Settings → Code Editor, which also has word wrap and
   indent size.
 - **Careful saving.** `Ctrl`+`S` and Save As, an unsaved marker in the title and on each tab, and a
-  Save / Don't save / Cancel prompt for every unsaved tab when you quit.
+  Save / Don't save / Cancel prompt for every unsaved tab when you close it or quit. Saves are atomic: a
+  temporary file is written and swapped in, so a full disk or a dropped network share can't leave half a
+  file behind.
+- **Hot exit.** Unsaved work, Untitled tabs included, is backed up moments after you type and comes back
+  if FATE crashes or the power goes.
 - **Live reload that respects your edits.** Files changed on disk reload in place while your buffer is
-  clean, including editors that save by writing a temp file and renaming it. Unsaved edits are never
-  overwritten.
+  clean, keeping your place, including editors that save by writing a temp file and renaming it. Unsaved
+  edits are never overwritten: a bar offers Reload, Keep mine or Compare, and a deleted file gets its own.
+- **Large files and logs.** Files over 5 MB open with the heavier editor features off, and **Follow** keeps
+  a growing log scrolled to its end.
 
 ### Tabs, split view and navigation
 
 - **Tabs, Notepad++ style.** Mix Markdown and code freely. Each tab keeps its scroll position, cursor,
-  selection and undo history in the background. `Ctrl`+`Tab` cycles, `Ctrl`+`1` to `9` jumps, and
-  middle-click closes.
+  selection and undo history in the background. `Ctrl`+`Tab` cycles, `Ctrl`+`1` to `9` jumps, middle-click
+  closes, and right-click copies the file's path, opens its folder or closes other tabs.
 - **Session restore** reopens last session's tabs on launch (optional).
 - **Split view** (`Ctrl`+`\`) puts any two open tabs side by side, and a **Diff** toggle compares them
   chunk by chunk with syntax highlighting. With no split open, the same button diffs your unsaved changes
   against the saved file.
 - **Command palette** (`Ctrl`+`K`): one fuzzy search across open tabs, recent files, commands and themes.
+  Start with `:` to go to a line, `@` to jump to a function, class or heading, or `#` to search the text of
+  every open tab.
+- **An application menu** (`Alt`) with Open Recent, labelled with your own shortcuts. On Windows, opened
+  files also appear in FATE's Jump List.
 - **Recent files** on the home screen, **focus mode** (`Ctrl`+`Shift`+`F`) and **drag and drop** of one
   or many files anywhere in the window.
 - **Every shortcut is rebindable** in Settings → Shortcuts, with conflict detection.
@@ -64,17 +78,27 @@ The only network request FATE makes is the update check on installs that update 
 ### Markdown preview and editing
 
 - **Reading view** renders Markdown as a typeset document, with a table of contents sidebar, reading
-  progress and reading time.
-- **Edit mode** (`Ctrl`+`E`) opens the source beside a live preview. Switch back and the reading view
-  shows your edits straight away.
+  progress, reading time and **find** (`Ctrl`+`F`).
+- **Edit mode** (`Ctrl`+`E`) opens the source beside a live preview that scrolls with the editor. Switch
+  back and the reading view shows your edits straight away. Spell check is available here (Settings →
+  Markdown).
+- **Links work.** A link to another file opens it in a tab, `#anchors` scroll (headings get GitHub-style
+  anchors), and web and email links open in your browser after a confirmation.
+- **Copy buttons on code blocks**, and clean copies: code copies as plain text with its exact spacing,
+  ready to paste into a terminal; prose copies without the theme's colours; maths copies as its TeX
+  source.
 - **KaTeX math**, inline and block, including fractions, multi-line matrices and equations inside
   headings (they render in the table of contents too).
 - **LaTeX repair.** A repair pass fixes badly escaped backslashes (`\theta`, `\begin`, `\approx`) that
-  some Markdown generators and export tools produce, before they reach the screen.
-- **Mermaid diagrams** from `mermaid` code fences, rendered offline and matched to the current theme.
+  some Markdown generators and export tools produce, inside maths only, before they reach the screen.
+- **Mermaid diagrams** from `mermaid` code fences, rendered offline and matched to the current theme, in
+  the reading view, split view and Edit mode's preview.
 - **Highlighted code fences** that use the same colours as the code editor, so a PowerShell fence and an
   open `.ps1` file look the same.
-- **Local images** referenced by relative path load correctly.
+- **Local images** referenced by relative path load correctly, names with spaces or accents included.
+  **Images from the internet** load only when you allow them, for one document or always, because loading
+  them tells their servers you opened the document.
+- **Safe to open.** A document can't run scripts, restyle or cover the app, or navigate it away.
 
 ### Printing and PDF export
 
@@ -137,7 +161,9 @@ latest release. It updates itself.
 **Linux: Snap Store.** `sudo snap install fate` on Ubuntu and any distribution with snapd
 ([snapcraft.io/fate](https://snapcraft.io/fate)). snapd keeps it updated. To edit files on USB sticks and
 other removable drives, allow it once with `sudo snap connect fate:removable-media`. FATE reminds you if
-you forget.
+you forget. The snap is confined to your home folder's ordinary files: hidden files and folders there
+(`~/.bashrc`, `~/.gitconfig`, anything in `~/.config`) and system files such as `/etc/hosts` can't be
+opened from it. To edit those, use the `.deb`, `.rpm` or AppImage.
 
 **Ubuntu / Debian / Mint / Pop!_OS.** Install the `.deb` from the latest release, or add the repository
 once. Either way, `apt upgrade` keeps FATE current:
@@ -146,13 +172,15 @@ sudo curl -fsSL -o /usr/share/keyrings/fate-archive-keyring.gpg https://github.c
 sudo curl -fsSL -o /etc/apt/sources.list.d/fate.sources https://github.com/VagueDustin/FATE/releases/download/apt/fate.sources
 sudo apt update && sudo apt install fate
 ```
-(The `.deb` registers the same repository during installation, so there is nothing to add afterwards.)
+(The `.deb` registers the same repository during installation, so there is nothing to add afterwards.
+`sudo apt remove fate` takes the repository out again, because its key goes with the package.)
 
 **Fedora / RHEL / openSUSE.** The same choice, `.rpm` or repository:
 ```bash
 sudo curl -fsSL -o /etc/yum.repos.d/fate.repo https://github.com/VagueDustin/FATE/releases/download/repodata/fate.repo
 sudo dnf install fate
 ```
+(Here too the `.rpm` registers the repository itself, and `sudo dnf remove fate` takes that entry out.)
 
 **Arch / Manjaro / EndeavourOS / CachyOS.** An AUR package, `fate-editor-bin`, is on its way. Until it is
 published, build the same package from a clone of this repository:
@@ -170,7 +198,8 @@ it. It updates itself. AppImages need FUSE 2, which some distributions no longer
 **Flathub.** Not listed yet. The Flatpak manifest in `flatpak/` is ready and is built and linted on every
 release; the Flathub submission itself has to be made by the maintainer.
 
-Packages and repository indexes are signed. The key is `fate-archive-keyring.gpg` on the `apt` release.
+Packages and repository indexes are signed. The key is `fate-archive-keyring.gpg` on the `apt` release,
+fingerprint `5E78 FD80 2EB3 DDCC AB6F  1026 8B2F 82F6 B2F7 1B42` (see [SECURITY.md](SECURITY.md#package-signing-key)).
 
 ## Keyboard shortcuts
 
@@ -180,16 +209,18 @@ Defaults:
 | Action | Shortcut |
 | --- | --- |
 | **Command palette** | `Ctrl` + `K` |
+| **Go to line / symbol / search all tabs** | `Ctrl` + `K`, then `:` / `@` / `#` |
+| **Menu bar** | `Alt` |
 | **New file** | `Ctrl` + `T` |
 | **Open file** | `Ctrl` + `O` |
 | **Save / Save As** | `Ctrl` + `S` / `Ctrl` + `Shift` + `S` |
-| **Find and replace (editor)** | `Ctrl` + `F` |
+| **Find (and replace, in the editor)** | `Ctrl` + `F` |
 | **Edit / view Markdown** | `Ctrl` + `E` |
 | **Split view** | `Ctrl` + `\` |
 | **Focus mode** | `Ctrl` + `Shift` + `F` |
 | **Next / previous tab** | `Ctrl` + `Tab` / `Ctrl` + `Shift` + `Tab` |
 | **Jump to tab** | `Ctrl` + `1` to `9` (9 = last) |
-| **Close tab** | `Ctrl` + `W` or `Escape` |
+| **Close tab** | `Ctrl` + `W`, or `Escape` in the reading view |
 | **Go home / Settings** | `Alt` + `Home` / `Ctrl` + `,` |
 | **Zoom in / out / reset** | `Ctrl` + `+` / `-` / `0` |
 | **Print preview / Export PDF** | `Ctrl` + `P` / `Ctrl` + `Shift` + `E` |
@@ -211,9 +242,10 @@ You need [Node.js](https://nodejs.org/) (CI uses Node 22) and git.
    ```bash
    npm run electron:dev
    ```
-4. **Check your work:**
+4. **Check your work** (the **Checks** workflow runs the same on every pull request):
    ```bash
    npm run lint
+   npm test
    npm run build
    ```
 5. **Build the Windows installer and Store package:**
@@ -230,10 +262,9 @@ You need [Node.js](https://nodejs.org/) (CI uses Node 22) and git.
    ```
    Run `npm run icons` first, because the icon set lives in the gitignored `build/` directory and is
    generated from the tracked masters in `brand/`. The `.rpm` needs `rpmbuild` (`sudo apt install rpm`
-   on Ubuntu; Fedora has it already). A local Linux build also needs the public signing keyring in
-   `build/`, because the `.deb` and `.rpm` ship it:
-   `curl -fsSL -o build/fate-archive-keyring.gpg https://github.com/VagueDustin/FATE/releases/download/apt/fate-archive-keyring.gpg`,
-   and the same for `fate-archive-keyring.asc` (CI derives both from the signing secret).
+   on Ubuntu; Fedora has it already). The public signing keyring the `.deb` and `.rpm` ship is
+   committed (`build/linux/fate-archive-keyring.gpg` and `.asc`), so a fresh clone needs nothing else.
+   A local `.rpm` is unsigned; CI signs the released one.
 
    Build Linux packages on Linux, or let the **Build Linux** GitHub Actions workflow
    (`.github/workflows/build-linux.yml`) do it. Cross-building from Windows stops at
@@ -257,21 +288,42 @@ or Gear Lever if you want it in the menu and the *Open With* list.
 Releases are cut by the maintainer: bump the version, then
 `gh release create vX.Y.Z --title ... --notes ...`. That creates the tag, and two workflows build and
 publish everything from it. **Build Windows** (`.github/workflows/build-windows.yml`) builds the NSIS
-installer and the Microsoft Store `.appx`, attaches `FATE-Setup-X.Y.Z.exe` and `latest.yml` to the
-release, and keeps the `.appx` on the run for the Store submission. **Build Linux** builds and attaches
-the AppImage, `.deb`, signed `.rpm` and `.snap`; republishes the apt and dnf repositories; uploads the
-snap to the Snap Store; builds and lints the Flathub manifest; and installs `fate` from the live
-repositories in Debian and Fedora containers as a smoke test. *Run workflow* on a branch builds
-everything and attaches it to the run only. The AppImage updates itself through `latest-linux.yml`, the
-same way the Windows installer uses `latest.yml`; the `.deb` and `.rpm` update through the package
-manager. For the ten minutes or so before the workflows attach those two files, update checks report
-them missing and succeed on the next check. A release created with a locally built installer
-(`gh release create vX.Y.Z FATE-Setup-X.Y.Z.exe latest.yml ...`) still works: Build Windows leaves
-those files in place.
+installer and the Microsoft Store `.appx`, attaches `FATE-Setup-X.Y.Z.exe`, its `.blockmap` (so updates
+download only the blocks that changed) and `latest.yml` to the release, and keeps the `.appx` on the run
+for the Store submission. **Build Linux** builds and attaches the AppImage, `.deb`, signed `.rpm` and
+`.snap`; republishes the apt and dnf repositories; uploads the snap to the Snap Store; builds and lints
+the Flathub manifest; and installs `fate` from the live repositories in Debian and Fedora containers as
+a smoke test. The AppImage updates itself through `latest-linux.yml`, the same way the Windows installer
+uses `latest.yml`; the `.deb` and `.rpm` update through the package manager. Both `latest` files go up
+after the files they name. For the ten minutes or so before the workflows attach them, update checks
+report them missing and succeed on the next check.
+
+The workflows refuse to publish what they shouldn't:
+
+- The tag must be `v` + `package.json`'s version; a tag without a version bump stops before anything is
+  built.
+- apt, dnf and the Snap Store take only a published (not draft), non-prerelease release that is the
+  repository's latest. A tag like `v1.15.0-beta.1` must be a GitHub prerelease, and gets its files
+  attached but never reaches those channels.
+- Files already on a release stay as they are, because a rebuild has new hashes that would break the
+  AUR's and Flathub's checksums. A release created with a locally built installer
+  (`gh release create vX.Y.Z FATE-Setup-X.Y.Z.exe latest.yml ...`) still works: Build Windows leaves
+  those files in place.
+- The signing key is only ever loaded in Build Linux's publish job, which runs no npm and no
+  third-party action, and only after it checks the key's fingerprint against the committed one.
+
+When a tag's run fails for a reason outside the code (a missing secret, a network error), use *Run
+workflow* and pick the tag under *Use workflow from → Tags*: it builds that tag's commit and publishes
+it. A fix to the code itself needs a new version. Add `force` only to replace files that are already on
+the release. *Run workflow* from a branch builds everything and attaches it to the run only (its `.rpm`
+is unsigned). Pushing a bare tag without a release makes Build Linux create a draft and attach the Linux
+files; publish the draft, then re-run the failed publish job (or *Run workflow* from the tag) to update
+the repositories.
 
 One-time setup, all in the repository: `scripts/setup-signing-key.sh` creates the
 `FATE_GPG_PRIVATE_KEY` secret, and `scripts/setup-snap-store-token.ps1` creates the
-`SNAPCRAFT_STORE_CREDENTIALS` secret through Canonical's snapcraft container.
+`SNAPCRAFT_STORE_CREDENTIALS` secret through Canonical's snapcraft container. Replacing the signing key
+is a rotation, not a re-run of that script: see [SECURITY.md](SECURITY.md#package-signing-key).
 
 ## Contributing
 

@@ -1,5 +1,9 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { List } from '@phosphor-icons/react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { List, ImageBroken } from '@phosphor-icons/react';
+import { renderMarkdown } from '../markdown.js';
+import { useMermaid } from '../useMermaid.js';
+import { findFragmentTarget, scrollIntoPreview, takePendingFragment } from '../previewLinks.js';
+import PreviewFindBar from './PreviewFindBar.jsx';
 
 /**
  * MarkdownView is one markdown tab's pane: TOC sidebar, resizer, and the scrolling document.
@@ -8,6 +12,10 @@ import { List } from '@phosphor-icons/react';
  * heading cache, active-heading highlight and sidebar state, and encapsulating them here means N
  * tabs get that for free. The pane stays mounted (hidden) while inactive, so switching tabs
  * preserves scroll position exactly.
+ *
+ * `isActive` is the tab the user is on; `isVisible` is true for it AND for a document shown in the
+ * right-hand split pane. Anything that measures layout (the active heading, Mermaid) needs only
+ * the second; anything that writes the app's single progress bar needs the first.
  *
  * ── Scroll performance (see AI_CONTEXT.md §5a; do not regress) ───────────────────────────────
  * The rules from the single-document era carry over verbatim:
@@ -18,12 +26,48 @@ import { List } from '@phosphor-icons/react';
  *   - one rAF in flight at a time; listener registered { passive: true }.
  * The one tab-era addition: progress writes are gated on `isActive`: the global progress bar and
  * "% read" belong to the visible tab, and a background tab must not fight it for the DOM node.
+ *
+ * ── Remote images ────────────────────────────────────────────────────────────────────────────
+ * renderMarkdown leaves remote images out (placeholders) and counts them. A bar offers to load
+ * them: "Load images" re-renders just this document, here, with them in; "Always load" also asks
+ * App to remember the choice (`onAllowRemoteImages`), which comes back as `remoteImagesAllowed`.
  */
-function MarkdownView({ doc, isActive, sidebarWidth, onSidebarWidthChange, progressBarRef, progressLabelRef }) {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(doc.toc.length > 0);
+function MarkdownView({
+  doc,
+  isActive,
+  isVisible = isActive,
+  sidebarWidth,
+  onSidebarWidthChange,
+  progressBarRef,
+  progressLabelRef,
+  remoteImagesAllowed = false,
+  onAllowRemoteImages
+}) {
+  const [remoteLoadedHere, setRemoteLoadedHere] = useState(false);
+  const remoteCount = doc.remoteImageCount ?? 0;
+  const withRemoteImages = remoteCount > 0 && (remoteImagesAllowed || remoteLoadedHere) && doc.source != null;
+  const remoteRender = useMemo(
+    () => (withRemoteImages ? renderMarkdown(doc.source, doc.path, { remoteImages: true }) : null),
+    [withRemoteImages, doc.source, doc.path]
+  );
+  const html = remoteRender?.html ?? doc.html;
+  const toc = remoteRender?.toc ?? doc.toc;
+
+  const [isSidebarOpen, setIsSidebarOpen] = useState(toc.length > 0);
   const [activeHeading, setActiveHeading] = useState('');
 
+  /*
+   * Stable markup objects. React 19 compares `dangerouslySetInnerHTML` by object identity and
+   * rewrites innerHTML whenever it changes, even to the same string, so a fresh `{ __html }` per
+   * render rebuilt the whole document on every App re-render (window focus, tab switches, status
+   * messages): mermaid diagrams vanished and a selection about to be copied was lost.
+   */
+  const bodyMarkup = useMemo(() => ({ __html: html }), [html]);
+  const tocMarkup = useMemo(() => toc.map((item) => ({ __html: item.html })), [toc]);
+
+  const layoutRef = useRef(null);
   const contentRef = useRef(null);
+  const bodyRef = useRef(null);
   const headingsRef = useRef([]);
   const activeHeadingRef = useRef('');
   const scrollRafIdRef = useRef(null);
@@ -37,7 +81,7 @@ function MarkdownView({ doc, isActive, sidebarWidth, onSidebarWidthChange, progr
   const [lastHtml, setLastHtml] = useState(doc.html);
   if (lastHtml !== doc.html) {
     setLastHtml(doc.html);
-    setIsSidebarOpen(doc.toc.length > 0);
+    setIsSidebarOpen(toc.length > 0);
   }
 
   useEffect(() => {
@@ -57,22 +101,30 @@ function MarkdownView({ doc, isActive, sidebarWidth, onSidebarWidthChange, progr
     }
   }, []);
 
+  /*
+   * The sidebar's width is the pointer's distance from THIS pane's left edge, capped at half the
+   * pane. It used to be measured from the window's left edge, so in the right-hand split pane the
+   * sidebar jumped to the pane's full offset on the first move.
+   */
   const resize = useCallback(
     (e) => {
-      if (isResizing.current) {
-        let newWidth = e.clientX;
-        if (newWidth < 200) newWidth = 200;
-        if (newWidth > window.innerWidth * 0.5) newWidth = window.innerWidth * 0.5;
-        onSidebarWidthChange(newWidth);
-      }
+      if (!isResizing.current || !layoutRef.current) return;
+      const pane = layoutRef.current.getBoundingClientRect();
+      onSidebarWidthChange(Math.min(Math.max(e.clientX - pane.left, 200), pane.width * 0.5));
     },
     [onSidebarWidthChange]
   );
 
   /*
    * Scroll progress + active-heading tracking. Runs whenever the content changes AND whenever the
-   * tab becomes active (deps below), the latter so the global progress bar snaps to THIS tab's
-   * position on switch instead of showing the previous tab's number until the first scroll.
+   * pane becomes active or visible (deps below): the former so the global progress bar snaps to
+   * THIS tab's position on switch instead of showing the previous tab's number until the first
+   * scroll, the latter so the contents highlight is worked out afresh from a real layout.
+   *
+   * The active heading is computed from scratch each time and only while the pane is visible.
+   * Measured inside display:none every heading sits at 0, which used to mark the LAST heading
+   * active, and a pane coming back into view kept that answer when no heading had yet passed the
+   * trigger point.
    */
   useEffect(() => {
     const scrollContainer = contentRef.current;
@@ -97,10 +149,10 @@ function MarkdownView({ doc, isActive, sidebarWidth, onSidebarWidthChange, progr
           if (progressLabelRef.current) progressLabelRef.current.textContent = `${Math.round(progress)}%`;
         }
 
+        if (!isVisible) return;
         const headings = headingsRef.current;
         const triggerPoint = window.innerHeight * 0.4;
-        let currentActive = activeHeadingRef.current;
-
+        let currentActive = '';
         for (const h of headings) {
           if (h.getBoundingClientRect().top <= triggerPoint) {
             currentActive = h.id;
@@ -111,10 +163,7 @@ function MarkdownView({ doc, isActive, sidebarWidth, onSidebarWidthChange, progr
 
         // Before the first heading scrolls past the trigger point, highlight it anyway so the TOC
         // is never blank at the top of a document.
-        if (headings.length > 0 && currentActive === '' &&
-            headings[0].getBoundingClientRect().top > triggerPoint) {
-          currentActive = headings[0].id;
-        }
+        if (currentActive === '' && headings.length > 0) currentActive = headings[0].id;
 
         if (currentActive !== activeHeadingRef.current) {
           activeHeadingRef.current = currentActive;
@@ -133,77 +182,28 @@ function MarkdownView({ doc, isActive, sidebarWidth, onSidebarWidthChange, progr
         scrollRafIdRef.current = null;
       }
     };
-  }, [doc.html, isActive, progressBarRef, progressLabelRef]);
+  }, [html, isActive, isVisible, progressBarRef, progressLabelRef]);
 
   const scrollToHeading = (id) => {
-    const container = contentRef.current;
-    const element = container?.querySelector(`#${CSS.escape(id)}`);
-    if (element && container) {
-      container.scrollTo({ top: element.offsetTop - 40, behavior: 'smooth' });
-    }
+    const element = bodyRef.current?.querySelector(`#${CSS.escape(id)}`);
+    if (element) scrollIntoPreview(element);
   };
 
-  /*
-   * Mermaid diagrams. ```mermaid fences arrive as <pre><code class="language-mermaid">. This
-   * effect lazily imports the mermaid renderer (its own chunk, loaded only when a document
-   * actually contains a diagram, still fully offline) and swaps each fence for its SVG.
-   *
-   * TWO HARD-WON RULES:
-   *   1. Only render while the pane is VISIBLE (`isActive` gates and re-triggers the pass).
-   *      Mermaid measures text with getBBox(), which returns zeros inside display:none, so a
-   *      background tab's diagrams failed silently and stayed as fences.
-   *   2. Mark a fence done only AFTER its SVG lands (and mark failures separately). The pass
-   *      mutates DOM that React owns via dangerouslySetInnerHTML; any re-render that restores the
-   *      original html brings the fences back, and this pass must then happily run again.
-   */
+  // A link from another document (`readme.md#setup`) asked for a place in this one.
   useEffect(() => {
-    if (!doc.hasMermaid || !isActive || !contentRef.current) return;
-    let cancelled = false;
+    if (!isVisible || !doc.path || !bodyRef.current) return;
+    const fragment = takePendingFragment(doc.path);
+    const el = fragment && findFragmentTarget(bodyRef.current, fragment);
+    if (el) scrollIntoPreview(el, { behavior: 'instant' });
+  }, [isVisible, isActive, html, doc.path]);
 
-    (async () => {
-      const { default: mermaid } = await import('mermaid');
-      if (cancelled || !contentRef.current) return;
+  useMermaid(contentRef, { html, hasMermaid: doc.hasMermaid, enabled: isVisible });
 
-      const isLightTheme = document.documentElement.getAttribute('data-theme') === 'light';
-      mermaid.initialize({
-        startOnLoad: false,
-        securityLevel: 'strict',
-        theme: isLightTheme ? 'default' : 'dark',
-        fontFamily: 'inherit'
-      });
-
-      const fences = contentRef.current.querySelectorAll(
-        'code.language-mermaid:not([data-mermaid-done]):not([data-mermaid-failed])'
-      );
-      for (const [i, code] of [...fences].entries()) {
-        const source = code.textContent;
-        try {
-          const { svg } = await mermaid.render(`fate-mermaid-${doc.id}-${i}-${Math.floor(performance.now())}`, source);
-          if (cancelled) return;
-          const holder = document.createElement('div');
-          holder.className = 'mermaid-diagram';
-          holder.innerHTML = svg;
-          code.setAttribute('data-mermaid-done', '1');
-          code.closest('pre')?.replaceWith(holder);
-        } catch (err) {
-          // Invalid diagram source: keep the fence as highlighted text, don't retry it forever.
-          code.setAttribute('data-mermaid-failed', '1');
-          console.error('Mermaid diagram failed to render:', err?.message || err);
-        }
-      }
-    })().catch((err) => {
-      // A failed renderer load must be visible, not a silently missing diagram.
-      console.error('Mermaid failed to load:', err?.message || err);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [doc.html, doc.hasMermaid, doc.id, isActive]);
+  const showReveal = toc.length > 0 && !isSidebarOpen;
 
   return (
-    <div className="viewer-layout">
-      {doc.toc.length > 0 && isSidebarOpen && (
+    <div className="viewer-layout" ref={layoutRef}>
+      {toc.length > 0 && isSidebarOpen && (
         <>
           <aside
             className="sidebar"
@@ -216,13 +216,16 @@ function MarkdownView({ doc, isActive, sidebarWidth, onSidebarWidthChange, progr
               </button>
             </div>
             <ul className="toc-list">
-              {doc.toc.map((item) => (
-                <li
-                  key={item.id}
-                  className={`toc-level-${item.level} ${activeHeading === item.id ? 'active' : ''}`}
-                  onClick={() => scrollToHeading(item.id)}
-                  dangerouslySetInnerHTML={{ __html: item.html }}
-                />
+              {toc.map((item, i) => (
+                <li key={item.id} className={`toc-level-${item.level} ${activeHeading === item.id ? 'active' : ''}`}>
+                  <button
+                    type="button"
+                    className="toc-link"
+                    onClick={() => scrollToHeading(item.id)}
+                    aria-current={activeHeading === item.id ? 'true' : undefined}
+                    dangerouslySetInnerHTML={tocMarkup[i]}
+                  />
+                </li>
               ))}
             </ul>
           </aside>
@@ -237,7 +240,7 @@ function MarkdownView({ doc, isActive, sidebarWidth, onSidebarWidthChange, progr
       )}
 
       <main className="viewer-main">
-        {doc.toc.length > 0 && !isSidebarOpen && (
+        {showReveal && (
           <button
             className="icon-btn sidebar-reveal"
             onClick={() => setIsSidebarOpen(true)}
@@ -247,8 +250,38 @@ function MarkdownView({ doc, isActive, sidebarWidth, onSidebarWidthChange, progr
           </button>
         )}
 
-        <div className="markdown-container" ref={contentRef}>
-          <div className="markdown-body" dangerouslySetInnerHTML={{ __html: doc.html }} />
+        {remoteCount > 0 && !withRemoteImages && (
+          <div className={`remote-images-bar ${showReveal ? 'with-reveal' : ''}`} role="status">
+            <ImageBroken size={16} weight="duotone" className="remote-images-icon" aria-hidden="true" />
+            <span className="remote-images-text">
+              This document has {remoteCount} {remoteCount === 1 ? 'image' : 'images'} from the internet.
+            </span>
+            <button type="button" className="remote-images-btn" onClick={() => setRemoteLoadedHere(true)}>
+              Load images
+            </button>
+            <button
+              type="button"
+              className="remote-images-btn"
+              onClick={() => {
+                setRemoteLoadedHere(true);
+                onAllowRemoteImages?.();
+              }}
+            >
+              Always load
+            </button>
+          </div>
+        )}
+
+        <div className="viewer-doc">
+          <PreviewFindBar bodyRef={bodyRef} scrollerRef={contentRef} isVisible={isVisible} />
+          <div className="markdown-container" ref={contentRef}>
+            <div
+              className="markdown-body"
+              ref={bodyRef}
+              data-doc-path={doc.path ?? ''}
+              dangerouslySetInnerHTML={bodyMarkup}
+            />
+          </div>
         </div>
       </main>
     </div>

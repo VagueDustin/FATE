@@ -12,6 +12,10 @@
 
       `data-theme` is set here as well as by React so the first paint is already navy; otherwise
       there is a flash of unstyled content before the store round-trip resolves.
+
+      Builds get a Content-Security-Policy <meta> injected first in <head> (vite.config.js): no
+      inline scripts, nothing loaded from outside the app but images the user chooses to load.
+      Anything added here has to live within it.
     -->
     <title>FATE - Formatted Article &amp; Text Editor</title>
   </head>

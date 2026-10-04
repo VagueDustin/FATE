@@ -1,6 +1,8 @@
 /**
- * settingsMeta.js: option lists shared by App.jsx, SettingsModal.jsx and CommandPalette.jsx.
- * (Own module because react-refresh requires component files to export only components.)
+ * settingsMeta.js: option lists shared by App.jsx, SettingsModal.jsx and CommandPalette.jsx, plus
+ * the pure helpers behind them (shortcut parsing and display, the sidebar width clamp).
+ * (Own module because react-refresh requires component files to export only components, and so
+ * the helpers can be unit-tested under plain Node: see test/settingsMeta.test.mjs.)
  */
 
 /**
@@ -85,15 +87,248 @@ export const DEFAULT_SHORTCUTS = Object.fromEntries(
  * Merge stored shortcut bindings over the defaults, dropping keys that no longer exist. Pre-1.11
  * stores only had openFile/print/close; users upgrading keep those three rebinds and gain the
  * rest at their defaults.
+ *
+ * 1.14.0 also migrates each stored binding to the current format (normalizeBinding: a binding of
+ * the + key, stored as "Control++" up to 1.13, becomes "Control+Plus"), and drops any binding the
+ * recorder should never have accepted back to its default: before 1.14.0 a bare letter could be
+ * recorded, so "H" bound to Close tab closed tabs while typing, across restarts.
  */
 export function resolveShortcuts(stored) {
   const merged = { ...DEFAULT_SHORTCUTS };
   if (stored && typeof stored === 'object') {
     for (const [k, v] of Object.entries(stored)) {
-      if (k in merged && typeof v === 'string' && v) merged[k] = v;
+      if (!(k in merged) || typeof v !== 'string' || !v) continue;
+      const binding = normalizeBinding(v);
+      if (binding && isAllowedShortcut(binding)) merged[k] = binding;
     }
   }
   return merged;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════════════════════
+   SHORTCUT BINDINGS: parsing, recording, matching and display (1.14.0).
+
+   A binding is stored as modifiers plus ONE key, joined with "+":
+       "Control+Shift+S"   "Alt+Home"   "Control+,"   "Control+\"   "F5"   "Escape"
+   Modifiers are written Control, Shift, Alt, Meta, always in that order. The key is the
+   KeyboardEvent.key value with letters upper-cased, " " written "Space" and "+" written "Plus".
+
+   Why "Plus": bindings are split on "+", so up to 1.13 a binding of the + key itself was stored
+   as "Control++", parsed as an empty key and could never fire. Naming the key fixes the split,
+   and "Plus" is also Electron's accelerator name for it (see toElectronAccelerator). Old
+   "...++" strings still parse, and resolveShortcuts rewrites them on load.
+   ════════════════════════════════════════════════════════════════════════════════════════════ */
+
+const MODIFIER_FIELDS = [
+  ['Control', 'ctrl'],
+  ['Shift', 'shift'],
+  ['Alt', 'alt'],
+  ['Meta', 'meta']
+];
+
+/** Spellings a stored or hand-edited binding may use for each modifier (lower-cased). */
+const MODIFIER_ALIASES = {
+  control: 'ctrl', ctrl: 'ctrl',
+  shift: 'shift',
+  alt: 'alt', option: 'alt',
+  meta: 'meta', super: 'meta', win: 'meta', cmd: 'meta', command: 'meta'
+};
+
+/** KeyboardEvent.key values that are modifiers or locks on their own, never a binding's key. */
+const MODIFIER_KEYS = new Set([
+  'Control', 'Shift', 'Alt', 'Meta', 'AltGraph', 'OS', 'Super', 'Hyper', 'Fn', 'FnLock',
+  'CapsLock', 'NumLock', 'ScrollLock', 'Symbol', 'SymbolLock'
+]);
+
+/** Named keys a binding may spell differently (Electron names, abbreviations), lower-cased. */
+const KEY_ALIASES = {
+  plus: 'Plus',
+  space: 'Space', spacebar: 'Space',
+  esc: 'Escape', escape: 'Escape',
+  del: 'Delete', delete: 'Delete',
+  return: 'Enter', enter: 'Enter',
+  up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight',
+  arrowup: 'ArrowUp', arrowdown: 'ArrowDown', arrowleft: 'ArrowLeft', arrowright: 'ArrowRight',
+  tab: 'Tab', home: 'Home', end: 'End', pageup: 'PageUp', pagedown: 'PageDown',
+  insert: 'Insert', backspace: 'Backspace'
+};
+
+/** One key name in the stored form, or null when there is no usable key. */
+function normalizeKey(raw) {
+  if (typeof raw !== 'string' || raw === '') return null;
+  if (raw === '+') return 'Plus';
+  if (raw === ' ') return 'Space';
+  if (raw.length === 1) {
+    // Upper-case letters only where that stays one character ("ß" would become "SS").
+    const upper = raw.toUpperCase();
+    return upper.length === 1 ? upper : raw;
+  }
+  const lower = raw.toLowerCase();
+  if (KEY_ALIASES[lower]) return KEY_ALIASES[lower];
+  const fKey = /^f(\d{1,2})$/.exec(lower);
+  if (fKey) return `F${Number(fKey[1])}`;
+  return raw;
+}
+
+/**
+ * Parse a stored binding into { ctrl, shift, alt, meta, key }, or null when it names no key or
+ * uses a modifier this app doesn't know. Accepts the legacy "Control++" form for the + key.
+ */
+export function parseShortcut(binding) {
+  if (typeof binding !== 'string' || !binding.trim()) return null;
+  let rest = binding;
+  let key = null;
+  if (rest === '+') {
+    key = 'Plus';
+    rest = '';
+  } else if (rest.endsWith('++')) {
+    key = 'Plus';
+    rest = rest.slice(0, -2);
+  }
+  const parts = rest ? rest.split('+') : [];
+  if (key === null) {
+    const last = parts.pop();
+    key = normalizeKey(last === ' ' ? last : last?.trim());
+  }
+  if (!key || MODIFIER_KEYS.has(key)) return null;
+
+  const parsed = { ctrl: false, shift: false, alt: false, meta: false, key };
+  for (const part of parts) {
+    const field = MODIFIER_ALIASES[part.trim().toLowerCase()];
+    if (!field) return null; // an empty segment ("Control++S") or an unknown name
+    parsed[field] = true;
+  }
+  return parsed;
+}
+
+/** The stored string for a parsed binding: modifiers in canonical order, then the key. */
+function serializeShortcut(parsed) {
+  const parts = MODIFIER_FIELDS.filter(([, field]) => parsed[field]).map(([name]) => name);
+  parts.push(parsed.key);
+  return parts.join('+');
+}
+
+/** A binding rewritten in the current stored form ("Control++" → "Control+Plus"), or null. */
+export function normalizeBinding(binding) {
+  const parsed = parseShortcut(binding);
+  return parsed ? serializeShortcut(parsed) : null;
+}
+
+/**
+ * What the shortcut recorder stores for a keydown, in the same form parseShortcut reads, or null
+ * while only modifiers are held (the recorder keeps listening until a real key arrives).
+ */
+export function bindingFromEvent(e) {
+  const raw = e?.key;
+  if (!raw || raw === 'Unidentified' || raw === 'Dead' || raw === 'Process' || MODIFIER_KEYS.has(raw)) {
+    return null;
+  }
+  const key = normalizeKey(raw);
+  if (!key) return null;
+  return serializeShortcut({
+    ctrl: !!e.ctrlKey,
+    shift: !!e.shiftKey,
+    alt: !!e.altKey,
+    meta: !!e.metaKey,
+    key
+  });
+}
+
+/** Does this keydown fire this binding? Exact modifiers; the key compares case-insensitively. */
+export function matchesShortcut(e, binding) {
+  const parsed = typeof binding === 'string' ? parseShortcut(binding) : binding;
+  if (!parsed || !e?.key) return false;
+  if (!!e.ctrlKey !== parsed.ctrl || !!e.shiftKey !== parsed.shift) return false;
+  if (!!e.altKey !== parsed.alt || !!e.metaKey !== parsed.meta) return false;
+  const key = normalizeKey(e.key);
+  return !!key && key.toLowerCase() === parsed.key.toLowerCase();
+}
+
+const FUNCTION_KEY = /^F([1-9]|1[0-2])$/;
+
+/**
+ * May this binding be used as a shortcut? It needs Ctrl, Alt or Meta, so it can't fire while
+ * typing; Shift doesn't count, since Shift+H is just a capital H. The exceptions are F1–F12, on
+ * their own or with modifiers, and a lone Escape, kept because it is the default for "Close tab /
+ * dismiss (alternate)".
+ */
+export function isAllowedShortcut(binding) {
+  const parsed = typeof binding === 'string' ? parseShortcut(binding) : binding;
+  if (!parsed) return false;
+  if (FUNCTION_KEY.test(parsed.key)) return true;
+  if (parsed.key === 'Escape' && !parsed.ctrl && !parsed.shift && !parsed.alt && !parsed.meta) return true;
+  return parsed.ctrl || parsed.alt || parsed.meta;
+}
+
+/** How each key reads on a keycap chip or in a tooltip. Anything else shows as stored. */
+const KEY_LABELS = {
+  Escape: 'Esc',
+  Delete: 'Del',
+  PageUp: 'PgUp',
+  PageDown: 'PgDn',
+  ArrowUp: 'Up',
+  ArrowDown: 'Down',
+  ArrowLeft: 'Left',
+  ArrowRight: 'Right'
+};
+
+/** What the Meta modifier is called on each platform. */
+const META_LABELS = { win32: 'Win', linux: 'Super', darwin: 'Cmd' };
+
+const currentPlatform = () =>
+  (typeof window !== 'undefined' ? window.electronAPI?.platform : undefined);
+
+/** A binding as display parts, ["Ctrl", "Shift", "S"]: one keycap chip each. [] if unparseable. */
+export function shortcutParts(binding, platform = currentPlatform()) {
+  const parsed = parseShortcut(binding);
+  if (!parsed) return [];
+  const parts = [];
+  if (parsed.ctrl) parts.push('Ctrl');
+  if (parsed.shift) parts.push('Shift');
+  if (parsed.alt) parts.push('Alt');
+  if (parsed.meta) parts.push(META_LABELS[platform] || 'Meta');
+  parts.push(KEY_LABELS[parsed.key] || parsed.key);
+  return parts;
+}
+
+/** A binding as one label for tooltips and menus: "Ctrl+Shift+S", "Ctrl+Plus", "Esc". */
+export function formatShortcutLabel(binding, platform = currentPlatform()) {
+  return shortcutParts(binding, platform).join('+');
+}
+
+/** Electron's accelerator key names where they differ from the stored ones. */
+const ACCELERATOR_KEYS = {
+  ArrowUp: 'Up',
+  ArrowDown: 'Down',
+  ArrowLeft: 'Left',
+  ArrowRight: 'Right'
+};
+
+/**
+ * The binding as an Electron accelerator string ("Control+Shift+S", "Control+Plus"), for menu
+ * labels drawn by Electron itself, or null when it can't be expressed. Display only: the renderer
+ * keeps handling the keys.
+ */
+export function toElectronAccelerator(binding) {
+  const parsed = parseShortcut(binding);
+  if (!parsed) return null;
+  return serializeShortcut({ ...parsed, key: ACCELERATOR_KEYS[parsed.key] || parsed.key });
+}
+
+/* ── Markdown contents sidebar width (Settings → Appearance) ─────────────────────────────────── */
+export const SIDEBAR_WIDTH_MIN = 200;
+export const SIDEBAR_WIDTH_MAX = 600;
+export const DEFAULT_SIDEBAR_WIDTH = 300;
+
+/**
+ * A stored or typed sidebar width, rounded and clamped to 200–600, or `fallback` when it isn't a
+ * number at all. Up to 1.13 the Settings field saved every keystroke unchecked, so a store can
+ * hold anything from 1 to 99999.
+ */
+export function clampSidebarWidth(value, fallback = DEFAULT_SIDEBAR_WIDTH) {
+  const n = typeof value === 'number' ? value : parseFloat(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, Math.round(n)));
 }
 
 /** Truly fixed bindings, shown in Settings for discoverability. */

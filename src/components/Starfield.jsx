@@ -19,8 +19,15 @@ import { useEffect, useRef } from 'react';
  * ── Cost control ──────────────────────────────────────────────────────────────────────────────
  *  - Nothing here touches React state; it draws straight to a canvas.
  *  - The rAF loop only runs while mounted, i.e. only on the home screen.
- *  - It also pauses while the window is hidden (`visibilitychange`), so a minimised or background
- *    window costs nothing.
+ *  - It pauses while the window is hidden (`visibilitychange`) AND while it is unfocused
+ *    (window `blur`/`focus`), so a minimised window, or FATE sitting behind the app you are
+ *    actually using, costs nothing. Up to 1.13 only hiding paused it, and an open-but-unfocused
+ *    window animated at the display's full refresh rate all day.
+ *  - Drawing is capped at 30 fps. Twinkling dust doesn't need 144 frames a second, and rAF still
+ *    fires at the display rate, so frames in between are skipped. Motion is scaled by the real
+ *    time between frames, so meteors cross at the same speed on any display.
+ *  - Gradients and the meteor sprite are built once per build() (resize or theme change), not
+ *    allocated per link per frame.
  *  - `prefers-reduced-motion` renders one static frame and never starts the loop.
  *  - Device pixel ratio is capped at 2; beyond that the cost doubles for no visible gain.
  */
@@ -36,6 +43,15 @@ const LINK_RADIUS = 190;
 const LINKS_PER_ANCHOR = 2;
 /** Average gap between meteors, ms. Randomised per spawn so they never feel metronomic. */
 const METEOR_INTERVAL = 7000;
+/** Frame budget: 30 fps. */
+const FRAME_MS = 1000 / 30;
+/**
+ * Meteor speeds and fades are in "per 60 Hz frame" units (what they were tuned at); each frame
+ * scales them by the time it actually covers.
+ */
+const TUNED_FRAME_MS = 1000 / 60;
+/** Meteor tails are drawn from this one pre-rendered strip, stretched to each meteor's length. */
+const METEOR_SPRITE_W = 256;
 
 export default function Starfield({ className = '' }) {
   const canvasRef = useRef(null);
@@ -66,15 +82,51 @@ export default function Starfield({ className = '' }) {
     };
 
     let theme = readTheme();
+    /** The accent as `r, g, b` for rgba(); resolved in build(), never per frame. */
+    let accentRgb = '212, 175, 55';
     let dust = [];
     let anchors = [];
+    /** Links between nearby anchors: { a, b, gradient }. The gradient is built once, in build(). */
     let links = [];
     let meteors = [];
+    /** A meteor's tail as a pre-rendered strip: head (right end) at half opacity, fading left. */
+    let meteorSprite = null;
     let rafId = null;
+    /** Animation time in ms. Advances only while the loop runs, so a pause doesn't skip ahead. */
+    let elapsed = 0;
+    /** When the last frame was drawn, or null when the loop is (re)starting. */
+    let lastFrame = null;
     let nextMeteorAt = METEOR_INTERVAL;
+
+    /** Convert a hex colour to `r, g, b` so it can be used inside rgba(). */
+    const rgb = (hex) => {
+      const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex.trim());
+      return m
+        ? `${parseInt(m[1], 16)}, ${parseInt(m[2], 16)}, ${parseInt(m[3], 16)}`
+        : '212, 175, 55';
+    };
+
+    function buildMeteorSprite() {
+      const sprite = document.createElement('canvas');
+      sprite.width = METEOR_SPRITE_W;
+      sprite.height = Math.ceil(1.4 * DPR) + 2;
+      const sctx = sprite.getContext('2d');
+      if (!sctx) return null;
+      const g = sctx.createLinearGradient(0, 0, METEOR_SPRITE_W, 0);
+      g.addColorStop(0, `rgba(${accentRgb}, 0)`);
+      g.addColorStop(1, `rgba(${accentRgb}, 0.5)`);
+      sctx.strokeStyle = g;
+      sctx.lineWidth = 1.4 * DPR;
+      sctx.beginPath();
+      sctx.moveTo(0, sprite.height / 2);
+      sctx.lineTo(METEOR_SPRITE_W, sprite.height / 2);
+      sctx.stroke();
+      return sprite;
+    }
 
     function build() {
       theme = readTheme();
+      accentRgb = rgb(theme.accent);
       const { clientWidth: w, clientHeight: h } = canvas.parentElement || canvas;
       canvas.width = Math.max(1, Math.floor(w * DPR));
       canvas.height = Math.max(1, Math.floor(h * DPR));
@@ -119,9 +171,18 @@ export default function Starfield({ className = '' }) {
         }
         near.sort((u, v) => u[1] - v[1]);
         for (let k = 0; k < Math.min(LINKS_PER_ANCHOR, near.length); k++) {
-          links.push([a, near[k][0]]);
+          // Anchors never move, so each link's gradient is fixed until the next build().
+          const A = anchors[a];
+          const B = anchors[near[k][0]];
+          const gradient = ctx.createLinearGradient(A.x, A.y, B.x, B.y);
+          gradient.addColorStop(0, 'rgba(185, 195, 240, 0.10)');
+          gradient.addColorStop(0.5, `rgba(${accentRgb}, 0.10)`);
+          gradient.addColorStop(1, 'rgba(185, 195, 240, 0.10)');
+          links.push({ a: A, b: B, gradient });
         }
       }
+
+      meteorSprite = buildMeteorSprite();
     }
 
     function spawnMeteor() {
@@ -135,28 +196,17 @@ export default function Starfield({ className = '' }) {
       });
     }
 
-    /** Convert a hex colour to `r, g, b` so it can be used inside rgba(). */
-    const rgb = (hex) => {
-      const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex.trim());
-      return m
-        ? `${parseInt(m[1], 16)}, ${parseInt(m[2], 16)}, ${parseInt(m[3], 16)}`
-        : '212, 175, 55';
-    };
-
-    function draw(t) {
+    /**
+     * Paint one frame at animation time `t`. `step` is how many 60 Hz frames' worth of motion this
+     * frame covers (2 at 30 fps); 0 repaints without moving anything (rebuilds, the first frame).
+     */
+    function draw(t, step) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      const accentRgb = rgb(theme.accent);
 
       // Links first, so stars sit on top of them.
       ctx.lineWidth = 0.6 * DPR;
-      for (const [ai, bi] of links) {
-        const A = anchors[ai];
-        const B = anchors[bi];
-        const g = ctx.createLinearGradient(A.x, A.y, B.x, B.y);
-        g.addColorStop(0, 'rgba(185, 195, 240, 0.10)');
-        g.addColorStop(0.5, `rgba(${accentRgb}, 0.10)`);
-        g.addColorStop(1, 'rgba(185, 195, 240, 0.10)');
-        ctx.strokeStyle = g;
+      for (const { a: A, b: B, gradient } of links) {
+        ctx.strokeStyle = gradient;
         ctx.beginPath();
         ctx.moveTo(A.x, A.y);
         ctx.lineTo(B.x, B.y);
@@ -194,55 +244,66 @@ export default function Starfield({ className = '' }) {
         ctx.fill();
       }
 
-      // Meteors, newest last so they draw over the field.
+      // Meteors, newest last so they draw over the field: the cached tail strip, turned to the
+      // meteor's heading and stretched to its length, with globalAlpha carrying the fade.
       for (let i = meteors.length - 1; i >= 0; i--) {
         const m = meteors[i];
-        m.x += m.vx;
-        m.y += m.vy;
-        m.life -= 0.009;
+        m.x += m.vx * step;
+        m.y += m.vy * step;
+        m.life -= 0.009 * step;
         if (m.life <= 0 || m.x > canvas.width + 60 * DPR || m.y > canvas.height + 60 * DPR) {
           meteors.splice(i, 1);
           continue;
         }
-        const tailX = m.x - m.vx * 9;
-        const tailY = m.y - m.vy * 9;
-        const g = ctx.createLinearGradient(m.x, m.y, tailX, tailY);
-        g.addColorStop(0, `rgba(${accentRgb}, ${0.5 * m.life})`);
-        g.addColorStop(1, `rgba(${accentRgb}, 0)`);
-        ctx.globalAlpha = 1;
-        ctx.strokeStyle = g;
-        ctx.lineWidth = 1.4 * DPR;
-        ctx.beginPath();
-        ctx.moveTo(m.x, m.y);
-        ctx.lineTo(tailX, tailY);
-        ctx.stroke();
+        if (!meteorSprite) continue;
+        const length = Math.hypot(m.vx, m.vy) * 9;
+        ctx.globalAlpha = m.life;
+        ctx.translate(m.x, m.y);
+        ctx.rotate(Math.atan2(m.vy, m.vx));
+        ctx.drawImage(meteorSprite, -length, -meteorSprite.height / 2, length, meteorSprite.height);
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
       }
 
       ctx.globalAlpha = 1;
     }
 
-    let start = null;
+    /*
+     * rAF fires at the display's rate (60, 144, 240 Hz); a frame is only drawn once FRAME_MS has
+     * passed since the last one, which caps drawing at 30 fps. The small allowance absorbs timer
+     * jitter, so a 60 Hz display reliably draws every second frame.
+     */
     function frame(now) {
-      if (start === null) start = now;
-      const t = now - start;
-      if (t > nextMeteorAt) {
-        spawnMeteor();
-        nextMeteorAt = t + METEOR_INTERVAL * (0.6 + Math.random());
+      if (lastFrame === null || now - lastFrame >= FRAME_MS - 2) {
+        // The time this frame covers, capped so a stall (a busy main thread) can't fling meteors.
+        const dt = lastFrame === null ? FRAME_MS : Math.min(now - lastFrame, 4 * FRAME_MS);
+        lastFrame = now;
+        elapsed += dt;
+        if (elapsed > nextMeteorAt) {
+          spawnMeteor();
+          nextMeteorAt = elapsed + METEOR_INTERVAL * (0.6 + Math.random());
+        }
+        draw(elapsed, dt / TUNED_FRAME_MS);
       }
-      draw(t);
       rafId = requestAnimationFrame(frame);
     }
+
+    /** Whether the window is focused; kept current by the focus/blur listeners below. */
+    let focused = document.hasFocus();
+    const shouldAnimate = () => !reduced && !document.hidden && focused;
 
     const stop = () => {
       if (rafId !== null) {
         cancelAnimationFrame(rafId);
         rafId = null;
       }
+      lastFrame = null; // the first frame after a pause draws at once, with a normal step
     };
 
     const play = () => {
-      if (rafId === null && !reduced) rafId = requestAnimationFrame(frame);
+      if (rafId === null && shouldAnimate()) rafId = requestAnimationFrame(frame);
     };
+
+    const sync = () => (shouldAnimate() ? play() : stop());
 
     build();
 
@@ -252,16 +313,26 @@ export default function Starfield({ className = '' }) {
      * Two reasons this is unconditional rather than only in the reduced-motion branch:
      *   1. requestAnimationFrame does not fire until the next compositor frame, so without this the
      *      canvas is blank for a frame on mount: a visible flash of empty sky.
-     *   2. rAF does not fire at all while the document is hidden. If the window opens minimised or
-     *      on another desktop, the loop never starts and the sky stays blank until the window is
-     *      focused. Drawing once here means there is always a sky, and the loop only adds motion.
+     *   2. rAF does not fire at all while the document is hidden, and the loop doesn't run while
+     *      the window is unfocused. If the window opens minimised, on another desktop or behind
+     *      another app, the sky would stay blank until it was focused. Drawing once here means
+     *      there is always a sky, and the loop only adds motion.
      */
-    draw(0);
-    if (!reduced) play();
+    draw(0, 0);
+    play();
 
-    // Pause entirely while the window is hidden; a minimised window should cost nothing.
-    const onVisibility = () => (document.hidden ? stop() : play());
-    document.addEventListener('visibilitychange', onVisibility);
+    // Pause while the window is hidden or unfocused; resume when it is visible and focused again.
+    const onFocus = () => {
+      focused = true;
+      sync();
+    };
+    const onBlur = () => {
+      focused = false;
+      sync();
+    };
+    document.addEventListener('visibilitychange', sync);
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('blur', onBlur);
 
     /*
      * Rebuild the field. Debounced with setTimeout, NOT requestAnimationFrame: rAF does not fire
@@ -274,7 +345,7 @@ export default function Starfield({ className = '' }) {
       rebuildTimer = setTimeout(() => {
         rebuildTimer = null;
         build();
-        draw(0); // repaint now; the loop may not be running (hidden window, or reduced motion)
+        draw(elapsed, 0); // repaint now; the loop may not be running (paused, or reduced motion)
       }, 80);
     };
 
@@ -301,7 +372,9 @@ export default function Starfield({ className = '' }) {
       if (rebuildTimer !== null) clearTimeout(rebuildTimer);
       observer.disconnect();
       themeObserver.disconnect();
-      document.removeEventListener('visibilitychange', onVisibility);
+      document.removeEventListener('visibilitychange', sync);
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('blur', onBlur);
     };
   }, []);
 
