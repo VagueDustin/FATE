@@ -31,6 +31,10 @@ The only network request FATE makes is the update check on installs that update 
 
 - **Opens any text file.** Nothing is gated on the extension. The only limits are a 25 MB size cap and a
   check that refuses binary files, and both explain themselves.
+- **Files stay the way they were.** Line endings (CRLF or LF), encoding (UTF-8 with or without a byte-order
+  mark, UTF-16 and Windows-1252) and indentation (tabs or spaces, and how wide) are detected and written
+  back unchanged. The status bar shows all three, and a click converts the line endings, saves with
+  another encoding, reopens a file whose encoding was guessed wrong, or switches tabs and spaces.
 - **Syntax highlighting for around 150 languages**, each loaded the first time you open a file of that
   type. Files with unfamiliar extensions are detected from their content (XML and HTML prologues, JSON,
   INI sections, registry exports, shebang lines), and anything ambiguous stays plain text.
@@ -42,21 +46,31 @@ The only network request FATE makes is the update check on installs that update 
   configs to set up. You can turn this off in Settings → Code Editor, which also has word wrap and
   indent size.
 - **Careful saving.** `Ctrl`+`S` and Save As, an unsaved marker in the title and on each tab, and a
-  Save / Don't save / Cancel prompt for every unsaved tab when you quit.
+  Save / Don't save / Cancel prompt for every unsaved tab when you close it or quit. Saves are atomic: a
+  temporary file is written and swapped in, so a full disk or a dropped network share can't leave half a
+  file behind.
+- **Hot exit.** Unsaved work, Untitled tabs included, is backed up moments after you type and comes back
+  if FATE crashes or the power goes.
 - **Live reload that respects your edits.** Files changed on disk reload in place while your buffer is
-  clean, including editors that save by writing a temp file and renaming it. Unsaved edits are never
-  overwritten.
+  clean, keeping your place, including editors that save by writing a temp file and renaming it. Unsaved
+  edits are never overwritten: a bar offers Reload, Keep mine or Compare, and a deleted file gets its own.
+- **Large files and logs.** Files over 5 MB open with the heavier editor features off, and **Follow** keeps
+  a growing log scrolled to its end.
 
 ### Tabs, split view and navigation
 
 - **Tabs, Notepad++ style.** Mix Markdown and code freely. Each tab keeps its scroll position, cursor,
-  selection and undo history in the background. `Ctrl`+`Tab` cycles, `Ctrl`+`1` to `9` jumps, and
-  middle-click closes.
+  selection and undo history in the background. `Ctrl`+`Tab` cycles, `Ctrl`+`1` to `9` jumps, middle-click
+  closes, and right-click copies the file's path, opens its folder or closes other tabs.
 - **Session restore** reopens last session's tabs on launch (optional).
 - **Split view** (`Ctrl`+`\`) puts any two open tabs side by side, and a **Diff** toggle compares them
   chunk by chunk with syntax highlighting. With no split open, the same button diffs your unsaved changes
   against the saved file.
 - **Command palette** (`Ctrl`+`K`): one fuzzy search across open tabs, recent files, commands and themes.
+  Start with `:` to go to a line, `@` to jump to a function, class or heading, or `#` to search the text of
+  every open tab.
+- **An application menu** (`Alt`) with Open Recent, labelled with your own shortcuts. On Windows, opened
+  files also appear in FATE's Jump List.
 - **Recent files** on the home screen, **focus mode** (`Ctrl`+`Shift`+`F`) and **drag and drop** of one
   or many files anywhere in the window.
 - **Every shortcut is rebindable** in Settings → Shortcuts, with conflict detection.
@@ -64,17 +78,27 @@ The only network request FATE makes is the update check on installs that update 
 ### Markdown preview and editing
 
 - **Reading view** renders Markdown as a typeset document, with a table of contents sidebar, reading
-  progress and reading time.
-- **Edit mode** (`Ctrl`+`E`) opens the source beside a live preview. Switch back and the reading view
-  shows your edits straight away.
+  progress, reading time and **find** (`Ctrl`+`F`).
+- **Edit mode** (`Ctrl`+`E`) opens the source beside a live preview that scrolls with the editor. Switch
+  back and the reading view shows your edits straight away. Spell check is available here (Settings →
+  Markdown).
+- **Links work.** A link to another file opens it in a tab, `#anchors` scroll (headings get GitHub-style
+  anchors), and web and email links open in your browser after a confirmation.
+- **Copy buttons on code blocks**, and clean copies: code copies as plain text with its exact spacing,
+  ready to paste into a terminal; prose copies without the theme's colours; maths copies as its TeX
+  source.
 - **KaTeX math**, inline and block, including fractions, multi-line matrices and equations inside
   headings (they render in the table of contents too).
 - **LaTeX repair.** A repair pass fixes badly escaped backslashes (`\theta`, `\begin`, `\approx`) that
-  some Markdown generators and export tools produce, before they reach the screen.
-- **Mermaid diagrams** from `mermaid` code fences, rendered offline and matched to the current theme.
+  some Markdown generators and export tools produce, inside maths only, before they reach the screen.
+- **Mermaid diagrams** from `mermaid` code fences, rendered offline and matched to the current theme, in
+  the reading view, split view and Edit mode's preview.
 - **Highlighted code fences** that use the same colours as the code editor, so a PowerShell fence and an
   open `.ps1` file look the same.
-- **Local images** referenced by relative path load correctly.
+- **Local images** referenced by relative path load correctly, names with spaces or accents included.
+  **Images from the internet** load only when you allow them, for one document or always, because loading
+  them tells their servers you opened the document.
+- **Safe to open.** A document can't run scripts, restyle or cover the app, or navigate it away.
 
 ### Printing and PDF export
 
