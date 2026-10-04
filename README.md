@@ -1,10 +1,11 @@
 # FATE (Formatted Article & Text Editor)
 
 [![Latest release](https://img.shields.io/github/v/release/VagueDustin/FATE)](https://github.com/VagueDustin/FATE/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/VagueDustin/FATE/total)](https://github.com/VagueDustin/FATE/releases)
 [![Licence: AGPL-3.0](https://img.shields.io/github/license/VagueDustin/FATE)](LICENSE)
 [![Platforms: Windows and Linux](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-1f3a5f)](#install)
 [![Get it from the Microsoft Store](https://img.shields.io/badge/Microsoft_Store-Get_it-0078D4?logo=microsoft)](https://apps.microsoft.com/detail/9n09hg8r34qd)
-[![Snap Store](https://snapcraft.io/fate/badge.svg)](https://snapcraft.io/fate)
+[![Snap Store](https://img.shields.io/snapcraft/v/fate/latest/stable?label=Snap%20Store&logo=snapcraft)](https://snapcraft.io/fate)
 
 FATE is a free and open source **text editor and code editor for Windows and Linux**. It works like a
 modern **Notepad++ alternative**: tabs, syntax highlighting for around 150 languages, find and replace,
