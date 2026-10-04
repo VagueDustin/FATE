@@ -773,8 +773,7 @@ kbd {
   box-shadow: inset 0 -2px 0 var(--accent-default);
 }
 
-.tab-home:focus-visible,
-.tab:focus-visible {
+.tab-home:focus-visible {
   outline: 2px solid var(--border-emphasis);
   outline-offset: -2px;
 }
@@ -799,7 +798,7 @@ kbd {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  padding: 0 0.4rem 0 0.7rem;
+  padding: 0 0.4rem 0 0;
   min-width: 96px;
   max-width: 200px;
   border: 1px solid transparent;
@@ -810,6 +809,28 @@ kbd {
   cursor: pointer;
   user-select: none;
   transition: background 0.14s var(--ease), color 0.14s var(--ease);
+}
+
+/*
+ * 1.14.0 (accessible tabs): `.tab` is a presentational wrapper; the role="tab" element is
+ * .tab-main (icon, name, dirty dot) and the close button sits beside it. .tab-main fills the tab
+ * from its left edge, so the tab looks exactly as before, and the focus ring is drawn on the
+ * wrapper so it still frames the whole tab, close button included.
+ */
+.tab-main {
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding-left: 0.7rem;
+  outline: none;
+}
+
+.tab:has(> .tab-main:focus-visible) {
+  outline: 2px solid var(--border-emphasis);
+  outline-offset: -2px;
 }
 
 .tab:hover {
@@ -3483,6 +3504,18 @@ kbd {
   /* A split prints only the active pane, full width. */
   .doc-panes.split .doc-pane-split-right {
     display: none !important;
+  }
+
+  /* ...unless the job is for the split pane's doc (it had focus; L3): then that one, instead. */
+  .doc-panes.split.print-right .doc-pane-active {
+    display: none !important;
+  }
+
+  .doc-panes.split.print-right .doc-pane-split-right {
+    display: block !important;
+    background: #fff !important;
+    height: auto !important;
+    overflow: visible !important;
   }
 
   .markdown-body {

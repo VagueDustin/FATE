@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { flushSync } from 'react-dom';
 import { EditorView } from '@codemirror/view';
 import { undo as undoEdit, redo as redoEdit } from '@codemirror/commands';
 import { openSearchPanel } from '@codemirror/search';
@@ -18,10 +19,15 @@ import CommandPalette from './components/CommandPalette.jsx';
 import DiffView from './components/DiffView.jsx';
 import DocBar from './components/DocBar.jsx';
 import FormatStatus from './components/FormatStatus.jsx';
+import IndentStatus from './components/IndentStatus.jsx';
 import { renderMarkdown } from './markdown.js';
 import { renderSafely } from './renderSafely.js';
 import { installPreviewClipboard, selectPreviewDocument } from './previewClipboard.js';
+import { scrollIntoPreview } from './previewLinks.js';
 import { detectLanguage } from './languageDetect.js';
+import { createPaletteModes } from './paletteModes.js';
+import { indentForDocument, effectiveIndent, requiresTabs } from './indentDetect.js';
+import { EditorPrefsContext } from './editorPrefs.js';
 import {
   fileKindForName, kindForOpen, couldBeMarkdown, extensionOf, looksBinary,
   MARKDOWN_RENDER_LIMIT, LARGE_FILE_LIMIT
@@ -31,7 +37,11 @@ import {
   newBackupId, backupPayload, planRestore, untitledNumber, sameSignature, setCrashFlusher
 } from './hotExit.js';
 import { resolveFonts, applyFonts, editorFontFor, DEFAULT_FONTS } from './fonts.js';
-import { DEFAULT_THEME, resolveTheme, THEMES, SHORTCUT_ACTIONS, DEFAULT_SHORTCUTS, resolveShortcuts } from './settingsMeta.js';
+import {
+  DEFAULT_THEME, resolveTheme, THEMES, SHORTCUT_ACTIONS, DEFAULT_SHORTCUTS, resolveShortcuts,
+  matchesShortcut, bindingFromEvent, isAllowedShortcut, formatShortcutLabel, shortcutParts,
+  clampSidebarWidth, DEFAULT_SIDEBAR_WIDTH
+} from './settingsMeta.js';
 import { resolveCustomTheme, applyCustomTheme } from './themeCustom.js';
 import './App.css';
 
@@ -92,14 +102,33 @@ const nowMs = () => Date.now();
 /*
  * Display helpers for shortcut bindings. Every tooltip and keycap in the UI renders the LIVE
  * binding through these; a hardcoded "(Ctrl+N)" in a title is a lie the moment the user rebinds.
+ * Both go through settingsMeta, which knows the stored format: splitting on "+" here broke on a
+ * binding of the + key itself (L9), which is stored as "Plus".
  */
-function fmtShortcut(binding) {
-  return (binding || '').replace('Control', 'Ctrl');
+const fmtShortcut = (binding) => formatShortcutLabel(binding);
+const kbdChips = (binding) => shortcutParts(binding);
+
+/*
+ * Where a bare Escape belongs to what has focus rather than to the app (M1). Escape is the
+ * default binding of "Close tab / dismiss (alternate)", and up to 1.13 it closed the tab from
+ * anywhere: in the editor with nothing to dismiss, a clean tab vanished with its undo history,
+ * caret and folds. Now it only acts as a shortcut when focus is on nothing in particular (the
+ * reading view, which takes no focus, or <body>). Editors, fields, buttons and other controls,
+ * menus, find bars and dialogs keep their Escape, whether or not they do anything with it.
+ */
+const ESCAPE_OWNERS = [
+  '.cm-editor', 'input', 'textarea', 'select', '[contenteditable]:not([contenteditable="false"])',
+  'button', 'a[href]', 'summary', '[role="button"]', '[role="tab"]', '[role="menu"]',
+  '[role^="menuitem"]', '[role="listbox"]', '[role="option"]', '[role="combobox"]',
+  '[role="dialog"]', '[role="alertdialog"]', '[role="search"]', '.format-menu', '.find-bar'
+].join(',');
+
+function escapeOwnedBy(target) {
+  return target instanceof Element && target !== document.body && !!target.closest(ESCAPE_OWNERS);
 }
 
-function kbdChips(binding) {
-  return (binding || '').split('+').map((k) => (k === 'Control' ? 'Ctrl' : k));
-}
+/** Is this keydown a bare Escape (no modifiers)? Only that one is held back by focus (M1). */
+const isBareEscape = (e) => e.key === 'Escape' && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey;
 
 /** The format a new Untitled buffer is saved with (UTF-8, the platform's line break). */
 const UNTITLED_FORMAT = defaultFormat(window.electronAPI?.platform);
@@ -132,10 +161,10 @@ function finalizeDoc(d) {
 /**
  * Render fields for a Markdown doc. Never throws and never runs inside a state updater (H3): a
  * render that fails yields the text itself, escaped, in a <pre>, and `failed` tells the caller to
- * say so in the status bar.
+ * say so in the status bar. `options` go to renderMarkdown ({ remoteImages }).
  */
-function renderFields(content, fPath) {
-  const r = renderSafely(renderMarkdown, content, fPath);
+function renderFields(content, fPath, options) {
+  const r = renderSafely(renderMarkdown, content, fPath, options);
   if (r.renderFailed) console.error('Markdown render failed; showing plain text instead:', r.error);
   return {
     failed: r.renderFailed,
@@ -160,7 +189,8 @@ function App() {
    * and then either
    *   kind:'markdown'  { source, savedSource, html, toc, readMins, hasMermaid, remoteImageCount, editMode }
    *   kind:'code'      { codeContent, savedContent?, langName, plainText, largeFile, follow }
-   * (codeContent/source seed the CodeMirror instance, which owns the buffer after mount.)
+   * (codeContent/source seed the CodeMirror instance, which owns the buffer after mount.) Both
+   * kinds carry `indent`: how the document indents ({ useTabs, size? } or null; indentDetect.js).
    *
    * Since 1.14.0 a doc knows its BASELINE, the text last known to be on disk: `savedSource` for
    * Markdown (set on open, save and reload), the editor's own baseline for code (`savedContent`
@@ -173,16 +203,23 @@ function App() {
    * doc into a right-hand pane; `diffData` (a snapshot) swaps the split for a side-by-side diff.
    * Every pane stays MOUNTED while its tab is open; that is what preserves scroll position,
    * cursor, selection and undo history across switches. Do not "optimise" this into unmounting.
+   *
+   * The FOCUSED doc (L3) is the one commands act on: the split pane's while it has focus (focus
+   * or a click inside it, `paneFocusId`), else the active tab's. Saving, closing, Edit/View,
+   * printing, find, undo, the header and the status bar (Ln/Col, encoding, indentation) all
+   * follow it; up to 1.13 they all acted on the left pane whatever the right one was doing. The
+   * right pane never becomes `activeId`: the tab strip's selection stays where the user put it.
    */
   const [docs, setDocs] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const [splitId, setSplitId] = useState(null);
   const [diffData, setDiffData] = useState(null);
+  const [paneFocusId, setPaneFocusId] = useState(null);
   const [focusMode, setFocusMode] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
-  /** What the palette opens with (':' go to line, '@' go to symbol), and a key to open it fresh. */
+  /** What the palette opens with ('' normally, ':' go to line, '@' go to symbol), and its modes. */
   const [paletteQuery, setPaletteQuery] = useState('');
-  const [paletteKey, setPaletteKey] = useState(0);
+  const [paletteModes, setPaletteModes] = useState(null);
 
   const [appVersion, setAppVersion] = useState('');
   const [updateStatus, setUpdateStatus] = useState('');
@@ -190,26 +227,26 @@ function App() {
   const [runtimeInfo, setRuntimeInfo] = useState({ windowsStore: false });
   /** Font families installed on this machine, for Settings → Fonts (fetched once, local-only). */
   const [systemFonts, setSystemFonts] = useState([]);
-  const [sidebarWidth, setSidebarWidth] = useState(300);
+  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
   const [recentFiles, setRecentFiles] = useState([]);
   const [defaultAppStatus, setDefaultAppStatus] = useState(null);
   const [isPrinting, setIsPrinting] = useState(false);
   const [statusError, setStatusError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   /**
-   * What prints in place of a live editor; see runPrintJob. { kind:'code', text } for a code
-   * buffer, { kind:'markdown', markup } for a Markdown tab in Edit mode (printed RENDERED).
+   * What a print job prints, for the doc `docId`; see runPrintJob. { kind:'code', text } for a
+   * code buffer, { kind:'markdown', markup } for a Markdown tab in Edit mode (printed RENDERED),
+   * { kind:'view' } for a reading view in the split pane (printed as it is, the pane swapped in).
    */
   const [printSnapshot, setPrintSnapshot] = useState(null);
 
   const [showSettings, setShowSettings] = useState(false);
-  /** Settings page to open on (the menu's Keyboard Shortcuts and About), and a key to open it fresh. */
-  const [settingsSection, setSettingsSection] = useState(null);
-  const [settingsKey, setSettingsKey] = useState(0);
+  /** The Settings page to open on (SettingsModal's initialSection); every entry point sets it. */
+  const [settingsSection, setSettingsSection] = useState('appearance');
   const [settings, setSettings] = useState({
     theme: DEFAULT_THEME,
     autoUpdatesEnabled: true,
-    sidebarWidth: 300,
+    sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
     printPageSize: 'Letter',
     printLandscape: false,
     editorWrap: false,
@@ -218,7 +255,11 @@ function App() {
     fonts: DEFAULT_FONTS,
     restoreSession: true,
     customTheme: null,
-    shortcuts: DEFAULT_SHORTCUTS
+    shortcuts: DEFAULT_SHORTCUTS,
+    // 1.14.0. Spell check is off by default on Linux, where Electron downloads its dictionaries
+    // from Google's servers (see electron/spellcheck.cjs); remote images are opt-in everywhere.
+    spellcheck: window.electronAPI?.platform === 'win32',
+    remoteImages: false
   });
   const [activeShortcutRebind, setActiveShortcutRebind] = useState(null);
 
@@ -229,13 +270,13 @@ function App() {
    *   editorRefs                          docId → CodeEditor imperative handle (code tabs AND
    *                                       markdown tabs in edit mode)
    *   docsRef / activeIdRef / splitIdRef  current values for once-registered IPC callbacks and
-   *                                       keyboard closures, which must never go stale
+   *   paneFocusRef                        keyboard closures, which must never go stale
    *
-   * docsRef, activeIdRef and splitIdRef are written SYNCHRONOUSLY, in the same call as the state
-   * update (commitDocs, activate, setSplit), never mirrored by an effect after React commits. The
-   * mirror lagged: two opens of one file inside a single commit (session restore plus a launch
-   * argument) both saw the old tab list, and the file opened twice, then three times on the next
-   * launch as the session saved both (H6).
+   * docsRef, activeIdRef, splitIdRef and paneFocusRef are written SYNCHRONOUSLY, in the same call
+   * as the state update (commitDocs, activate, setSplit, focusPane), never mirrored by an effect
+   * after React commits. The mirror lagged: two opens of one file inside a single commit (session
+   * restore plus a launch argument) both saw the old tab list, and the file opened twice, then
+   * three times on the next launch as the session saved both (H6).
    */
   const progressBarRef = useRef(null);
   const progressLabelRef = useRef(null);
@@ -247,6 +288,23 @@ function App() {
   const docsRef = useRef([]);
   const activeIdRef = useRef(null);
   const splitIdRef = useRef(null);
+  const paneFocusRef = useRef(null);
+  /*
+   * The remote-images setting for renders started outside a render: IPC callbacks and the boot
+   * sequence open documents, and must never see a stale value (written with the state, in
+   * updateSetting and at boot).
+   */
+  const remoteImagesRef = useRef(false);
+  /*
+   * Whether the palette and Settings are open, and on which page: openPalette / openSettings run
+   * from IPC, keys and the palette's own commands, where state can be a render behind (written by
+   * those two and their close functions).
+   */
+  const showSettingsRef = useRef(false);
+  const settingsSectionRef = useRef('appearance');
+  const showPaletteRef = useRef(false);
+  /** The boot effect has run (React's development double-run must not restore twice; L18). */
+  const bootedRef = useRef(false);
   const sessionSaveTimerRef = useRef(null);
   /*
    * Who gets the focus at startup. Session restore replays every path from last time and each
@@ -277,22 +335,29 @@ function App() {
   const opsRef = useRef(null);
 
   const activeDoc = docs.find((d) => d.id === activeId) || null;
+  /* The doc commands act on (see the top of this component): the split pane's while it has focus. */
+  const splitShown = splitId !== null && splitId !== activeId && !diffData;
+  const focusedId = splitShown && paneFocusId === splitId ? splitId : activeId;
+  const focusedDoc = focusedId === activeId ? activeDoc : docs.find((d) => d.id === focusedId) || activeDoc;
 
+  /**
+   * Change one setting. The updater only computes the new state; storing the value, retheming the
+   * page and telling the main process all happen here, outside it (L18: updaters must be pure, and
+   * React runs them twice in development, which doubled every store write and IPC call).
+   */
   const updateSetting = (key, value) => {
-    setSettings((prev) => {
-      const updated = { ...prev, [key]: value };
-      if (window.electronAPI) window.electronAPI.store.set(key, value);
-      if (key === 'theme') {
-        document.documentElement.setAttribute('data-theme', value);
-      }
-      if (key === 'fonts') {
-        applyFonts(value);
-      }
-      if (key === 'customTheme') {
-        applyCustomTheme(value);
-      }
-      return updated;
-    });
+    const api = window.electronAPI;
+    if (api) api.store.set(key, value);
+    if (key === 'theme') document.documentElement.setAttribute('data-theme', value);
+    if (key === 'fonts') applyFonts(value);
+    if (key === 'customTheme') applyCustomTheme(value);
+    // Live, not at the next launch: main applies it to the session (see electron/spellcheck.cjs).
+    if (key === 'spellcheck') api?.setSpellcheck?.(value)?.catch?.(() => {});
+    if (key === 'remoteImages') {
+      remoteImagesRef.current = value === true;
+      rerenderForRemoteImages();
+    }
+    setSettings((prev) => ({ ...prev, [key]: value }));
   };
 
   /* ── Doc state ───────────────────────────────────────────────────────────────────────────── */
@@ -327,14 +392,53 @@ function App() {
     return docsRef.current.find((d) => d.path && pathKey(d.path) === key) || null;
   };
 
+  /**
+   * Make `id` the active tab (null: the home screen). Its pane takes the focus role too, and a
+   * diff on screen closes when the tab changes (L5): it compared what WAS showing. Activating the
+   * doc that is in the split pane swaps the panes, so both stay on screen; it used to leave split
+   * mode on with a single pane.
+   */
   const activate = (id) => {
+    if (id !== activeIdRef.current) setDiffData(null);
+    if (id !== null && id === splitIdRef.current) setSplit(activeIdRef.current);
     activeIdRef.current = id;
     setActiveId(id);
+    focusPane(id);
   };
 
   const setSplit = (id) => {
     splitIdRef.current = id;
     setSplitId(id);
+  };
+
+  /** A pane got focus (or a click): its doc is the one commands act on (L3). */
+  const focusPane = (id) => {
+    if (paneFocusRef.current === id) return;
+    paneFocusRef.current = id;
+    setPaneFocusId(id);
+  };
+
+  /** The focused doc's id, for handlers (the render-time twin is `focusedId` above). */
+  const focusedDocId = () => {
+    const split = splitIdRef.current;
+    const active = activeIdRef.current;
+    return split !== null && split !== active && !diffData && paneFocusRef.current === split ? split : active;
+  };
+
+  /**
+   * Bring a doc forward, out from under any diff: the active tab's and the split pane's just take
+   * the focus role (the right pane works without becoming active), anything else is activated.
+   */
+  const showDoc = (id) => {
+    setDiffData(null);
+    if (id !== null && (id === activeIdRef.current || id === splitIdRef.current)) focusPane(id);
+    else activate(id);
+  };
+
+  /** focusin and clicks inside the panes: the pane they land in becomes the focused one. */
+  const onPaneFocusEvent = (e) => {
+    const pane = e.target instanceof Element ? e.target.closest('.doc-pane[data-doc-id]') : null;
+    if (pane) focusPane(Number(pane.dataset.docId));
   };
 
   /** Does closing this tab lose anything? The live editor is the authority when one is mounted. */
@@ -519,8 +623,16 @@ function App() {
   /* ── Opening ─────────────────────────────────────────────────────────────────────────────── */
 
   /**
+   * renderFields with the current settings. Every Markdown render goes through here, so remote
+   * images load in exactly the documents the setting allows (read from a ref: this runs from IPC
+   * callbacks and the boot sequence too).
+   */
+  const renderDoc = (content, fPath) => renderFields(content, fPath, { remoteImages: remoteImagesRef.current });
+
+  /**
    * Build a doc. `baseline` is the text on disk when it differs from `content` (restored
-   * backups); `kind` is decided by the caller (name AND size, see kindForOpen).
+   * backups); `kind` is decided by the caller (name AND size, see kindForOpen). Its indentation
+   * is detected here, once (M7): what the file type requires, else what the text itself does.
    */
   const createDoc = ({
     kind, name, path = null, content, baseline, format = null, savedFormat = null, untitled = false,
@@ -532,10 +644,11 @@ function App() {
       id, name, path: path || null, untitled, format, savedFormat,
       backupId: backupId || newBackupId(),
       textDirty: hasBaseline && baseline !== content,
-      notice, diskChange, diskDeleted
+      notice, diskChange, diskDeleted,
+      indent: indentForDocument(name, content)
     };
     if (kind === 'markdown') {
-      const { fields, failed } = renderFields(content, path);
+      const { fields, failed } = renderDoc(content, path);
       if (failed) setStatusError(renderFailedMessage(name));
       return finalizeDoc({
         ...common, kind: 'markdown', source: content, savedSource: hasBaseline ? baseline : content, editMode, ...fields
@@ -628,7 +741,7 @@ function App() {
     if (editor) editor.replaceContent(b.content, baseline);
     let rendered = {};
     if (doc.kind === 'markdown' && !doc.editMode) {
-      const { fields, failed } = renderFields(b.content, doc.path);
+      const { fields, failed } = renderDoc(b.content, doc.path);
       if (failed) setStatusError(renderFailedMessage(doc.name));
       rendered = fields;
     }
@@ -752,7 +865,7 @@ function App() {
    * tab opens through the normal open path; Untitled ones become tabs straight away.
    */
   const restoreSession = (session, backups) => {
-    if (restoreStartedRef.current) return; // StrictMode runs the boot effect twice in development
+    if (restoreStartedRef.current) return; // once per page, whatever calls it (see bootedRef)
     restoreStartedRef.current = true;
     const api = window.electronAPI;
     const hasSession = !!session && Array.isArray(session.paths);
@@ -826,7 +939,7 @@ function App() {
       patch.source = content;
       patch.savedSource = content;
       if (!doc.editMode) {
-        const { fields, failed } = renderFields(content, doc.path);
+        const { fields, failed } = renderDoc(content, doc.path);
         if (failed) setStatusError(renderFailedMessage(doc.name));
         Object.assign(patch, fields);
       }
@@ -998,7 +1111,7 @@ function App() {
     const text = editor ? editor.getContent() : doc.codeContent;
     const saved = docBaseline(doc);
     const textDirty = editor ? editor.isDirty() : !!doc.textDirty;
-    const { fields, failed } = renderFields(text, doc.path);
+    const { fields, failed } = renderDoc(text, doc.path);
     if (failed) setStatusError(renderFailedMessage(doc.name));
     forgetEditor(id);
     patchDoc(id, {
@@ -1031,7 +1144,10 @@ function App() {
     // A diff of this tab (Compare, Diff unsaved changes) has nothing left to show.
     setDiffData((dd) => (dd?.docIds?.includes(docId) ? null : dd));
     if (activeIdRef.current === docId) {
-      activate(next.length ? next[Math.min(idx, next.length - 1)].id : null);
+      const nextId = next.length ? next[Math.min(idx, next.length - 1)].id : null;
+      // The split pane's doc taking over the active slot: one doc, so no split.
+      if (nextId !== null && nextId === splitIdRef.current) setSplit(null);
+      activate(nextId);
     }
     commitDocs(next);
   };
@@ -1105,7 +1221,15 @@ function App() {
         }
         break;
       case 'reveal':
-        if (current?.path) Promise.resolve(api.showItemInFolder?.(current.path)).catch(() => {});
+        // Main refuses a file that has gone (or isn't open), and says why: show it.
+        if (current?.path) {
+          const failed = (error) => setStatusError(error || `Couldn't show ${current.name} in its folder`);
+          Promise.resolve(api.showItemInFolder?.(current.path))
+            .then((res) => {
+              if (res && res.ok === false) failed(res.error);
+            })
+            .catch((err) => failed(err?.message));
+        }
         break;
       case 'close':
         closeDoc(doc.id);
@@ -1162,7 +1286,7 @@ function App() {
 
   const runPrintJob = (invoke, label) => {
     if (typeof invoke !== 'function' || isPrinting) return;
-    const doc = getDoc(activeIdRef.current);
+    const doc = getDoc(focusedDocId());
     if (!doc) return;
 
     /*
@@ -1173,18 +1297,25 @@ function App() {
      *
      * A Markdown tab in Edit mode prints RENDERED, exactly as Reading view would (L17): the
      * snapshot is the current buffer through the same renderer, not its source.
+     *
+     * The focused split pane prints instead of the active tab (L3). The print stylesheet prints
+     * the active pane only, so while the snapshot names the split pane's doc, `.doc-panes` swaps
+     * the two (see `print-right` in App.css); a reading view there waits for that commit too.
      */
     const editor = editorRefs.current[doc.id];
+    let snapshot = null;
     if (editor && doc.kind === 'markdown') {
-      const { fields, failed } = renderFields(editor.getContent(), doc.path);
+      const { fields, failed } = renderDoc(editor.getContent(), doc.path);
       if (failed) setStatusError(renderFailedMessage(doc.name));
-      pendingPrintRef.current = () => executePrintJob(invoke, label, doc.name);
-      setPrintSnapshot({ kind: 'markdown', markup: { __html: fields.html } });
-      return;
+      snapshot = { docId: doc.id, kind: 'markdown', markup: { __html: fields.html } };
+    } else if (editor) {
+      snapshot = { docId: doc.id, kind: 'code', text: editor.getContent() };
+    } else if (doc.id !== activeIdRef.current) {
+      snapshot = { docId: doc.id, kind: 'view' };
     }
-    if (editor) {
+    if (snapshot) {
       pendingPrintRef.current = () => executePrintJob(invoke, label, doc.name);
-      setPrintSnapshot({ kind: 'code', text: editor.getContent() });
+      setPrintSnapshot(snapshot);
       return;
     }
 
@@ -1256,11 +1387,13 @@ function App() {
     const latest = getDoc(id);
     if (!latest) return;
     const patch = { name: res.name, path: res.filePath, untitled: false, diskDeleted: false, diskChange: null };
+    // Saved as a Makefile or a Go file: those indent with tabs from here on (M7).
+    if (requiresTabs(res.name) && !latest.indent?.useTabs) patch.indent = { ...latest.indent, useTabs: true };
     if (latest.kind === 'code') {
       patch.langName = latest.plainText ? 'Plain text' : detectLanguage(res.name, content)?.name ?? 'Plain text';
     } else if (!latest.editMode) {
       // Relative image paths resolve against the new folder.
-      const { fields } = renderFields(latest.source, res.filePath);
+      const { fields } = renderDoc(latest.source, res.filePath);
       Object.assign(patch, fields);
     }
     patchDoc(id, patch);
@@ -1288,17 +1421,17 @@ function App() {
   };
 
   /**
-   * Save a tab (active by default). Handles all three shapes: code tabs, markdown tabs (edit mode
-   * saves the buffer; view mode saves the last known source), and untitled buffers (always Save
-   * As, offering every supported format). `forceAs` is the Save As action. The tab's `format`
-   * rides along, and the format main reports having written becomes the tab's.
+   * Save a tab (the focused one by default). Handles all three shapes: code tabs, markdown tabs
+   * (edit mode saves the buffer; view mode saves the last known source), and untitled buffers
+   * (always Save As, offering every supported format). `forceAs` is the Save As action. The tab's
+   * `format` rides along, and the format main reports having written becomes the tab's.
    *
    * The tab is only marked clean AFTER the write succeeds; a failed save leaves the guards armed.
    * Resolves TRUE only when the file actually reached disk; the quit walk relies on that to stop
    * dead when a Save As is cancelled rather than closing over the edits it just offered to keep.
    */
   const saveDoc = async (docId, { forceAs = false } = {}) => {
-    const id = typeof docId === 'number' ? docId : activeIdRef.current;
+    const id = typeof docId === 'number' ? docId : focusedDocId();
     const doc = getDoc(id);
     if (!doc || !window.electronAPI) return false;
 
@@ -1396,6 +1529,34 @@ function App() {
     if (after && !isDocDirty(after)) dropBackup(after); // clean again: nothing to keep
   };
 
+  /* ── Indentation (M7) ────────────────────────────────────────────────────────────────────── */
+
+  /** The indentation a doc's editor uses: its own, completed from the "Indent size" setting. */
+  const indentOf = (d) => effectiveIndent(d?.indent, settings.editorTabSize);
+
+  /** The status bar's indentation menu: this doc from now on. Nothing is re-indented. */
+  const setDocIndent = (id, indent) => {
+    if (!getDoc(id)) return;
+    patchDoc(id, { indent: { useTabs: !!indent.useTabs, size: indent.size } });
+  };
+
+  /* ── Remote images ───────────────────────────────────────────────────────────────────────── */
+
+  /**
+   * The remote-images setting changed: render the reading views again, with or without them.
+   * Only documents that HAVE remote images can come out different, so only those re-render, and
+   * not in Edit mode: leaving Edit mode renders afresh anyway, and the edit preview follows the
+   * setting itself (MarkdownEditView's remoteImagesAllowed).
+   */
+  const rerenderForRemoteImages = () => {
+    for (const doc of docsRef.current) {
+      if (doc.kind !== 'markdown' || doc.editMode || !doc.remoteImageCount) continue;
+      const { fields, failed } = renderDoc(doc.source, doc.path);
+      if (failed) setStatusError(renderFailedMessage(doc.name));
+      patchDoc(doc.id, fields);
+    }
+  };
+
   /* ── Markdown edit mode ──────────────────────────────────────────────────────────────────── */
 
   /**
@@ -1404,7 +1565,7 @@ function App() {
    * measures dirtiness against `savedSource`, not against whatever text the tab holds.
    */
   const toggleMarkdownEdit = (docId) => {
-    const id = typeof docId === 'number' ? docId : activeIdRef.current;
+    const id = typeof docId === 'number' ? docId : focusedDocId();
     const doc = getDoc(id);
     if (!doc || doc.kind !== 'markdown') return;
 
@@ -1417,7 +1578,7 @@ function App() {
     const text = editor ? editor.getContent() : doc.source;
     const savedSource = editor ? editor.getSavedContent() : doc.savedSource;
     const textDirty = editor ? editor.isDirty() : !!doc.textDirty;
-    const { fields, failed } = renderFields(text, doc.path);
+    const { fields, failed } = renderDoc(text, doc.path);
     if (failed) setStatusError(renderFailedMessage(doc.name));
     forgetEditor(id);
     patchDoc(id, { editMode: false, source: text, savedSource, textDirty, ...fields });
@@ -1492,23 +1653,66 @@ function App() {
 
   /* ── Commands: keyboard, menu, palette ───────────────────────────────────────────────────── */
 
+  /*
+   * Opening the palette and Settings. Every entry point (keys, the app menu, the palette's own
+   * commands, buttons) comes through these two and says where to land: the palette's query
+   * (':' Go to line, '@' Go to symbol) and the Settings page ('shortcuts', 'about'), so neither
+   * reopens wherever it was last left.
+   *
+   * The palette's modes are built HERE, in the handler, not during render: their callbacks read
+   * refs, and a fresh set per opening also starts their symbol cache fresh. Asked again while it
+   * is open, the palette closes and reopens, so the query starts over; its focus handling sees a
+   * clean close, and focus still goes back to the editor afterwards.
+   */
   const openPalette = (query = '') => {
+    if (showPaletteRef.current) {
+      flushSync(() => setShowPalette(false));
+    }
+    setPaletteModes(
+      createPaletteModes({
+        getActiveDoc: () => getDoc(focusedDocId()),
+        getActiveView: () => editorRefs.current[focusedDocId()]?.getView?.() ?? null,
+        getDocs: () => docsRef.current,
+        getDocText: (doc) => docText(doc),
+        activateDoc: (id) => opsRef.current.showDoc(id),
+        revealLine: (docId, line, col) => opsRef.current.revealLine(docId, line, col)
+      })
+    );
     setPaletteQuery(query);
-    setPaletteKey((k) => k + 1);
+    showPaletteRef.current = true;
     setShowPalette(true);
   };
 
-  const openSettings = (section = null) => {
+  const closePalette = () => {
+    showPaletteRef.current = false;
+    setShowPalette(false);
+  };
+
+  /**
+   * Settings, on `section` (never the page it was last left on). Settings follows a change of
+   * page while open; asked for the page it already holds, it steps through "no page" first so the
+   * request still lands after the user has moved elsewhere in it.
+   */
+  const openSettings = (section = 'appearance') => {
+    if (showSettingsRef.current && settingsSectionRef.current === section) {
+      flushSync(() => setSettingsSection(null));
+    }
+    settingsSectionRef.current = section;
     setSettingsSection(section);
-    if (section) setSettingsKey((k) => k + 1);
+    showSettingsRef.current = true;
     setShowSettings(true);
   };
 
-  /** The CodeMirror view the user is typing in, else the active tab's editor. */
+  const closeSettings = () => {
+    showSettingsRef.current = false;
+    setShowSettings(false);
+  };
+
+  /** The CodeMirror view the user is typing in, else the focused doc's editor. */
   const targetEditorView = () => {
     const focused = document.activeElement;
     const view = focused?.closest?.('.cm-editor') ? EditorView.findFromDOM(focused.closest('.cm-editor')) : null;
-    return view || editorRefs.current[activeIdRef.current]?.getView?.() || null;
+    return view || editorRefs.current[focusedDocId()]?.getView?.() || null;
   };
 
   /** Edit → Find: the editor's own search panel, else the reading view's find bar. */
@@ -1535,27 +1739,30 @@ function App() {
     view.focus();
   };
 
-  /** Every rebindable action, by SHORTCUT_ACTIONS id (keyboard, the app menu, the palette). */
+  /**
+   * Every rebindable action, by SHORTCUT_ACTIONS id (keyboard, the app menu, the palette). The
+   * ones about a document act on the focused one (L3): the split pane's while it has focus.
+   */
   const runAction = (id) => {
-    const active = activeIdRef.current;
+    const target = focusedDocId();
     switch (id) {
       case 'newFile': return newFile();
       case 'openFile': return window.electronAPI?.openFileDialog();
-      case 'save': return saveDoc();
-      case 'saveAs': return saveDoc(undefined, { forceAs: true });
-      case 'print': return active !== null && openPrintPreview();
-      case 'exportPdf': return active !== null && exportPdf();
+      case 'save': return saveDoc(target);
+      case 'saveAs': return saveDoc(target, { forceAs: true });
+      case 'print': return target !== null && openPrintPreview();
+      case 'exportPdf': return target !== null && exportPdf();
       case 'closeTab':
       case 'close':
-        return active !== null && closeDoc(active);
+        return target !== null && closeDoc(target);
       case 'nextTab': return cycleTab(1);
       case 'prevTab': return cycleTab(-1);
       case 'goHome': return activate(null);
-      case 'palette': return showPalette ? setShowPalette(false) : openPalette('');
-      case 'toggleEdit': return toggleMarkdownEdit();
+      case 'palette': return showPaletteRef.current ? closePalette() : openPalette('');
+      case 'toggleEdit': return target !== null && toggleMarkdownEdit(target);
       case 'toggleSplit': return toggleSplit();
       case 'focusMode': return setFocusMode((f) => !f);
-      case 'settings': return openSettings();
+      case 'settings': return openSettings('appearance');
       default: return undefined;
     }
   };
@@ -1564,6 +1771,7 @@ function App() {
   const runMenuCommand = (command) => {
     switch (command) {
       case 'palette': return openPalette('');
+      case 'settings': return openSettings('appearance');
       case 'shortcuts': return openSettings('shortcuts');
       case 'about': return openSettings('about');
       case 'find': return findInActive();
@@ -1575,6 +1783,57 @@ function App() {
     }
   };
 
+  /**
+   * Palette ":" "@" "#": put the caret on `line`, `col` (1-based) of a doc and show it. A doc
+   * that isn't on screen is activated first; the split pane's is revealed where it is. The move
+   * waits a frame, so a pane that has just been shown has its layout (a hidden editor can't
+   * scroll).
+   *
+   * A Markdown tab in its reading view has no caret: the view scrolls to the rendered block that
+   * the line belongs to. Rendered top-level blocks carry their 0-based source line (`data-line`,
+   * markdown.js), and the last one at or before the line is it. Without those (a render that fell
+   * back to plain text), the heading on that line, else the same fraction of the document.
+   */
+  const revealLine = (docId, line, col = 1) => {
+    if (!getDoc(docId)) return;
+    showDoc(docId);
+    requestAnimationFrame(() => {
+      const view = editorRefs.current[docId]?.getView?.();
+      if (view) {
+        const target = view.state.doc.line(Math.min(Math.max(1, line), view.state.doc.lines));
+        const pos = Math.min(target.from + Math.max(0, (col || 1) - 1), target.to);
+        view.dispatch({ selection: { anchor: pos }, effects: EditorView.scrollIntoView(pos, { y: 'center' }) });
+        view.focus();
+        return;
+      }
+      const doc = getDoc(docId);
+      const pane = document.querySelector(`.doc-pane[data-doc-id="${docId}"]`);
+      const body = pane?.querySelector('.markdown-container .markdown-body');
+      const scroller = body?.closest('.markdown-container');
+      if (!doc || !body || !scroller) return;
+      const wanted = line - 1;
+      let block = null;
+      for (const el of body.querySelectorAll('[data-line]')) {
+        const at = Number(el.getAttribute('data-line'));
+        if (at > wanted) break;
+        if (el.getClientRects().length) block = el;
+      }
+      if (!block) {
+        const raw = ((doc.source || '').split('\n')[wanted] || '')
+          .replace(/^ {0,3}#{1,6}[ \t]*/, '')
+          .replace(/[ \t]+#+[ \t]*$/, '')
+          .trim();
+        block = raw ? [...body.querySelectorAll('h1, h2, h3, h4, h5, h6')].find((h) => h.textContent.trim() === raw) : null;
+      }
+      if (block) {
+        scrollIntoPreview(block);
+      } else {
+        const lines = Math.max(1, (doc.source || '').split('\n').length);
+        scroller.scrollTo({ top: (wanted / lines) * scroller.scrollHeight });
+      }
+    });
+  };
+
   /*
    * Listeners registered once (IPC, the app menu, the keyboard, timers) reach the operations
    * above through this ref, refreshed after every render, so they always run the current closures.
@@ -1582,13 +1841,21 @@ function App() {
   useEffect(() => {
     opsRef.current = {
       openDocument, onDiskChange, markDeleted, restoreSession, runAction, runMenuCommand,
-      handleQuitRequest, backupTick, flushBackupsNow, isDocDirty
+      handleQuitRequest, backupTick, flushBackupsNow, isDocDirty, activate, showDoc, revealLine,
+      updateSetting, closeSettings
     };
   });
 
   /* ── Boot: stored settings + IPC listeners ───────────────────────────────────────────────── */
 
+  /*
+   * Runs once per page. React's development mode runs every effect twice (mount, cleanup, mount)
+   * and nothing here can be undone by a cleanup: the session would be restored twice and every
+   * IPC listener registered twice (L18). The guard is a ref, which survives that cleanup.
+   */
   useEffect(() => {
+    if (bootedRef.current) return;
+    bootedRef.current = true;
     if (window.electronAPI) {
       const api = window.electronAPI;
       // Hot-exit backups are listed with the settings, so they are ready before any file opens.
@@ -1607,16 +1874,19 @@ function App() {
         api.store.get('restoreSession'),
         api.store.get('customTheme'),
         api.store.get('session'),
+        api.store.get('spellcheck'),
+        api.store.get('remoteImages'),
         listBackups
       ])
-        .then(([theme, autoUpdatesEnabled, savedSidebarWidth, shortcuts, printPageSize, printLandscape, editorWrap, editorTabSize, editorLint, fonts, restoreSession, customTheme, session, backups]) => {
+        .then(([theme, autoUpdatesEnabled, savedSidebarWidth, shortcuts, printPageSize, printLandscape, editorWrap, editorTabSize, editorLint, fonts, restoreSession, customTheme, session, spellcheck, remoteImages, backups]) => {
           const resolvedCustom = resolveCustomTheme(customTheme);
           const resolvedTheme = resolveTheme(theme, !!resolvedCustom);
           const resolvedFonts = resolveFonts(fonts);
           const newSettings = {
             theme: resolvedTheme,
             autoUpdatesEnabled: autoUpdatesEnabled !== false,
-            sidebarWidth: savedSidebarWidth || 300,
+            // Up to 1.13 the field stored every keystroke unchecked (L16): anything from 1 up.
+            sidebarWidth: clampSidebarWidth(savedSidebarWidth),
             printPageSize: printPageSize || 'Letter',
             printLandscape: !!printLandscape,
             editorWrap: !!editorWrap,
@@ -1625,10 +1895,17 @@ function App() {
             fonts: resolvedFonts,
             restoreSession: restoreSession !== false,
             customTheme: resolvedCustom,
-            shortcuts: resolveShortcuts(shortcuts)
+            shortcuts: resolveShortcuts(shortcuts),
+            // Never chosen: on where it costs nothing (Windows' own checker), off on Linux, where
+            // it downloads dictionaries from Google. Main applies the stored value at startup too.
+            spellcheck: typeof spellcheck === 'boolean' ? spellcheck : api.platform === 'win32',
+            remoteImages: remoteImages === true
           };
+          // Before anything renders Markdown: the restore below opens documents.
+          remoteImagesRef.current = newSettings.remoteImages;
           setSettings(newSettings);
           setSidebarWidth(newSettings.sidebarWidth);
+          api.setSpellcheck?.(newSettings.spellcheck)?.catch?.(() => {});
           applyCustomTheme(resolvedCustom);
           document.documentElement.setAttribute('data-theme', resolvedTheme);
           applyFonts(resolvedFonts);
@@ -1719,15 +1996,15 @@ function App() {
 
   /*
    * One place owns the window title and the mirrored any-tab-dirty flag. Since 1.11.0 the title is
-   * just the active document's filename (the full app name shows on the home screen only); the
+   * just the focused document's filename (the full app name shows on the home screen only); the
    * main process composes it; see composeTitle in main.cjs.
    */
   useEffect(() => {
     if (!window.electronAPI) return;
     const anyDirty = docs.some((d) => d.dirty);
     window.electronAPI.setEdited(anyDirty);
-    window.electronAPI.setTitle(activeDoc ? activeDoc.name : null, !!activeDoc?.dirty);
-  }, [docs, activeDoc]);
+    window.electronAPI.setTitle(focusedDoc ? focusedDoc.name : null, !!focusedDoc?.dirty);
+  }, [docs, focusedDoc]);
 
   /*
    * Persist the session (paths only) whenever the tab set or active tab changes, debounced. Each
@@ -1760,13 +2037,18 @@ function App() {
 
   /*
    * Re-check the default-app association when the window regains focus. Coming back from
-   * Windows Settings is the exact moment the answer may have changed.
+   * Windows Settings is the exact moment the answer may have changed. The home screen's recent
+   * files too, while it shows: File → Open Recent → Clear, or a file opened elsewhere, changes
+   * the list behind its back, and the menu has no way to tell this page.
    */
   useEffect(() => {
-    const onFocus = () => refreshDefaultAppStatus();
+    const onFocus = () => {
+      refreshDefaultAppStatus();
+      if (activeIdRef.current === null) refreshRecentFiles();
+    };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
-  }, [refreshDefaultAppStatus]);
+  }, [refreshDefaultAppStatus, refreshRecentFiles]);
 
   /** Refresh recents whenever the home screen comes back into view. */
   useEffect(() => {
@@ -1775,49 +2057,37 @@ function App() {
 
   /* ── Keyboard ────────────────────────────────────────────────────────────────────────────── */
 
-  const matchesShortcut = (e, shortcutString) => {
-    if (!shortcutString) return false;
-    const parts = shortcutString.split('+');
-    const key = parts[parts.length - 1].toLowerCase();
-    const ctrl = parts.includes('Control');
-    const shift = parts.includes('Shift');
-    const alt = parts.includes('Alt');
-    const meta = parts.includes('Meta');
-
-    if (e.ctrlKey !== ctrl) return false;
-    if (e.shiftKey !== shift) return false;
-    if (e.altKey !== alt) return false;
-    if (e.metaKey !== meta) return false;
-    return e.key.toLowerCase() === key;
-  };
-
   useEffect(() => {
     const handleKeyDown = (e) => {
       /*
        * CodeMirror handles its own keys first and calls preventDefault on anything it consumed
        * (Escape closing its search panel, Ctrl+S from its save keymap); acting on those here too
-       * would double-fire. The palette and pickers use the same convention.
+       * would double-fire. The palette, Settings, menus and pickers use the same convention.
        */
       if (e.defaultPrevented) return;
 
-      if (activeShortcutRebind) {
+      /*
+       * Recording a binding (Settings → Shortcuts), and only while Settings is open: up to 1.13 the
+       * recorder stayed armed after Settings closed, and the next key typed anywhere, even a plain
+       * letter in the editor, became the shortcut (M2). SettingsModal handles Escape itself
+       * (cancel) and stops the recorder when it closes. A key that can't be a shortcut (modifiers
+       * alone; a bare letter, Tab or Home, which would fire while typing) is swallowed and the
+       * recorder keeps listening; the hint in Settings says what is accepted.
+       */
+      if (activeShortcutRebind && showSettings) {
         e.preventDefault();
         e.stopPropagation();
-        let keys = [];
-        if (e.ctrlKey) keys.push('Control');
-        if (e.shiftKey) keys.push('Shift');
-        if (e.altKey) keys.push('Alt');
-        if (e.metaKey) keys.push('Meta');
-
-        if (!['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) {
-          keys.push(e.key === ' ' ? 'Space' : e.key.length === 1 ? e.key.toUpperCase() : e.key);
-          updateSetting('shortcuts', { ...settings.shortcuts, [activeShortcutRebind]: keys.join('+') });
-          setActiveShortcutRebind(null);
-        }
+        const binding = bindingFromEvent(e);
+        if (!binding || !isAllowedShortcut(binding)) return;
+        opsRef.current.updateSetting('shortcuts', { ...settings.shortcuts, [activeShortcutRebind]: binding });
+        setActiveShortcutRebind(null);
         return;
       }
 
-      // Escape unwinds one layer at a time: palette (in-component) → diff → focus → settings → tab.
+      /*
+       * Escape unwinds one layer at a time: the palette, Settings, menus and find bars handle it
+       * themselves (they come first) → diff → focus mode → the tab (see ESCAPE_OWNERS).
+       */
       if (e.key === 'Escape' && diffData) {
         setDiffData(null);
         return;
@@ -1827,7 +2097,7 @@ function App() {
         return;
       }
       if (showSettings && matchesShortcut(e, settings.shortcuts.close)) {
-        setShowSettings(false);
+        opsRef.current.closeSettings();
         return;
       }
 
@@ -1837,9 +2107,7 @@ function App() {
         const ds = docsRef.current;
         if (ds.length > 0) {
           const n = parseInt(e.key, 10);
-          const target = n === 9 ? ds[ds.length - 1].id : (ds[n - 1]?.id ?? ds[ds.length - 1].id);
-          activeIdRef.current = target;
-          setActiveId(target);
+          opsRef.current.activate(n === 9 ? ds[ds.length - 1].id : (ds[n - 1]?.id ?? ds[ds.length - 1].id));
         }
         return;
       }
@@ -1849,9 +2117,13 @@ function App() {
         return;
       }
 
+      // A bare Escape inside an editor, field, control, menu, find bar or dialog is theirs (M1).
+      const escapeHeld = isBareEscape(e) && escapeOwnedBy(e.target);
+
       // Every rebindable action, in declaration order.
       for (const { id } of SHORTCUT_ACTIONS) {
         if (matchesShortcut(e, settings.shortcuts[id])) {
+          if (escapeHeld) return;
           // Escape-as-close must not swallow Escape while a modal layer is open above the tabs.
           if (id === 'close' && (showSettings || showPalette)) return;
           e.preventDefault();
@@ -1998,7 +2270,7 @@ function App() {
 
   /* ── Command palette items ───────────────────────────────────────────────────────────────── */
 
-  const canRenderAsMarkdown = activeDoc?.kind === 'code' && couldBeMarkdown(activeDoc.name);
+  const canRenderAsMarkdown = focusedDoc?.kind === 'code' && couldBeMarkdown(focusedDoc.name);
 
   const paletteItems = showPalette
     ? [
@@ -2026,15 +2298,18 @@ function App() {
         { id: 'cmd-export', section: 'Commands', label: 'Export as PDF', icon: FilePdf, run: exportPdf },
         { id: 'cmd-edit', section: 'Commands', label: 'Edit / view markdown', icon: PencilSimple, run: () => toggleMarkdownEdit() },
         ...(canRenderAsMarkdown
-          ? [{ id: 'cmd-render-md', section: 'Commands', label: 'Render as Markdown', icon: MarkdownLogo, run: () => renderAsMarkdown(activeDoc.id) }]
+          ? [{ id: 'cmd-render-md', section: 'Commands', label: 'Render as Markdown', icon: MarkdownLogo, run: () => renderAsMarkdown(focusedDoc.id) }]
           : []),
         { id: 'cmd-split', section: 'Commands', label: splitId ? 'Close split view' : 'Split view', icon: SquareSplitHorizontal, run: toggleSplit },
         { id: 'cmd-diff', section: 'Commands', label: diffData ? 'Exit diff' : splitId !== null ? 'Diff the split panes' : 'Diff unsaved changes', icon: GitDiff, run: toggleDiff },
         { id: 'cmd-focus', section: 'Commands', label: focusMode ? 'Exit focus mode' : 'Focus mode', icon: ArrowsOutSimple, run: () => setFocusMode((f) => !f) },
         { id: 'cmd-home', section: 'Commands', label: 'Go to home screen', icon: House, run: () => activate(null) },
-        { id: 'cmd-close', section: 'Commands', label: 'Close tab', icon: X, run: () => activeIdRef.current !== null && closeDoc(activeIdRef.current) },
-        { id: 'cmd-settings', section: 'Commands', label: 'Open settings', icon: Gear, run: () => openSettings() },
+        { id: 'cmd-close', section: 'Commands', label: 'Close tab', icon: X, run: () => opsRef.current.runAction('closeTab') },
+        { id: 'cmd-settings', section: 'Commands', label: 'Open settings', icon: Gear, run: () => openSettings('appearance') },
         { id: 'cmd-shortcuts', section: 'Commands', label: 'Keyboard shortcuts', icon: Keyboard, run: () => openSettings('shortcuts') },
+        { id: 'cmd-goto-line', section: 'Commands', label: 'Go to line…', icon: MagnifyingGlass, run: () => openPalette(':') },
+        { id: 'cmd-goto-symbol', section: 'Commands', label: 'Go to symbol…', icon: MagnifyingGlass, run: () => openPalette('@') },
+        { id: 'cmd-search-tabs', section: 'Commands', label: 'Search open tabs…', icon: MagnifyingGlass, run: () => openPalette('#') },
         { id: 'cmd-updates', section: 'Commands', label: 'Check for updates', icon: CircleNotch, run: handleUpdateAction },
         ...THEMES.map((t) => ({
           id: `theme-${t.value}`,
@@ -2050,6 +2325,52 @@ function App() {
     : [];
 
   /* ── Render helpers ──────────────────────────────────────────────────────────────────────── */
+
+  /*
+   * The tab strip follows the WAI-ARIA tabs pattern (L-a11y): one tab in the Tab order (the
+   * active one, or the first on the home screen); Left/Right move focus along the strip, wrapping,
+   * Home/End jump to the ends, Enter or Space activate the focused tab, and Delete closes it,
+   * after which focus moves to the tab that took its place. Modified keys pass through (Alt+Home
+   * is Go to home screen, Ctrl+Tab cycles), so the app's shortcuts still work from a tab.
+   */
+  const onTabKeyDown = (e) => {
+    if (e.ctrlKey || e.altKey || e.metaKey) return;
+    const tab = e.target instanceof Element ? e.target.closest('[role="tab"]') : null;
+    if (!tab) return;
+    const tabs = [...e.currentTarget.querySelectorAll('[role="tab"]')];
+    const i = tabs.indexOf(tab);
+    const id = Number(tab.dataset.docId);
+    let next;
+    switch (e.key) {
+      case 'ArrowRight': next = tabs[(i + 1) % tabs.length]; break;
+      case 'ArrowLeft': next = tabs[(i - 1 + tabs.length) % tabs.length]; break;
+      case 'Home': next = tabs[0]; break;
+      case 'End': next = tabs[tabs.length - 1]; break;
+      case 'Enter':
+      case ' ':
+        e.preventDefault();
+        activate(id);
+        return;
+      case 'Delete':
+        if (e.shiftKey) return;
+        e.preventDefault();
+        closeDoc(id).then((closed) => {
+          if (!closed) return;
+          // After the closed tab's pane (and any editor taking focus on activation) has settled.
+          requestAnimationFrame(() => {
+            const left = [...document.querySelectorAll('.tab-scroll [role="tab"]')];
+            (left[i] || left[i - 1])?.focus();
+          });
+        });
+        return;
+      default:
+        return;
+    }
+    if (e.shiftKey) return;
+    e.preventDefault();
+    next?.focus();
+    next?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  };
 
   /** The bars over a pane: the file changed or vanished under unsaved work, or a notice. */
   const renderDocBars = (d) => (
@@ -2090,13 +2411,24 @@ function App() {
     </>
   );
 
+  /*
+   * One doc's pane. `active` is the tab strip's selection (it decides the layout: the active pane
+   * sits left); `focused` is the doc commands act on, which can be the split pane (L3), and it is
+   * what the editors and the reading view get as `isActive`: the Ln/Col readout, the reading
+   * progress and focus-on-switch follow it.
+   */
   const renderPane = (d) => {
     const active = d.id === activeId;
     const inSplit = splitId === d.id && !diffData;
     const visible = active || inSplit;
+    const focused = d.id === focusedId;
     return (
       <div
         key={d.id}
+        id={`pane-${d.id}`}
+        role="tabpanel"
+        aria-labelledby={`tab-${d.id}`}
+        data-doc-id={d.id}
         className={`doc-pane ${active ? 'doc-pane-active' : ''} ${inSplit && !active ? 'doc-pane-split-right' : ''}`}
         style={
           d.kind === 'code'
@@ -2108,7 +2440,11 @@ function App() {
           <div className="split-bar" key="splitbar">
             <select
               value={splitId ?? ''}
-              onChange={(e) => setSplit(parseInt(e.target.value, 10))}
+              onChange={(e) => {
+                const id = parseInt(e.target.value, 10);
+                setSplit(id);
+                focusPane(id);
+              }}
               aria-label="Document shown in the split pane"
             >
               {docs
@@ -2130,26 +2466,32 @@ function App() {
 
         {d.kind === 'markdown' ? (
           d.editMode ? (
-            <MarkdownEditView
-              key="mdedit"
-              doc={d}
-              isActive={active}
-              tabSize={settings.editorTabSize}
-              cursorLabelRef={cursorLabelRef}
-              onDirtyChange={(dirty) => handleDirtyChange(d.id, dirty)}
-              onSave={() => saveDoc(d.id)}
-              registerEditor={editorRefFor(d.id)}
-            />
+            /* Spell checking and the doc's indentation reach the editor inside through context. */
+            <EditorPrefsContext.Provider key="mdedit" value={{ spellcheck: !!settings.spellcheck, indent: indentOf(d) }}>
+              <MarkdownEditView
+                doc={d}
+                isActive={focused}
+                isVisible={visible}
+                tabSize={settings.editorTabSize}
+                cursorLabelRef={cursorLabelRef}
+                onDirtyChange={(dirty) => handleDirtyChange(d.id, dirty)}
+                onSave={() => saveDoc(d.id)}
+                registerEditor={editorRefFor(d.id)}
+                remoteImagesAllowed={!!settings.remoteImages}
+              />
+            </EditorPrefsContext.Provider>
           ) : (
             <MarkdownView
               key="mdview"
               doc={d}
-              isActive={active}
+              isActive={focused}
               isVisible={visible}
               sidebarWidth={sidebarWidth}
               onSidebarWidthChange={setSidebarWidth}
               progressBarRef={progressBarRef}
               progressLabelRef={progressLabelRef}
+              remoteImagesAllowed={!!settings.remoteImages}
+              onAllowRemoteImages={() => updateSetting('remoteImages', true)}
             />
           )
         ) : (
@@ -2161,10 +2503,11 @@ function App() {
             savedContent={d.savedContent}
             wrap={settings.editorWrap}
             tabSize={settings.editorTabSize}
+            indent={indentOf(d)}
             lint={settings.editorLint}
             largeFile={d.largeFile}
             plainText={d.plainText}
-            isActive={active}
+            isActive={focused}
             onDirtyChange={(dirty) => handleDirtyChange(d.id, dirty)}
             onSave={() => saveDoc(d.id)}
             cursorLabelRef={cursorLabelRef}
@@ -2172,10 +2515,10 @@ function App() {
         )}
 
         {/* Print-only snapshots (populated on demand by runPrintJob, cleared after). */}
-        {active && printSnapshot?.kind === 'code' && (
+        {printSnapshot?.docId === d.id && printSnapshot.kind === 'code' && (
           <pre className="code-print-body" key="printsnap">{printSnapshot.text}</pre>
         )}
-        {active && printSnapshot?.kind === 'markdown' && (
+        {printSnapshot?.docId === d.id && printSnapshot.kind === 'markdown' && (
           <div className="md-print-body markdown-body" key="printmd" dangerouslySetInnerHTML={printSnapshot.markup} />
         )}
       </div>
@@ -2188,57 +2531,78 @@ function App() {
     <div className={`app-shell ${focusMode ? 'focus-mode' : ''}`}>
       {/* ── Tab strip: visible whenever anything is open, home screen included ─────────────── */}
       {docs.length > 0 && (
-        <div className="tab-strip" role="tablist" aria-label="Open documents">
+        <div className="tab-strip">
           <button
             className={`tab-home ${activeId === null ? 'active' : ''}`}
             onClick={() => activate(null)}
             title="Home"
+            aria-label="Home screen"
+            aria-current={activeId === null ? 'page' : undefined}
           >
             <House size={17} weight="duotone" />
           </button>
 
-          <div className="tab-scroll">
-            {docs.map((d) => (
-              <div
-                key={d.id}
-                role="tab"
-                tabIndex={0}
-                aria-selected={d.id === activeId}
-                className={`tab ${d.id === activeId ? 'active' : ''}`}
-                onClick={() => activate(d.id)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    activate(d.id);
-                  }
-                }}
-                onAuxClick={(e) => {
-                  if (e.button === 1) {
-                    e.preventDefault();
-                    closeDoc(d.id);
-                  }
-                }}
-                onContextMenu={(e) => openTabMenu(e, d)}
-                title={d.path || d.name}
-              >
-                {d.kind === 'code'
-                  ? <FileCode size={14} weight="duotone" className="tab-icon" />
-                  : <FileText size={14} weight="duotone" className="tab-icon" />}
-                <span className="tab-name">{d.name}</span>
-                {d.dirty && <span className="dirty-dot" title="Unsaved changes" />}
-                <button
-                  className="tab-close"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    closeDoc(d.id);
+          {/*
+            * Each tab is a presentational wrapper (it takes the clicks, the middle-click close and
+            * the right-click menu) around the role="tab" element and the close button, which sits
+            * BESIDE the tab rather than inside it: a button nested in a tab is announced as part
+            * of the tab and can't be reached on its own. The close button is for the mouse
+            * (aria-hidden, out of the Tab order); from the keyboard a tab closes with Delete, or
+            * the Close tab shortcut.
+            */}
+          <div className="tab-scroll" role="tablist" aria-label="Open documents" onKeyDown={onTabKeyDown}>
+            {docs.map((d, i) => {
+              const selected = d.id === activeId;
+              const inTabOrder = activeId === null ? i === 0 : selected;
+              return (
+                <div
+                  key={d.id}
+                  role="presentation"
+                  className={`tab ${selected ? 'active' : ''}`}
+                  onClick={() => activate(d.id)}
+                  onAuxClick={(e) => {
+                    if (e.button === 1) {
+                      e.preventDefault();
+                      closeDoc(d.id);
+                    }
                   }}
-                  title={`Close (${fmtShortcut(settings.shortcuts.closeTab)})`}
-                  aria-label={`Close ${d.name}`}
+                  onContextMenu={(e) => openTabMenu(e, d)}
                 >
-                  <X size={11} weight="bold" />
-                </button>
-              </div>
-            ))}
+                  <div
+                    role="tab"
+                    id={`tab-${d.id}`}
+                    className="tab-main"
+                    data-doc-id={d.id}
+                    tabIndex={inTabOrder ? 0 : -1}
+                    aria-selected={selected}
+                    aria-controls={`pane-${d.id}`}
+                    aria-label={d.dirty ? `${d.name}, unsaved changes` : d.name}
+                    title={d.path || d.name}
+                  >
+                    {d.kind === 'code'
+                      ? <FileCode size={14} weight="duotone" className="tab-icon" />
+                      : <FileText size={14} weight="duotone" className="tab-icon" />}
+                    <span className="tab-name">{d.name}</span>
+                    {d.dirty && <span className="dirty-dot" title="Unsaved changes" />}
+                  </div>
+                  <button
+                    type="button"
+                    className="tab-close"
+                    tabIndex={-1}
+                    aria-hidden="true"
+                    // A click closes without taking focus (it stays in the editor, off a hidden control).
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      closeDoc(d.id);
+                    }}
+                    title={`Close (${fmtShortcut(settings.shortcuts.closeTab)})`}
+                  >
+                    <X size={11} weight="bold" />
+                  </button>
+                </div>
+              );
+            })}
           </div>
 
           <button className="icon-btn tab-add" onClick={newFile} title={`New file (${fmtShortcut(settings.shortcuts.newFile)})`}>
@@ -2255,7 +2619,7 @@ function App() {
       )}
 
       {/* Reading progress is a markdown concept; the code editor has Ln/Col in the status bar. */}
-      {activeDoc?.kind === 'markdown' && !activeDoc.editMode && (
+      {focusedDoc?.kind === 'markdown' && !focusedDoc.editMode && (
         <div className="progress-bar-container">
           <div className="progress-bar" ref={progressBarRef} />
         </div>
@@ -2377,27 +2741,28 @@ function App() {
         {/* ── DOCUMENT PANES: all mounted; active (and split) visible ────────────────────── */}
         {docs.length > 0 && (
           <div className="viewer-shell" style={{ display: activeDoc ? 'flex' : 'none' }}>
-            {activeDoc && (
+            {/* The header is the FOCUSED doc's (the split pane's while it has focus; L3). */}
+            {focusedDoc && (
               <div className="viewer-header">
                 <div className="header-left">
                   <div className="file-info">
-                    {activeDoc.kind === 'code'
+                    {focusedDoc.kind === 'code'
                       ? <FileCode className="file-icon" size={19} weight="duotone" />
                       : <FileText className="file-icon" size={19} weight="duotone" />}
-                    <span className="file-name">{activeDoc.name}</span>
-                    {activeDoc.dirty && <span className="dirty-dot" title="Unsaved changes" />}
+                    <span className="file-name">{focusedDoc.name}</span>
+                    {focusedDoc.dirty && <span className="dirty-dot" title="Unsaved changes" />}
                   </div>
                 </div>
 
                 <div className="header-right">
-                  {activeDoc.kind === 'markdown' && (
+                  {focusedDoc.kind === 'markdown' && (
                     /* THE edit/view switch, deliberately a labelled button, not a mystery icon. */
                     <button
-                      className={`btn btn-compact edit-toggle ${activeDoc.editMode ? 'btn-secondary' : 'btn-primary'}`}
-                      onClick={() => toggleMarkdownEdit()}
-                      title={`${activeDoc.editMode ? 'Back to reading view' : 'Edit this document'} (${settings.shortcuts.toggleEdit.replace('Control', 'Ctrl')})`}
+                      className={`btn btn-compact edit-toggle ${focusedDoc.editMode ? 'btn-secondary' : 'btn-primary'}`}
+                      onClick={() => toggleMarkdownEdit(focusedDoc.id)}
+                      title={`${focusedDoc.editMode ? 'Back to reading view' : 'Edit this document'} (${fmtShortcut(settings.shortcuts.toggleEdit)})`}
                     >
-                      {activeDoc.editMode
+                      {focusedDoc.editMode
                         ? <><Eye size={15} weight="duotone" /> View</>
                         : <><PencilSimple size={15} weight="duotone" /> Edit</>}
                     </button>
@@ -2405,19 +2770,19 @@ function App() {
                   {canRenderAsMarkdown && (
                     <button
                       className="icon-btn"
-                      onClick={() => renderAsMarkdown(activeDoc.id)}
+                      onClick={() => renderAsMarkdown(focusedDoc.id)}
                       title="Render as Markdown"
                       aria-label="Render as Markdown"
                     >
                       <MarkdownLogo size={17} weight="duotone" />
                     </button>
                   )}
-                  {(activeDoc.kind === 'code' || activeDoc.editMode || activeDoc.dirty) && (
+                  {(focusedDoc.kind === 'code' || focusedDoc.editMode || focusedDoc.dirty) && (
                     <button
                       className="icon-btn"
-                      onClick={() => saveDoc()}
-                      disabled={!activeDoc.dirty && !activeDoc.untitled}
-                      title={`Save (${settings.shortcuts.save.replace('Control', 'Ctrl')})`}
+                      onClick={() => saveDoc(focusedDoc.id)}
+                      disabled={!focusedDoc.dirty && !focusedDoc.untitled}
+                      title={`Save (${fmtShortcut(settings.shortcuts.save)})`}
                     >
                       <FloppyDisk size={17} weight="duotone" />
                     </button>
@@ -2425,7 +2790,7 @@ function App() {
                   <button
                     className={`icon-btn ${splitId !== null ? 'toggled' : ''}`}
                     onClick={toggleSplit}
-                    title={`Split view (${settings.shortcuts.toggleSplit.replace('Control', 'Ctrl')})`}
+                    title={`Split view (${fmtShortcut(settings.shortcuts.toggleSplit)})`}
                   >
                     <SquareSplitHorizontal size={17} weight="duotone" />
                   </button>
@@ -2448,7 +2813,7 @@ function App() {
                     className="icon-btn"
                     onClick={openPrintPreview}
                     disabled={isPrinting}
-                    title={`Print preview (${settings.shortcuts.print.replace('Control', 'Ctrl')})`}
+                    title={`Print preview (${fmtShortcut(settings.shortcuts.print)})`}
                   >
                     {isPrinting
                       ? <CircleNotch size={17} weight="bold" className="spinner" />
@@ -2456,7 +2821,7 @@ function App() {
                   </button>
                   <button
                     className="icon-btn"
-                    onClick={() => openSettings()}
+                    onClick={() => openSettings('appearance')}
                     title={`Settings (${fmtShortcut(settings.shortcuts.settings)})`}
                   >
                     <Gear size={17} weight="duotone" />
@@ -2467,9 +2832,13 @@ function App() {
 
             {/* Diff replaces the panes VISUALLY; the panes stay mounted underneath. */}
             {diffData && <DiffView {...diffData} />}
+            {/* Focus or a click inside a pane makes its doc the focused one (L3). `print-right`
+                swaps the split pane in for a print of its doc (see runPrintJob). */}
             <div
-              className={`doc-panes ${splitId !== null && !diffData ? 'split' : ''}`}
+              className={`doc-panes ${splitId !== null && !diffData ? 'split' : ''} ${printSnapshot && printSnapshot.docId !== activeId ? 'print-right' : ''}`}
               style={{ display: diffData ? 'none' : undefined }}
+              onFocus={onPaneFocusEvent}
+              onPointerDown={onPaneFocusEvent}
             >
               {docs.map(renderPane)}
             </div>
@@ -2477,66 +2846,70 @@ function App() {
         )}
       </div>
 
-      {/* Status bar: in the layout flow, not floating (see AI_CONTEXT.md §3a). */}
+      {/* Status bar: in the layout flow, not floating (see AI_CONTEXT.md §3a). Its document items
+          are the FOCUSED doc's: the split pane's while it has focus (L3). */}
       <footer className="status-bar">
-        <button className="status-btn" onClick={() => openSettings()}>
+        <button className="status-btn" onClick={() => openSettings('appearance')}>
           <Gear size={15} weight="duotone" />
           <span className="status-btn-label">Settings</span>
         </button>
-        <button className="status-btn" onClick={() => openPalette('')} title={`Command palette (${settings.shortcuts.palette.replace('Control', 'Ctrl')})`}>
+        <button className="status-btn" onClick={() => openPalette('')} title={`Command palette (${fmtShortcut(settings.shortcuts.palette)})`}>
           <MagnifyingGlass size={14} weight="bold" />
         </button>
 
         <span className="status-divider" />
         <span className="status-version">v{appVersion || '-'}</span>
 
-        {activeDoc?.kind === 'markdown' && !activeDoc.editMode && (
+        {focusedDoc?.kind === 'markdown' && !focusedDoc.editMode && (
           <>
             <span className="status-divider" />
             <span className="status-read">
-              <span ref={progressLabelRef}>0%</span> read &middot; ~{activeDoc.readMins} min
+              <span ref={progressLabelRef}>0%</span> read &middot; ~{focusedDoc.readMins} min
             </span>
           </>
         )}
 
-        {(activeDoc?.kind === 'code' || activeDoc?.editMode) && (
+        {(focusedDoc?.kind === 'code' || focusedDoc?.editMode) && (
           <>
             <span className="status-divider" />
             <span
               className="status-lang"
-              title={activeDoc.largeFile
+              title={focusedDoc.largeFile
                 ? 'Detected language. Large file: syntax checking, bracket matching and autocompletion are off'
                 : 'Detected language'}
             >
-              {activeDoc.kind === 'code' ? activeDoc.langName : 'Markdown'}
+              {focusedDoc.kind === 'code' ? focusedDoc.langName : 'Markdown'}
             </span>
             <span className="status-divider" />
             <span className="status-cursor" ref={cursorLabelRef}>Ln 1, Col 1</span>
+            <IndentStatus
+              key={focusedDoc.id}
+              indent={indentOf(focusedDoc)}
+              onChange={(indent) => setDocIndent(focusedDoc.id, indent)}
+            />
           </>
         )}
 
-        {/* Indentation (tabs or spaces) slots in here, between Ln/Col and the file format. */}
-
-        {activeDoc?.format && (
+        {focusedDoc?.format && (
           <FormatStatus
-            key={activeDoc.id}
-            format={activeDoc.format}
-            canReopen={!!activeDoc.path && !activeDoc.dirty}
-            reopenHint={activeDoc.path ? 'Save or discard your changes first' : 'Save the file first'}
-            onToggleEol={() => toggleEol(activeDoc.id)}
-            onSaveWithEncoding={(choice) => setEncoding(activeDoc.id, choice)}
-            onReopenWithEncoding={(encoding) => reopenWithEncoding(activeDoc.id, encoding)}
+            key={focusedDoc.id}
+            format={focusedDoc.format}
+            canReopen={!!focusedDoc.path && !focusedDoc.dirty}
+            reopenHint={focusedDoc.path ? 'Save or discard your changes first' : 'Save the file first'}
+            onToggleEol={() => toggleEol(focusedDoc.id)}
+            onSaveWithEncoding={(choice) => setEncoding(focusedDoc.id, choice)}
+            onReopenWithEncoding={(encoding) => reopenWithEncoding(focusedDoc.id, encoding)}
           />
         )}
 
-        {activeDoc?.kind === 'code' && activeDoc.path && (
+        {focusedDoc?.kind === 'code' && focusedDoc.path && (
           <>
             <span className="status-divider" />
             <button
               type="button"
-              className={`status-btn status-follow ${activeDoc.follow ? 'accent' : ''}`}
-              aria-pressed={!!activeDoc.follow}
-              onClick={() => toggleFollow(activeDoc.id)}
+              className={`status-btn status-follow ${focusedDoc.follow ? 'accent' : ''}`}
+              aria-pressed={!!focusedDoc.follow}
+              onClick={() => toggleFollow(focusedDoc.id)}
               title="Follow: when the file grows on disk, reload it and scroll to the end (for logs)"
             >
               <ArrowLineDown size={13} weight="bold" />
@@ -2586,18 +2959,17 @@ function App() {
 
       {showPalette && (
         <CommandPalette
-          key={paletteKey}
           items={paletteItems}
+          modes={paletteModes}
           initialQuery={paletteQuery}
-          onClose={() => setShowPalette(false)}
+          onClose={closePalette}
         />
       )}
 
       {showSettings && (
         <SettingsModal
-          key={settingsKey}
-          initialSection={settingsSection ?? undefined}
-          onClose={() => setShowSettings(false)}
+          initialSection={settingsSection}
+          onClose={closeSettings}
           settings={settings}
           updateSetting={updateSetting}
           appVersion={appVersion}
