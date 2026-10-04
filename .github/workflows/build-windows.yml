@@ -3,11 +3,11 @@
 #   build      the NSIS installer (FATE-Setup-X.Y.Z.exe, its .blockmap, latest.yml) and the Microsoft
 #              Store .appx. Read-only: this job runs `npm ci` and electron-builder.
 #   publish    attaches the installer, the blockmap and latest.yml to the GitHub release; the only
-#              job with write access, and it runs nothing but gh. electron-updater on Windows reads
-#              latest.yml from the latest release, so this is what existing installs update from,
-#              and the blockmap lets them download only the blocks that changed (differential
-#              updates need it on both the old and the new release, so they start from the release
-#              after the first one that carries it).
+#              job with write access, and it runs nothing but download-artifact and gh.
+#              electron-updater on Windows reads latest.yml from the latest release, so this is
+#              what existing installs update from, and the blockmap lets them download only the
+#              blocks that changed (differential updates need it on both the old and the new
+#              release, so they start from the release after the first one that carries it).
 #   artifact   everything on the run, the .appx for the Store submission (Partner Center)
 #
 # The maintainer's part is

@@ -6,7 +6,8 @@
 #   snap        builds the .snap with snapcore/action-build. No secrets either.
 #   publish     signs the .rpm, attaches everything + latest-linux.yml to the GitHub release, and
 #               republishes the signed apt and dnf repositories. The ONLY job that sees the signing
-#               key, and it runs no npm and no third-party action: system tools, gpg and gh.
+#               key, and it runs no npm and no third-party action: GitHub's own checkout and
+#               download-artifact (pinned), then system tools, gpg and gh.
 #   snap-store  uploads the snap to the Snap Store stable channel (when SNAPCRAFT_STORE_CREDENTIALS
 #               is set). Its only secret is that store token.
 #   test-repos  installs `fate` from the apt repo in a Debian container and from the dnf repo in a
