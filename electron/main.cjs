@@ -966,7 +966,8 @@ const isWindowsStore = process.windowsStore === true;
  * update FATE on its own schedule, and an in-app updater would fight it: the Microsoft Store,
  * Flathub (FLATPAK_ID is set inside the sandbox), the Snap Store (SNAP), and the .deb/.rpm, which
  * register FATE's own apt/dnf repository in their post-install script so the system package
- * manager takes over (electron-builder writes resources/package-type for those two). For a
+ * manager takes over (electron-builder writes resources/package-type for those two), and the AUR
+ * package, which rewrites that marker to "pacman". For a
  * managed install the updater never starts and the status-bar button says who is in charge.
  */
 function detectUpdateSource() {
@@ -978,6 +979,8 @@ function detectUpdateSource() {
       const kind = fs.readFileSync(path.join(process.resourcesPath, 'package-type'), 'utf8').trim();
       if (kind === 'deb') return { managed: true, kind, label: 'apt' };
       if (kind === 'rpm') return { managed: true, kind, label: 'dnf' };
+      // Written by the AUR package (aur/PKGBUILD), which repackages the .deb.
+      if (kind === 'pacman') return { managed: true, kind, label: 'pacman' };
       if (kind) return { managed: true, kind, label: 'your package manager' };
     } catch {
       // No package-type marker: an unpacked dev build or an AppImage, so self-updating.
