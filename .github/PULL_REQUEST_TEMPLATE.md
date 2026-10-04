@@ -33,6 +33,7 @@ regress scroll performance, nothing floats against the viewport, stay offline).
 ## Checklist
 
 - [ ] `npm run lint` passes
+- [ ] `npm test` passes
 - [ ] `npm run build` passes
 - [ ] Ran it with `npm run electron:dev` and tried the change, including unsaved changes and more than one open tab where relevant
 - [ ] No colour literals added outside `src/brand.css` (`rg -n '#[0-9a-fA-F]{3,8}\b' src/App.css`; hits must be inside `@media print`)

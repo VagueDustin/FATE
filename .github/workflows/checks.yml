@@ -1,0 +1,94 @@
+# Checks for every pull request and every push to main: lint, the unit tests, the production
+# renderer build, and an unpacked Linux package that has to start. Up to 1.13 nothing ran on a PR
+# except the Windows build (and only for a few paths), so a broken main process or a lockfile that
+# no longer installs surfaced at release time.
+#
+# Read-only and secret-free, so it is safe on pull requests from forks.
+name: Checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Lint, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      # TODO(pin): replace @v4 with the full commit SHA: gh api repos/actions/setup-node/commits/v4 --jq .sha
+      - uses: actions/setup-node@v4 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+      # The unpacked app only (no installers): enough to prove that what electron-builder packs
+      # starts, and that the renderer's packages stay out of app.asar.
+      - run: npm run icons
+      - name: Package for Linux (unpacked)
+        run: npx electron-builder --linux dir --publish never
+
+      - name: Check app.asar
+        run: |
+          set -euo pipefail
+          ASAR=dist-electron/linux-unpacked/resources/app.asar
+          ASAR_BYTES="$(stat -c %s "$ASAR")"
+          echo "app.asar: $((ASAR_BYTES / 1048576)) MB"
+          # @electron/asar's CLI, which electron-builder installs; never fetched from the registry.
+          node_modules/.bin/asar list "$ASAR" > asar-files.txt
+          sed -n 's|^/node_modules/\(@[^/]*/[^/]*\)$|\1|p; s|^/node_modules/\([^@/][^/]*\)$|\1|p' asar-files.txt | sort > asar-packages.txt
+          echo "--- packages in app.asar:"; tr '\n' ' ' < asar-packages.txt; echo
+          # What electron/*.cjs requires at runtime must be there...
+          for p in electron-store electron-updater; do
+            grep -qx "$p" asar-packages.txt || { echo "::error::$p is missing from app.asar; the main process requires it."; exit 1; }
+          done
+          # ...and what Vite already bundled must not ship a second time (1.13 shipped 211 MB).
+          for p in mermaid react react-dom katex highlight.js @codemirror/view; do
+            if grep -qx "$p" asar-packages.txt; then
+              echo "::error::$p is in app.asar. Renderer packages belong in devDependencies; Vite bundles them into dist/."
+              exit 1
+            fi
+          done
+          if [ "$ASAR_BYTES" -gt $((50 * 1048576)) ]; then
+            echo "::error::app.asar is $((ASAR_BYTES / 1048576)) MB."
+            exit 1
+          fi
+
+      - name: Start the packaged app
+        run: |
+          set -uo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends xvfb > /dev/null
+          export FATE_USER_DATA="$RUNNER_TEMP/fate-userdata"
+          # --no-sandbox: Ubuntu 24.04 runners forbid the unprivileged user namespaces Chromium's
+          # sandbox needs. A main-process crash shows Electron's error dialog and keeps running,
+          # so the log is what tells: a healthy start is still running, quietly, when timeout ends
+          # it (124, or 137 if it needed the KILL).
+          timeout -k 5 20 xvfb-run -a dist-electron/linux-unpacked/FATE --no-sandbox "$PWD/README.md" > app.log 2>&1
+          status=$?
+          cat app.log
+          if [ "$status" -ne 124 ] && [ "$status" -ne 137 ]; then
+            echo "::error::The packaged app exited by itself (status $status) instead of running."
+            exit 1
+          fi
+          if grep -Eq 'App threw an error during load|Cannot find module|A JavaScript error occurred' app.log; then
+            echo "::error::The packaged app failed to start (see the log above)."
+            exit 1
+          fi

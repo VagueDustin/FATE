@@ -28,8 +28,8 @@ agree to that, please open an issue describing the change instead of a PR.
 - **Linux packaging.** AppImage, `.deb`, `.rpm`, Snap and Flatpak testing on distributions and
   desktops the maintainer doesn't use every day.
 - **Accessibility.** Keyboard access, focus handling, screen reader labels, contrast in every theme.
-- **Tests.** FATE has no automated test suite yet. Well-scoped tests for the pure modules in `src/`
-  (for example `languageDetect.js`, `fileKinds.js`, `markdown.js`) would be a welcome start.
+- **Tests.** `npm test` runs the `node --test` suites in `test/`. More well-scoped tests for the pure
+  modules in `src/` (for example `languageDetect.js`, `fileKinds.js`, `markdown.js`) are welcome.
 - **Documentation.** Clearer README sections, better screenshots, corrections.
 
 ## Before you write code
@@ -56,12 +56,13 @@ npm run electron:dev      # Vite and Electron together, with hot reload
 | `npm run electron:dev` | Vite dev server and Electron together; the normal way to run FATE while you work |
 | `npm run dev` | renderer only, in a browser (no Electron APIs; the app degrades gracefully) |
 | `npm run lint` | ESLint; **must pass** |
+| `npm test` | the unit tests in `test/` (`node --test`); **must pass** |
 | `npm run build` | production renderer build; **must pass** |
 | `npm run icons` | regenerate every icon from the masters in `brand/` (needed before packaging) |
 | `npm run electron:build` | Windows installer and Store package in `dist-electron/` |
-| `npm run electron:build:linux` | Linux AppImage, `.deb` and `.rpm` in `dist-electron/`; run `npm run icons` first, have `rpmbuild` installed, and put the public signing keyring in `build/` (README → Building from source) |
+| `npm run electron:build:linux` | Linux AppImage, `.deb` and `.rpm` in `dist-electron/`; run `npm run icons` first and have `rpmbuild` installed |
 | `node scripts/write-snap-desktop.mjs` | regenerate `snap/gui/` (desktop entry and icon) for the snap build from package.json |
-| `bash scripts/setup-signing-key.sh` | **maintainer, once:** create the package-signing key and store it as the `FATE_GPG_PRIVATE_KEY` secret |
+| `bash scripts/setup-signing-key.sh` | **maintainer, once:** create the package-signing key and store it as the `FATE_GPG_PRIVATE_KEY` secret (a later key change is a rotation: SECURITY.md → Package signing key) |
 | `powershell -File scripts/setup-snap-store-token.ps1` | **maintainer, once:** create the Snap Store upload token for `fate` and store it as the `SNAPCRAFT_STORE_CREDENTIALS` secret |
 
 To run a development copy beside an installed FATE without sharing settings, set the
@@ -70,9 +71,10 @@ single-instance lock.
 
 ## Testing your change
 
-There is no automated test suite yet, so testing means:
+Testing means:
 
-1. `npm run lint` and `npm run build` both pass.
+1. `npm run lint`, `npm test` and `npm run build` pass. The **Checks** workflow runs them on every PR,
+   and also packages FATE for Linux (unpacked) and makes sure it starts.
 2. Run the app with `npm run electron:dev` and exercise what you changed, including the edge cases
    (unsaved changes, several tabs open, a large file, a file changed on disk).
 3. If it's visual, check it in more than one theme and at the minimum window size (680×520).
@@ -106,18 +108,26 @@ Say in the PR what you tried. "Built it and clicked through it on Windows 11" is
 - `electron/`: the main process (`main.cjs`: windows, file I/O, file watching, printing, Windows
   integration, updates), the preload bridge and the snap confinement helpers.
 - `build/`: generated output and gitignored, with a few tracked exceptions (below).
+- `test/`: the unit tests (`npm test`), including the packaging checks described below.
 - `snap/`, `flatpak/` and `.github/workflows/build-linux.yml`: Linux distribution channels.
 - `.github/workflows/build-windows.yml`: the Windows installer and Microsoft Store package.
+- `.github/workflows/checks.yml`: lint, tests, the renderer build and an unpacked Linux package, on
+  every pull request.
 
 **Note:** `build/` is gitignored except for hand-authored build source: `build/installer.nsh` (the
 NSIS installer script), `build/com.vaguedustin.fate.metainfo.xml` (the AppStream metadata the Linux
-packages install for software centres) and `build/linux/` (post-install scripts). That is why
-`npm run icons` followed by `npm run electron:build` works from a fresh clone.
+packages install for software centres) and `build/linux/` (the `.deb`/`.rpm` install and remove
+scripts, and the public signing keyring the packages ship). That is why `npm run icons` followed by
+`npm run electron:build` works from a fresh clone. The install and remove scripts run as root on
+users' machines: `test/linux-package-scripts.test.mjs` runs them against a scratch directory, so
+extend it with any change.
 
 **The code-extension list lives in three places that must agree:** `electron/main.cjs`,
-`src/fileKinds.js`, and the generated blocks in `build/installer.nsh`. The list is a curated dialog
-filter and the set of types FATE registers for on Windows. It does **not** decide what opens. FATE
-opens any text file; the only gates are the size cap and the binary sniff in `openAndWatchFile`.
+`src/fileKinds.js`, and the generated blocks in `build/installer.nsh`
+(`test/windows-registration.test.mjs` fails when they don't). The Microsoft Store package takes its
+file types from `installer.nsh` at build time (`scripts/appx-manifest.cjs`). The list is a curated
+dialog filter and the set of types FATE registers for on Windows. It does **not** decide what opens.
+FATE opens any text file; the only gates are the size cap and the binary sniff in `openAndWatchFile`.
 Don't reintroduce an extension check on the command line or drag and drop (1.12.0 and earlier had
 one, and "Edit in FATE" on a `.config` silently did nothing).
 
@@ -132,10 +142,12 @@ them).
 The Linux channels are all driven by `.github/workflows/build-linux.yml` from a release tag: apt and
 dnf repositories (served from GitHub Releases under the rolling prerelease tags `apt` and
 `repodata`), the Snap Store (`snap/snapcraft.yaml`) and Flathub (`flatpak/`). The workflow's header
-comment explains the moving parts. The one rule to know is that the two rolling releases must stay
-marked *prerelease*, or electron-updater on Windows and the AppImage will treat them as the latest
-version. The same tag fires `.github/workflows/build-windows.yml`, which attaches the Windows
-installer and `latest.yml` to the release.
+comment explains the moving parts. Two rules to know: the two rolling releases must stay marked
+*prerelease*, or electron-updater on Windows and the AppImage will treat them as the latest version;
+and the package-signing key stays in the publish job, which runs no npm and no third-party action, so
+nothing that installs or runs dependencies goes in that job. The same tag fires
+`.github/workflows/build-windows.yml`, which attaches the Windows installer, its blockmap and
+`latest.yml` to the release. Actions are pinned by commit SHA, with the version in a comment.
 
 ---
 
