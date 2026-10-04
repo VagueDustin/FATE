@@ -14,6 +14,7 @@ import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { detectLanguage } from '../languageDetect.js';
 import { tokenHighlightStyle } from '../editorTheme.js';
+import { changedSpan } from '../textSpan.js';
 
 /**
  * CodeEditor: the code-file counterpart to the markdown viewer.
@@ -48,7 +49,17 @@ import { tokenHighlightStyle } from '../editorTheme.js';
  * handle at the bottom. Per-keystroke state (dirty flag transitions, cursor position) never
  * touches React state except on actual dirty-flag *changes*; the Ln/Col readout is written
  * straight to a status-bar DOM node, following the same rule as the scroll progress bar.
+ *
+ * ── Dirty baseline (1.14.0) ───────────────────────────────────────────────────────────────────
+ * "Dirty" means the buffer differs from the BASELINE: the text last known to be on disk. It is
+ * `savedContent` when the parent passes one, else the initial content. Up to 1.13.4 it was always
+ * the initial content, so a Markdown tab coming back into Edit mode with unsaved text took that
+ * text as saved: Ctrl+W closed it without a prompt, quitting skipped it, and Diff found nothing.
+ * Every path that moves the baseline (save, reload, the changed-on-disk choices) goes through
+ * the handle, so isDirty(), getSavedContent() and the guards built on them always agree.
  */
+
+const MAX_SYNTAX_DIAGNOSTICS = 200;
 
 /**
  * Structural syntax diagnostics from the language parser itself.
@@ -62,43 +73,76 @@ import { tokenHighlightStyle } from '../editorTheme.js';
  *
  * Zero-length error nodes (very common: "something is missing here") are widened by a character
  * so the underline has somewhere to live.
+ *
+ * The walk is a plain cursor loop so the cap really ends it. It used to be `iterate()` with an
+ * early `return`, which only skips the current node's children: past 200 errors the linter still
+ * visited every remaining node of the tree on each pass (M8).
  */
 const syntaxErrorLinter = linter(
   (view) => {
     const diagnostics = [];
-    syntaxTree(view.state)
-      .cursor()
-      .iterate((node) => {
-        if (!node.type.isError || diagnostics.length >= 200) return;
-        const from = node.from === node.to ? Math.max(0, node.from - 1) : node.from;
-        const to = node.from === node.to ? Math.min(view.state.doc.length, node.to + 1) : node.to;
-        diagnostics.push({
-          from,
-          to,
-          severity: 'error',
-          message: 'Syntax error: unexpected or missing token'
-        });
+    const cursor = syntaxTree(view.state).cursor();
+    do {
+      if (!cursor.type.isError) continue;
+      const from = cursor.from === cursor.to ? Math.max(0, cursor.from - 1) : cursor.from;
+      const to = cursor.from === cursor.to ? Math.min(view.state.doc.length, cursor.to + 1) : cursor.to;
+      diagnostics.push({
+        from,
+        to,
+        severity: 'error',
+        message: 'Syntax error: unexpected or missing token'
       });
+      if (diagnostics.length >= MAX_SYNTAX_DIAGNOSTICS) break;
+    } while (cursor.next());
     return diagnostics;
   },
   { delay: 400 }
 );
 
+/*
+ * Syntax checking runs only where it can be right: the setting is on, the file is not in
+ * large-file mode, and the language came from the FILE NAME. A language guessed from the content
+ * can be wrong (a log whose lines start with "[" sniffs as JSON), and then every line of it was
+ * underlined as an error (M8).
+ */
+const lintExtensions = (lint, largeFile, nameMatched) =>
+  lint && !largeFile && nameMatched ? [syntaxErrorLinter, lintGutter()] : [];
+
+/*
+ * Props beyond the obvious:
+ *   savedContent  the baseline text when it differs from initialContent (see "Dirty baseline")
+ *   largeFile     large-file mode, fixed at mount: no lint, bracket matching, autocompletion or
+ *                 selection-match highlighting, the extensions whose cost grows with the file
+ *   plainText     never load a language (a Markdown file too big to render opens as plain text)
+ */
 const CodeEditor = forwardRef(function CodeEditor(
-  { fileName, initialContent, wrap, tabSize, onDirtyChange, onSave, onDocChanged, cursorLabelRef, isActive = true, lint = true },
+  {
+    fileName, initialContent, savedContent, wrap, tabSize, onDirtyChange, onSave, onDocChanged,
+    cursorLabelRef, isActive = true, lint = true, largeFile = false, plainText = false
+  },
   ref
 ) {
   const hostRef = useRef(null);
   const viewRef = useRef(null);
-  /** The document as of the last save (a CM Text). Dirty = current doc !== this. */
+  /** The baseline (a CM Text): the text last known to be on disk. Dirty = current doc ≠ this. */
   const savedDocRef = useRef(null);
+  /** getSavedContent's string, cached per baseline (the hot-exit backups ask for it repeatedly). */
+  const savedTextRef = useRef({ doc: null, text: '' });
   const dirtyRef = useRef(false);
+  /** True while replaceContent dispatches: it sets the baseline itself, right after. */
+  const replacingRef = useRef(false);
   /*
    * Tabs: several editors stay mounted at once, but the status bar has ONE Ln/Col node. Only the
    * visible tab may write to it; a background tab receiving a live-reload must not clobber the
    * readout of the tab the user is looking at.
    */
   const isActiveRef = useRef(isActive);
+  /** Fixed at mount like largeFile; read by setLanguage after a Save As. */
+  const plainTextRef = useRef(plainText);
+  /** Did the file NAME pick the language (not a content sniff)? Gates syntax checking. */
+  const nameMatchedRef = useRef(false);
+  /** The lint inputs as last rendered, for setLanguage to reapply them under a new name. */
+  const lintPropsRef = useRef({ lint, largeFile });
 
   // Latest callbacks, readable from extensions without rebuilding the editor state.
   const onSaveRef = useRef(onSave);
@@ -123,11 +167,19 @@ const CodeEditor = forwardRef(function CodeEditor(
     }
   };
 
+  /** Point the baseline at `text`, sharing the live doc when they are equal (cheap comparisons). */
+  const setBaselineText = (view, text) => {
+    const doc = view.state.doc;
+    const next = view.state.toText(text);
+    savedDocRef.current = doc.eq(next) ? doc : next;
+    setDirty(!doc.eq(savedDocRef.current));
+  };
+
   /*
    * One EditorView per mount. The parent keys this component on its open counter, so opening a
    * file (including re-opening the same path) gets a clean editor with fresh undo history.
-   * `initialContent`/`fileName` are read once here by design, hence their absence from the
-   * dependency list.
+   * `initialContent`/`savedContent`/`fileName`/`largeFile`/`plainText` are read once here by
+   * design, hence their absence from the dependency list.
    */
   const writeCursor = useCallback(
     (state) => {
@@ -151,6 +203,7 @@ const CodeEditor = forwardRef(function CodeEditor(
   }, [isActive, writeCursor]);
 
   useEffect(() => {
+    nameMatchedRef.current = !plainText && !!detectLanguage(fileName);
 
     const state = EditorState.create({
       doc: initialContent,
@@ -165,15 +218,13 @@ const CodeEditor = forwardRef(function CodeEditor(
         EditorState.allowMultipleSelections.of(true),
         indentOnInput(),
         syntaxHighlighting(tokenHighlightStyle),
-        bracketMatching(),
-        closeBrackets(),
-        autocompletion(),
+        ...(largeFile ? [] : [bracketMatching(), closeBrackets(), autocompletion()]),
         rectangularSelection(),
         crosshairCursor(),
         highlightActiveLine(),
-        highlightSelectionMatches(),
+        ...(largeFile ? [] : [highlightSelectionMatches()]),
         languageCompartment.of([]),
-        lintCompartment.of(lint ? [syntaxErrorLinter, lintGutter()] : []),
+        lintCompartment.of(lintExtensions(lint, largeFile, nameMatchedRef.current)),
         wrapCompartment.of(wrap ? EditorView.lineWrapping : []),
         tabSizeCompartment.of([
           EditorState.tabSize.of(tabSize),
@@ -188,17 +239,17 @@ const CodeEditor = forwardRef(function CodeEditor(
               return true;
             }
           },
-          ...closeBracketsKeymap,
+          ...(largeFile ? [] : closeBracketsKeymap),
           ...defaultKeymap,
           ...searchKeymap,
           ...historyKeymap,
           ...foldKeymap,
-          ...completionKeymap,
+          ...(largeFile ? [] : completionKeymap),
           indentWithTab
         ]),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
-            setDirty(!update.state.doc.eq(savedDocRef.current));
+            if (!replacingRef.current) setDirty(!update.state.doc.eq(savedDocRef.current));
             onDocChangedRef.current?.();
           }
           if (update.selectionSet || update.docChanged) {
@@ -210,12 +261,16 @@ const CodeEditor = forwardRef(function CodeEditor(
 
     const view = new EditorView({ state, parent: hostRef.current });
     viewRef.current = view;
-    savedDocRef.current = state.doc;
+    // The baseline. A different savedContent (unsaved text coming back into Edit mode, a restored
+    // backup) means the editor starts dirty, and says so at once.
+    savedDocRef.current =
+      savedContent == null || savedContent === initialContent ? state.doc : state.toText(savedContent);
+    if (!state.doc.eq(savedDocRef.current)) setDirty(true);
     writeCursor(state);
 
     // Load the language for this filename asynchronously; plain text until (and unless) it lands.
     // The content rides along so an unknown extension can still be sniffed (web.config → XML).
-    const langDesc = detectLanguage(fileName, initialContent);
+    const langDesc = plainText ? null : detectLanguage(fileName, initialContent);
     let cancelled = false;
     if (langDesc) {
       langDesc.load().then(
@@ -255,10 +310,11 @@ const CodeEditor = forwardRef(function CodeEditor(
   }, [tabSize, tabSizeCompartment]);
 
   useEffect(() => {
+    lintPropsRef.current = { lint, largeFile };
     viewRef.current?.dispatch({
-      effects: lintCompartment.reconfigure(lint ? [syntaxErrorLinter, lintGutter()] : [])
+      effects: lintCompartment.reconfigure(lintExtensions(lint, largeFile, nameMatchedRef.current))
     });
-  }, [lint, lintCompartment]);
+  }, [lint, largeFile, lintCompartment]);
 
   useImperativeHandle(
     ref,
@@ -269,29 +325,71 @@ const CodeEditor = forwardRef(function CodeEditor(
       /** Current buffer contents: what Save writes to disk. */
       getContent: () => viewRef.current?.state.doc.toString() ?? '',
 
-      /** The buffer as of the last save (or open), the baseline "diff unsaved changes" compares against. */
-      getSavedContent: () => savedDocRef.current?.toString() ?? '',
+      /**
+       * The document itself (an immutable CM Text), for a save to snapshot BEFORE it awaits the
+       * write: whatever is typed while the write is in flight is not in this snapshot (M4).
+       */
+      getDocSnapshot: () => viewRef.current?.state.doc ?? null,
 
-      /** Call after a successful save: the current doc becomes the clean reference point. */
-      markSaved: () => {
-        if (!viewRef.current) return;
-        savedDocRef.current = viewRef.current.state.doc;
-        setDirty(false);
+      /** The baseline as a CM Text. Identity changes exactly when the baseline moves. */
+      getSavedDoc: () => savedDocRef.current,
+
+      /** The baseline as text: what "Diff unsaved changes" compares against. */
+      getSavedContent: () => {
+        const doc = savedDocRef.current;
+        if (!doc) return '';
+        if (savedTextRef.current.doc !== doc) savedTextRef.current = { doc, text: doc.toString() };
+        return savedTextRef.current.text;
       },
 
       /**
-       * Replace the buffer with content reloaded from disk (external change, clean editor only;
-       * the caller checks). A whole-document change rather than a remount, so the undo history
-       * survives and the selection is mapped instead of reset.
+       * A save landed. The baseline becomes `snapshot` (the doc as it was when the save read it)
+       * or, without one, the current doc. Keys pressed during the write leave the tab dirty.
        */
-      replaceContent: (text) => {
+      markSaved: (snapshot) => {
         const view = viewRef.current;
         if (!view) return;
-        view.dispatch({
-          changes: { from: 0, to: view.state.doc.length, insert: text }
-        });
-        savedDocRef.current = view.state.doc;
-        setDirty(false);
+        savedDocRef.current = snapshot ?? view.state.doc;
+        setDirty(!view.state.doc.eq(savedDocRef.current));
+      },
+
+      /** Move the baseline without touching the buffer (keep my version, file deleted, …). */
+      setBaseline: (text) => {
+        const view = viewRef.current;
+        if (view) setBaselineText(view, text);
+      },
+
+      /**
+       * Put `text` in the buffer: a reload from disk, a restored backup, a reopened encoding.
+       * Only the span that differs is replaced (identical text is not touched at all), so the
+       * caret, selection and folds map through the change, and undo history survives (M5).
+       * The baseline becomes `baseline`, by default the new text itself (a reload: clean).
+       */
+      replaceContent: (text, baseline) => {
+        const view = viewRef.current;
+        if (!view) return;
+        const span = changedSpan(view.state.doc.toString(), text);
+        if (span) {
+          replacingRef.current = true;
+          try {
+            view.dispatch({ changes: span });
+          } finally {
+            replacingRef.current = false;
+          }
+        }
+        if (baseline === undefined) {
+          savedDocRef.current = view.state.doc;
+          setDirty(false);
+        } else {
+          setBaselineText(view, baseline);
+        }
+      },
+
+      /** Log following: bring the end of the document into view. */
+      scrollToEnd: () => {
+        const view = viewRef.current;
+        if (!view) return;
+        view.dispatch({ effects: EditorView.scrollIntoView(view.state.doc.length, { y: 'end' }) });
       },
 
       isDirty: () => dirtyRef.current,
@@ -303,6 +401,12 @@ const CodeEditor = forwardRef(function CodeEditor(
        * buffer, cursor and undo history all survive the rename.
        */
       setLanguage: (newFileName) => {
+        if (plainTextRef.current) return;
+        nameMatchedRef.current = !!detectLanguage(newFileName);
+        const { lint: lintOn, largeFile: large } = lintPropsRef.current;
+        viewRef.current?.dispatch({
+          effects: lintCompartment.reconfigure(lintExtensions(lintOn, large, nameMatchedRef.current))
+        });
         const langDesc = detectLanguage(newFileName, viewRef.current?.state.doc.sliceString(0, 2048));
         if (!langDesc) {
           viewRef.current?.dispatch({ effects: languageCompartment.reconfigure([]) });

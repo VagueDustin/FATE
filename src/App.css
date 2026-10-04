@@ -2404,6 +2404,279 @@ kbd {
 }
 
 /* ════════════════════════════════════════════════════════════════════════════════════════════
+   1.14.0 DOCUMENT SAFETY SURFACES (renderer-docs)
+   Bars over a pane (changed on disk, deleted, notices), the status bar's encoding / line-ending
+   items and their menu, Follow, the Markdown print snapshot, the render fallback, and the crash
+   screen. Kept together; every colour is a token, so every theme carries them.
+   ════════════════════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Pane bars (components/DocBar.jsx) ─────────────────────────────────────────────────────── */
+.doc-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.6rem;
+  padding: 0.4rem 0.6rem 0.4rem 0.85rem;
+  background: var(--accent-subtle);
+  border-bottom: 1px solid var(--border-default);
+  color: var(--text-primary);
+  font-size: 0.8rem;
+}
+
+.doc-bar-warning {
+  background: color-mix(in srgb, var(--accent-default) 14%, var(--surface-raised));
+  border-bottom-color: var(--border-emphasis);
+}
+
+.doc-bar-danger {
+  background: color-mix(in srgb, var(--status-danger) 14%, var(--surface-raised));
+  border-bottom-color: color-mix(in srgb, var(--status-danger) 50%, transparent);
+}
+
+.doc-bar-icon {
+  flex-shrink: 0;
+  color: var(--text-accent);
+}
+
+.doc-bar-danger .doc-bar-icon {
+  color: var(--status-danger);
+}
+
+.doc-bar-message {
+  flex: 1;
+  min-width: 12rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.doc-bar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.doc-bar-btn {
+  height: 24px;
+  padding: 0 0.65rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-default);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.16s var(--ease), color 0.16s var(--ease), background 0.16s var(--ease);
+}
+
+.doc-bar-btn:hover {
+  border-color: var(--border-emphasis);
+  color: var(--text-accent);
+}
+
+.doc-bar-btn-primary {
+  background: var(--accent-default);
+  border-color: var(--accent-default);
+  color: var(--text-inverse);
+}
+
+.doc-bar-btn-primary:hover {
+  background: var(--accent-hover);
+  color: var(--text-inverse);
+}
+
+.doc-bar-dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.doc-bar-dismiss:hover {
+  color: var(--text-accent);
+  border-color: var(--border-default);
+}
+
+.doc-bar-btn:focus-visible,
+.doc-bar-dismiss:focus-visible,
+.format-menu-item:focus-visible {
+  outline: 2px solid var(--border-emphasis);
+  outline-offset: 1px;
+}
+
+/* ── Status bar: encoding, line endings, Follow (components/FormatStatus.jsx) ──────────────── */
+.status-format {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 0.7rem;
+  flex-shrink: 0;
+}
+
+.status-format.open {
+  color: var(--text-accent);
+  background: var(--accent-subtle);
+  border-color: var(--border-default);
+}
+
+.status-follow {
+  flex-shrink: 0;
+}
+
+/* Fixed and portalled to <body>: the status bar clips overflow, so it can't hold a popover. */
+.format-menu {
+  position: fixed;
+  z-index: 1300;
+  display: flex;
+  flex-direction: column;
+  padding: 0.3rem;
+  background: var(--surface-overlay);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-panel);
+  font-family: var(--font-sans);
+}
+
+.format-menu-heading {
+  padding: 0.35rem 0.55rem 0.2rem;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.format-menu-hint {
+  padding: 0 0.55rem 0.25rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.format-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  padding: 0.32rem 0.55rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.format-menu-item:hover:not(:disabled),
+.format-menu-item:focus-visible {
+  background: var(--accent-subtle);
+  color: var(--text-accent);
+}
+
+.format-menu-item:disabled {
+  color: var(--text-faint);
+  cursor: default;
+}
+
+.format-menu-check {
+  display: inline-flex;
+  width: 12px;
+  flex-shrink: 0;
+  color: var(--text-accent);
+}
+
+.format-menu-sep {
+  height: 1px;
+  margin: 0.3rem 0.2rem;
+  background: var(--border-default);
+}
+
+/* ── Markdown that couldn't render: shown as its text, wrapped like prose ──────────────────── */
+.markdown-body pre.md-plain-fallback {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ── Markdown in Edit mode prints RENDERED: this snapshot, never visible on screen ──────────── */
+.md-print-body {
+  display: none;
+}
+
+@media print {
+  .md-print-body {
+    display: block !important;
+  }
+
+  .doc-bar,
+  .format-menu {
+    display: none !important;
+  }
+}
+
+/* ── Crash screen (components/ErrorBoundary.jsx) ────────────────────────────────────────────── */
+.crash-screen {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: var(--surface-base);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+}
+
+.crash-card {
+  display: grid;
+  gap: 0.85rem;
+  width: min(560px, 100%);
+  padding: 1.5rem 1.75rem;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-panel);
+}
+
+.crash-title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.crash-text {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.crash-detail {
+  margin: 0;
+  max-height: 9rem;
+  overflow: auto;
+  padding: 0.6rem 0.75rem;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.crash-reload {
+  justify-self: start;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════════════════════
    1.11.0 SURFACES: palette, split view, diff, markdown edit mode, focus mode, custom themes
    ════════════════════════════════════════════════════════════════════════════════════════════ */
 
