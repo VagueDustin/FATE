@@ -1,6 +1,6 @@
 # Privacy Policy for FATE - Formatted Article & Text Editor
 
-**Effective Date:** September 15, 2026 (supersedes the August 5, 2026 policy)
+**Effective Date:** October 4, 2026 (supersedes the September 15, 2026 policy)
 
 FATE is a local, offline desktop application for reading and editing documents. Your files and your
 data belong to you. This policy describes, in plain language, everything FATE does that could
@@ -14,6 +14,12 @@ conceivably touch data. There is very little.
   editing happens entirely on your machine. Typefaces are bundled with the app; nothing is fetched
   from a CDN or webfont service.
 * **No accounts.** FATE has no sign-in, no registration, and never asks for personal information.
+* **Images from the internet stay off.** A Markdown document can point at images on other websites.
+  FATE does not load them unless you choose to, for one document or always (Settings), because
+  loading them tells those servers your IP address and that the document was opened.
+* **Spell check** is optional. On Windows it uses Windows' own spellchecker, entirely on your
+  machine. On Linux it is off by default: turning it on makes FATE download a dictionary for your
+  language from Google's servers, once, the way Chromium-based apps do.
 
 ## 2. File Access
 
@@ -21,7 +27,7 @@ FATE requests local file system access ("Full Trust") solely to open, display, e
 files **you explicitly choose**: through the open dialog, drag & drop, the recent-files list, a file
 association, or the "Edit in FATE" context-menu entry. While a file is open, FATE watches it for
 external changes so the view can refresh. FATE does not scan, index, upload, or share your files.
-They never leave your device.
+They never leave your device. Links in a document open in your web browser only after you confirm.
 
 ## 3. Data Stored Locally
 
@@ -29,6 +35,10 @@ FATE keeps a small local configuration file on your machine containing your sett
 fonts, keyboard shortcuts, and similar), the paths of recently opened files, and (if session
 restore is enabled) the paths of the tabs you had open. This file stays on your device, is never
 transmitted anywhere, and is removed if you delete the app's data folder.
+
+While a document has unsaved changes, FATE keeps a copy of them in a backups folder inside the same
+data folder, so a crash or power cut doesn't lose your work. A copy is deleted as soon as you save,
+or close the document without saving.
 
 On Windows, FATE also writes standard registry entries so that it appears in "Open with" menus and
 on its page in Windows Settings → Default apps. These entries are local system configuration (they
