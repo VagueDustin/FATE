@@ -57,6 +57,7 @@
       "dist/**/*",
       "electron/**/*"
     ],
+    "appxManifestCreated": "scripts/escape-appx-manifest.cjs",
     "win": {
       "icon": "build/icon.ico",
       "target": [
