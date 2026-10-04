@@ -121,7 +121,6 @@
         "application/xml",
         "text/xml",
         "application/xslt+xml",
-        "image/svg+xml",
         "application/yaml",
         "application/x-yaml",
         "application/toml",
@@ -160,6 +159,7 @@
       "desktop": {
         "entry": {
           "GenericName": "Text Editor",
+          "StartupWMClass": "fate-markdown-viewer",
           "Keywords": "text;editor;code;notepad;programming;markdown;preview;latex;katex;mermaid;"
         }
       }

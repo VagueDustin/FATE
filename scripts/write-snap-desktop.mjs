@@ -36,7 +36,7 @@ const desktop = [
   'Categories=Utility;TextEditor;',
   `Keywords=${linux.desktop?.entry?.Keywords ?? 'markdown;text;editor;'}`,
   `MimeType=${uniqueMime.join(';')};`,
-  `StartupWMClass=${pkg.build.productName}`,
+  `StartupWMClass=${pkg.name}`,
   ''
 ].join('\n');
 
