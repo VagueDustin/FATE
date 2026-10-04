@@ -1569,39 +1569,28 @@ function sendMenuCommand(id) {
 
 /**
  * File → Open Recent. The home screen greys out a recent file that has gone; a menu cannot, so a
- * click on one says so and drops it from the list, as the home screen's own open does. The check is
- * asynchronous so a file on an unreachable share cannot freeze the app. Any other failure
- * (permissions, snap confinement) is left to openAndWatchFile, which explains it.
+ * click on one says so. openRecentFile (the home screen's own open) has already dropped it from the
+ * list by then. Any other failure (permissions, snap confinement) openAndWatchFile has explained.
  */
 async function openRecentFromMenu(filePath) {
-  try {
-    await fs.promises.access(filePath);
-  } catch (err) {
-    if (err.code === 'ENOENT' || err.code === 'ENOTDIR') {
-      const remaining = (store.get('recentFiles') || []).filter((e) => watchKey(e.path) !== watchKey(filePath));
-      store.set('recentFiles', remaining);
-      app.emit('fate-recents-changed', remaining);
-      const options = {
-        type: 'info',
-        title: 'File not found',
-        message: `Can't open ${path.basename(filePath)}: it was moved or deleted.`,
-        detail: filePath
-      };
-      if (mainWindow && !mainWindow.isDestroyed()) dialog.showMessageBox(mainWindow, options);
-      else dialog.showMessageBox(options);
-      return;
-    }
-  }
-  openAndWatchFile(filePath);
+  const result = await openRecentFile(filePath);
+  if (result.reason !== 'missing') return;
+  const options = {
+    type: 'info',
+    title: 'File not found',
+    message: `Can't open ${path.basename(filePath)}: it was moved or deleted.`,
+    detail: filePath
+  };
+  const shown = mainWindow && !mainWindow.isDestroyed() ? dialog.showMessageBox(mainWindow, options) : dialog.showMessageBox(options);
+  shown.catch(() => {});
 }
 
 /**
- * File → Open Recent → Clear Recently Opened. The home screen's list refreshes the next time it
- * is shown (there is no push channel for recents).
+ * File → Open Recent → Clear Recently Opened: the same clear as the home screen's (the Windows Jump
+ * List goes too). The home screen's list refreshes the next time it is shown.
  */
 function clearRecentFromMenu() {
-  store.set('recentFiles', []);
-  app.emit('fate-recents-changed', []);
+  clearRecentFiles();
 }
 
 function sendUpdateMessage(message, action = null) {
@@ -1682,14 +1671,16 @@ function startAppShell() {
   ipcMain.handle('open-external', (event, url) => openExternalLink(url, BrowserWindow.fromWebContents(event.sender)));
 
   /**
-   * Tab menu → Open Containing Folder. Only an absolute path to an existing regular file: this
-   * hands the path to the file manager, and the renderer is the one asking.
+   * Tab menu → Open Containing Folder. Only a file FATE has open (isOpenPath), and only while it is
+   * an existing regular file: this hands the path to the file manager, and the renderer is the one
+   * asking.
    */
   ipcMain.handle('show-item-in-folder', async (_event, filePath) => {
     if (typeof filePath !== 'string' || !filePath || filePath.includes('\0') || !path.isAbsolute(filePath)) {
       return { ok: false, error: 'Not a file path' };
     }
     const name = path.basename(filePath);
+    if (!isOpenPath(filePath)) return { ok: false, error: `Can't show ${name}: it isn't open in FATE.` };
     try {
       const stat = await fs.promises.stat(filePath);
       if (!stat.isFile()) return { ok: false, error: `Can't show ${name}: it is not a file.` };
