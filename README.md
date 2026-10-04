@@ -291,8 +291,8 @@ workflow* with `release_tag` set to the tag: it builds that tag's commit, whatev
 from, and publishes it. A fix to the code itself needs a new version. Add `force` only to replace files
 that are already on the release. *Run workflow* without `release_tag` builds everything and
 attaches it to the run only (its `.rpm` is unsigned). Pushing a bare tag without a release makes Build
-Linux create a draft and attach the Linux files; publish the draft, then use *Run workflow* with
-`release_tag` to update the repositories.
+Linux create a draft and attach the Linux files; publish the draft, then re-run the failed publish job
+(or use *Run workflow* with `release_tag`) to update the repositories.
 
 One-time setup, all in the repository: `scripts/setup-signing-key.sh` creates the
 `FATE_GPG_PRIVATE_KEY` secret, and `scripts/setup-snap-store-token.ps1` creates the

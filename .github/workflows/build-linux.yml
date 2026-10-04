@@ -260,7 +260,8 @@ jobs:
         with:
           name: snapbuild
           if-no-files-found: error
-          retention-days: 1
+          # Only the snap job reads it; a week still covers re-running that job.
+          retention-days: 7
           path: snapbuild.tar
 
   # ── Snap: build only. No secrets here; snap-store below does the upload. ───────────────────
@@ -528,7 +529,7 @@ jobs:
       - name: Stop at a draft
         if: steps.release.outputs.draft == 'true'
         run: |
-          echo "::error::$TAG is a draft. Its files are attached, but apt, dnf, the Snap Store and the Flatpak check did not run: their indexes would point at draft assets, which nobody can download. Publish the release, then Run workflow with release_tag=$TAG."
+          echo "::error::$TAG is a draft. Its files are attached, but apt, dnf, the Snap Store and the Flatpak check did not run: their indexes would point at draft assets, which nobody can download. Publish the release, then re-run this job (or Run workflow with release_tag=$TAG)."
           exit 1
 
       # The indexes describe the files users actually download: the ones on the release, which a
