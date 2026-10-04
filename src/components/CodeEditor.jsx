@@ -263,6 +263,9 @@ const CodeEditor = forwardRef(function CodeEditor(
   useImperativeHandle(
     ref,
     () => ({
+      /** The live EditorView (for scroll sync, go-to-line and the like), or null once destroyed. */
+      getView: () => viewRef.current,
+
       /** Current buffer contents: what Save writes to disk. */
       getContent: () => viewRef.current?.state.doc.toString() ?? '',
 

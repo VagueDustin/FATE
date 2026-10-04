@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   UploadSimple, FileText, FileCode, CircleNotch, Gear, X, Plus, House, FilePlus,
   Printer, FilePdf, FloppyDisk, FolderOpen, ClockCounterClockwise, CheckCircle, Trash,
@@ -9,6 +9,7 @@ import fateLogo from './assets/FATE-Square-Icon.png';
 import Starfield from './components/Starfield.jsx';
 import CodeEditor from './components/CodeEditor.jsx';
 import MarkdownView from './components/MarkdownView.jsx';
+import MarkdownEditView from './components/MarkdownEditView.jsx';
 import SettingsModal from './components/SettingsModal.jsx';
 import CommandPalette from './components/CommandPalette.jsx';
 import DiffView from './components/DiffView.jsx';
@@ -64,55 +65,6 @@ function fmtShortcut(binding) {
 
 function kbdChips(binding) {
   return (binding || '').split('+').map((k) => (k === 'Control' ? 'Ctrl' : k));
-}
-
-/**
- * MarkdownEditView is a markdown tab's EDIT mode: CodeMirror source on the left, live preview on
- * the right, re-rendered ~a third of a second after typing pauses. Top-level component (never
- * defined inside App, which would remount it every render).
- */
-function MarkdownEditView({ doc, isActive, tabSize, cursorLabelRef, onDirtyChange, onSave, registerEditor }) {
-  const editorRef = useRef(null);
-  const [previewHtml, setPreviewHtml] = useState(doc.html);
-  // Stable object, or React 19 rewrites the preview on every render (see MarkdownView).
-  const previewMarkup = useMemo(() => ({ __html: previewHtml }), [previewHtml]);
-  const timerRef = useRef(null);
-
-  const onDocChanged = useCallback(() => {
-    clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => {
-      const text = editorRef.current?.getContent() ?? '';
-      setPreviewHtml(renderMarkdown(text, doc.path).html);
-    }, 350);
-  }, [doc.path]);
-
-  useEffect(() => () => clearTimeout(timerRef.current), []);
-
-  return (
-    <div className="md-edit-split">
-      <div className="md-edit-editor">
-        <CodeEditor
-          ref={(el) => {
-            editorRef.current = el;
-            registerEditor(el);
-          }}
-          fileName={doc.name}
-          initialContent={doc.source}
-          lint={false /* markdown has no syntax errors; skip the empty lint gutter */}
-          wrap={true /* prose: unwrapped markdown source is unreadable */}
-          tabSize={tabSize}
-          isActive={isActive}
-          onDirtyChange={onDirtyChange}
-          onSave={onSave}
-          onDocChanged={onDocChanged}
-          cursorLabelRef={cursorLabelRef}
-        />
-      </div>
-      <div className="md-edit-preview">
-        <div className="markdown-body" dangerouslySetInnerHTML={previewMarkup} />
-      </div>
-    </div>
-  );
 }
 
 function App() {
@@ -1145,6 +1097,7 @@ function App() {
               key="mdview"
               doc={d}
               isActive={active}
+              isVisible={visible}
               sidebarWidth={sidebarWidth}
               onSidebarWidthChange={setSidebarWidth}
               progressBarRef={progressBarRef}
