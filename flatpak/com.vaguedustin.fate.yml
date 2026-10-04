@@ -3,8 +3,9 @@
 # TEMPLATE: the version and .deb sha256 placeholders below are filled in by the Build Linux
 # workflow (rendered copy in flatpak/rendered/, built and linted on every tag). The Flathub
 # repository holds a rendered copy; flatpak-external-data-checker (x-checker-data below) bumps it
-# automatically when a new GitHub release appears, and flathub.json lets those bot PRs merge on
-# their own.
+# automatically when a new GitHub release appears. Those bot PRs can merge on their own once
+# `automerge-flathubbot-prs` is enabled in the app's Flathub repository after acceptance; it stays
+# out of flathub.json here because Flathub's linter rejects it in a new submission.
 #
 # It repackages the released .deb rather than building Electron from source: the .deb is the
 # exact binary every other Linux channel ships, and Electron's BaseApp + zypak give it the same
