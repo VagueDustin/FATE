@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   UploadSimple, FileText, FileCode, CircleNotch, Gear, X, Plus, House, FilePlus,
   Printer, FilePdf, FloppyDisk, FolderOpen, ClockCounterClockwise, CheckCircle, Trash,
@@ -13,6 +13,7 @@ import SettingsModal from './components/SettingsModal.jsx';
 import CommandPalette from './components/CommandPalette.jsx';
 import DiffView from './components/DiffView.jsx';
 import { renderMarkdown } from './markdown.js';
+import { installPreviewClipboard, selectPreviewDocument } from './previewClipboard.js';
 import { detectLanguage } from './languageDetect.js';
 import { fileKindForName, looksBinary } from './fileKinds.js';
 import { resolveFonts, applyFonts, editorFontFor, DEFAULT_FONTS } from './fonts.js';
@@ -73,6 +74,8 @@ function kbdChips(binding) {
 function MarkdownEditView({ doc, isActive, tabSize, cursorLabelRef, onDirtyChange, onSave, registerEditor }) {
   const editorRef = useRef(null);
   const [previewHtml, setPreviewHtml] = useState(doc.html);
+  // Stable object, or React 19 rewrites the preview on every render (see MarkdownView).
+  const previewMarkup = useMemo(() => ({ __html: previewHtml }), [previewHtml]);
   const timerRef = useRef(null);
 
   const onDocChanged = useCallback(() => {
@@ -106,7 +109,7 @@ function MarkdownEditView({ doc, isActive, tabSize, cursorLabelRef, onDirtyChang
         />
       </div>
       <div className="md-edit-preview">
-        <div className="markdown-body" dangerouslySetInnerHTML={{ __html: previewHtml }} />
+        <div className="markdown-body" dangerouslySetInnerHTML={previewMarkup} />
       </div>
     </div>
   );
@@ -907,6 +910,15 @@ function App() {
           return;
         }
       }
+
+      // Ctrl+A outside any editor or field selects the document being read, not the whole window.
+      // Last, so a shortcut rebound to Ctrl+A still wins.
+      const t = e.target;
+      const editable = t?.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t?.tagName);
+      if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === 'a' &&
+          !editable && !showSettings && !showPalette && selectPreviewDocument()) {
+        e.preventDefault();
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -973,6 +985,9 @@ function App() {
   });
 
   const [isDragActive, setIsDragActive] = useState(false);
+
+  /* Copy buttons on code blocks, and clean copies out of every markdown preview. */
+  useEffect(() => installPreviewClipboard(), []);
 
   useEffect(() => {
     // Depth counter because dragenter/dragleave fire for every child element crossed.

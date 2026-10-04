@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, protocol, dialog, net } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, protocol, dialog, net, Menu, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { execFile } = require('child_process');
@@ -1089,6 +1089,36 @@ function createWindow() {
     closeConfirmed = true;
     documentEdited = false;
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
+  });
+
+  /*
+   * Right-click menu. Electron ships none, so right-clicking did nothing anywhere in FATE: no Copy
+   * in the reading view, no Cut or Paste in the editor. The roles run Chromium's own editing
+   * commands, so Copy fires the same 'copy' event as Ctrl+C (the preview's clean copy still
+   * applies; see src/previewClipboard.js), and the edit flags grey out whatever doesn't apply where
+   * the click landed. No Undo/Redo: CodeMirror keeps its own history, which those would bypass.
+   */
+  mainWindow.webContents.on('context-menu', (_event, params) => {
+    const { editFlags, isEditable, selectionText, linkURL } = params;
+    const groups = [];
+    if (/^https?:/i.test(linkURL)) {
+      groups.push([{ label: 'Copy Link Address', click: () => clipboard.writeText(linkURL) }]);
+    }
+    if (isEditable) {
+      groups.push(
+        [
+          { role: 'cut', enabled: editFlags.canCut },
+          { role: 'copy', enabled: editFlags.canCopy },
+          { role: 'paste', enabled: editFlags.canPaste }
+        ],
+        [{ role: 'selectAll', enabled: editFlags.canSelectAll }]
+      );
+    } else if (selectionText.trim()) {
+      groups.push([{ role: 'copy' }]);
+    }
+    if (groups.length === 0) return;
+    const template = groups.flatMap((group, i) => (i ? [{ type: 'separator' }, ...group] : group));
+    Menu.buildFromTemplate(template).popup({ window: mainWindow });
   });
 
   // SECURITY: Prevent inner navigation and force external links to open in default browser

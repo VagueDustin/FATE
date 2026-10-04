@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { List } from '@phosphor-icons/react';
 
 /**
@@ -22,6 +22,15 @@ import { List } from '@phosphor-icons/react';
 function MarkdownView({ doc, isActive, sidebarWidth, onSidebarWidthChange, progressBarRef, progressLabelRef }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(doc.toc.length > 0);
   const [activeHeading, setActiveHeading] = useState('');
+
+  /*
+   * Stable markup objects. React 19 compares `dangerouslySetInnerHTML` by object identity and
+   * rewrites innerHTML whenever it changes, even to the same string, so a fresh `{ __html }` per
+   * render rebuilt the whole document on every App re-render (window focus, tab switches, status
+   * messages): mermaid diagrams vanished and a selection about to be copied was lost.
+   */
+  const bodyMarkup = useMemo(() => ({ __html: doc.html }), [doc.html]);
+  const tocMarkup = useMemo(() => doc.toc.map((item) => ({ __html: item.html })), [doc.toc]);
 
   const contentRef = useRef(null);
   const headingsRef = useRef([]);
@@ -184,7 +193,8 @@ function MarkdownView({ doc, isActive, sidebarWidth, onSidebarWidthChange, progr
           holder.className = 'mermaid-diagram';
           holder.innerHTML = svg;
           code.setAttribute('data-mermaid-done', '1');
-          code.closest('pre')?.replaceWith(holder);
+          // The diagram replaces the fence's Copy-button wrapper too (see renderMarkdown).
+          (code.closest('.code-block') ?? code.closest('pre'))?.replaceWith(holder);
         } catch (err) {
           // Invalid diagram source: keep the fence as highlighted text, don't retry it forever.
           code.setAttribute('data-mermaid-failed', '1');
@@ -216,12 +226,12 @@ function MarkdownView({ doc, isActive, sidebarWidth, onSidebarWidthChange, progr
               </button>
             </div>
             <ul className="toc-list">
-              {doc.toc.map((item) => (
+              {doc.toc.map((item, i) => (
                 <li
                   key={item.id}
                   className={`toc-level-${item.level} ${activeHeading === item.id ? 'active' : ''}`}
                   onClick={() => scrollToHeading(item.id)}
-                  dangerouslySetInnerHTML={{ __html: item.html }}
+                  dangerouslySetInnerHTML={tocMarkup[i]}
                 />
               ))}
             </ul>
@@ -248,7 +258,7 @@ function MarkdownView({ doc, isActive, sidebarWidth, onSidebarWidthChange, progr
         )}
 
         <div className="markdown-container" ref={contentRef}>
-          <div className="markdown-body" dangerouslySetInnerHTML={{ __html: doc.html }} />
+          <div className="markdown-body" dangerouslySetInnerHTML={bodyMarkup} />
         </div>
       </main>
     </div>

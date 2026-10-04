@@ -1212,6 +1212,73 @@ kbd {
   border: 0;
 }
 
+/* ── Code block Copy button ──────────────────────────────────────────────────────────────────
+   Added to every block by renderMarkdown, handled by previewClipboard.js. The button is EMPTY and
+   its icon is a CSS mask, so it contributes no text to a selection that runs across the block. It
+   sits on the wrapper rather than inside the <pre>, so it stays put while a wide block scrolls
+   sideways under it. Shown on hover and keyboard focus, and held while it reports a result. */
+.markdown-body .code-block {
+  position: relative;
+}
+
+.markdown-body .code-copy {
+  position: absolute;
+  top: 0.45rem;
+  right: 0.45rem;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+  opacity: 0;
+  transition: opacity 0.18s var(--ease), color 0.18s var(--ease), border-color 0.18s var(--ease);
+}
+
+.markdown-body .code-copy::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 16px;
+  height: 16px;
+  background-color: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cpath d='M216,32H88a8,8,0,0,0-8,8V80H40a8,8,0,0,0-8,8V216a8,8,0,0,0,8,8H168a8,8,0,0,0,8-8V176h40a8,8,0,0,0,8-8V40A8,8,0,0,0,216,32ZM160,208H48V96H160Zm48-48H176V88a8,8,0,0,0-8-8H96V48H208Z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+.markdown-body .code-block:hover .code-copy,
+.markdown-body .code-copy:focus-visible,
+.markdown-body .code-copy[data-state] {
+  opacity: 1;
+}
+
+.markdown-body .code-copy:hover {
+  color: var(--accent-default);
+  border-color: var(--border-emphasis);
+}
+
+.markdown-body .code-copy:focus-visible {
+  outline: 2px solid var(--border-emphasis);
+  outline-offset: 2px;
+}
+
+.markdown-body .code-copy[data-state='copied'] {
+  color: var(--status-success);
+  border-color: var(--status-success);
+}
+
+.markdown-body .code-copy[data-state='copied']::before {
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cpath d='M229.66,77.66l-128,128a8,8,0,0,1-11.32,0l-56-56a8,8,0,0,1,11.32-11.32L96,188.69,218.34,66.34a8,8,0,0,1,11.32,11.32Z'/%3E%3C/svg%3E");
+}
+
+.markdown-body .code-copy[data-state='failed'] {
+  color: var(--status-danger);
+  border-color: var(--status-danger);
+}
+
 .markdown-body table {
   border-spacing: 0;
   border-collapse: collapse;
@@ -2851,7 +2918,8 @@ kbd {
   .palette-backdrop,
   .split-bar,
   .diff-view,
-  .md-edit-split {
+  .md-edit-split,
+  .markdown-body .code-copy {
     display: none !important;
   }
 

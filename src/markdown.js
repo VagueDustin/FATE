@@ -43,7 +43,54 @@ marked.use(
   })
 );
 
-marked.use(markedKatex({ throwOnError: false, nonStandard: true }));
+/*
+ * ── Corrupted TeX is repaired in maths ONLY ──────────────────────────────────────────────────
+ * Some generators write "\theta" into a string without escaping the backslash, so the file holds
+ * a real TAB followed by "heta". TEX_REPAIRS turns those back into TeX. Up to 1.13.4 they ran over
+ * the WHOLE document, code included: a tab-indented `auth := x` in a ```go block rendered as the
+ * literal text `\tauth := x`, `cd My\ Documents` in a ```bash block became `My\\ Documents`, and
+ * copying the block put the damage on the clipboard. Now each KaTeX tokenizer finds maths in the
+ * source exactly as written, then re-reads the repaired span to get the formula. `raw` keeps the
+ * original text, because the lexer advances by its length.
+ *
+ * The two carriage-return repairs live in renderMarkdown instead: marked turns a lone CR into a
+ * line break before any tokenizer sees it.
+ */
+/* eslint-disable no-control-regex */
+const TEX_REPAIRS = [
+  [/\x09heta/g, '\\theta'],
+  [/\x09ext/g, '\\text'],
+  [/\x09imes/g, '\\times'],
+  [/\x09au/g, '\\tau'],
+  [/\x0Crac/g, '\\frac'],
+  [/\x08eta/g, '\\beta'],
+  [/\x08egin/g, '\\begin'],
+  [/\x07pprox/g, '\\approx'],
+  [/\x07lpha/g, '\\alpha'],
+  [/\x0B/g, '\\v'],
+  [/\\ /g, '\\\\ ']
+];
+/* eslint-enable no-control-regex */
+
+const repairTex = (tex) => TEX_REPAIRS.reduce((s, [pattern, fix]) => s.replace(pattern, fix), tex);
+
+function withTexRepair(extension) {
+  const tokenize = extension.tokenizer;
+  return {
+    ...extension,
+    tokenizer(src, tokens) {
+      const token = tokenize.call(this, src, tokens);
+      if (!token) return token;
+      const repairedRaw = repairTex(token.raw);
+      if (repairedRaw === token.raw) return token;
+      const repaired = tokenize.call(this, repairedRaw, tokens);
+      return repaired?.raw === repairedRaw ? { ...token, text: repaired.text } : token;
+    }
+  };
+}
+
+const katexExtension = markedKatex({ throwOnError: false, nonStandard: true });
+marked.use({ extensions: katexExtension.extensions.map(withTexRepair) });
 
 /**
  * Render markdown source to sanitized HTML plus a table of contents.
@@ -52,24 +99,18 @@ marked.use(markedKatex({ throwOnError: false, nonStandard: true }));
  * protocol so the main process can serve them from disk.
  */
 export function renderMarkdown(content, fPath) {
-  // Repair mathematically corrupted control-characters from unescaped markdown generators.
-  // The literal control characters are intentional; generators emit a real \t byte where they
-  // meant to emit a backslash-t escape, so matching them is the entire point of this pass.
+  /*
+   * A leading byte-order mark (Windows tools still write UTF-8 with one) hid the first block from
+   * marked: `\uFEFF# Title` rendered as a paragraph and was missing from the contents.
+   *
+   * `\right` and `\rho` written with a real CR are the only TeX repairs that cannot wait for the
+   * maths tokenizer (see TEX_REPAIRS). They can only match a lone CR, never a CRLF line ending.
+   */
   /* eslint-disable no-control-regex */
   const repairedContent = content
-    .replace(/\x09heta/g, '\\theta')
-    .replace(/\x09ext/g, '\\text')
-    .replace(/\x09imes/g, '\\times')
-    .replace(/\x09au/g, '\\tau')
-    .replace(/\x0Crac/g, '\\frac')
+    .replace(/^\uFEFF/, '')
     .replace(/\x0Dight/g, '\\right')
-    .replace(/\x08eta/g, '\\beta')
-    .replace(/\x08egin/g, '\\begin')
-    .replace(/\x07pprox/g, '\\approx')
-    .replace(/\x07lpha/g, '\\alpha')
-    .replace(/\x0Dho/g, '\\rho')
-    .replace(/\x0B/g, '\\v')
-    .replace(/\\ /g, '\\\\ ');
+    .replace(/\x0Dho/g, '\\rho');
   /* eslint-enable no-control-regex */
 
   const rawHtml = marked.parse(repairedContent);
@@ -103,6 +144,24 @@ export function renderMarkdown(content, fPath) {
         img.setAttribute('src', `fate-local://local${encoded}`);
       }
     });
+  }
+
+  /*
+   * Every code block gets a wrapper and a Copy button (previewClipboard.js handles the click, and
+   * what any selection in the preview copies). The button is EMPTY, with its icon drawn by CSS, so
+   * it adds no text to a selection that runs across the block. Mermaid fences get one too, and the
+   * diagram pass replaces the whole wrapper once the SVG lands.
+   */
+  for (const pre of tempDiv.querySelectorAll('pre')) {
+    const block = document.createElement('div');
+    block.className = 'code-block';
+    const copy = document.createElement('button');
+    copy.type = 'button';
+    copy.className = 'code-copy';
+    copy.title = 'Copy code';
+    copy.setAttribute('aria-label', 'Copy code');
+    pre.replaceWith(block);
+    block.append(copy, pre);
   }
 
   // Heading ids for the TOC. Do not strip markup from `html`; headings can contain KaTeX, and the
