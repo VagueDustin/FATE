@@ -1,6 +1,6 @@
 {
   "name": "fate-markdown-viewer",
-  "version": "1.13.4",
+  "version": "1.14.0",
   "description": "FATE (Formatted Article & Text Editor) is a free, open source text and code editor for Windows and Linux: a Notepad++ alternative with tabs, syntax highlighting, find and replace, split view and a live Markdown preview with KaTeX math and Mermaid diagrams.",
   "keywords": [
     "text-editor",

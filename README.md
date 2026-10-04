@@ -209,16 +209,18 @@ Defaults:
 | Action | Shortcut |
 | --- | --- |
 | **Command palette** | `Ctrl` + `K` |
+| **Go to line / symbol / search all tabs** | `Ctrl` + `K`, then `:` / `@` / `#` |
+| **Menu bar** | `Alt` |
 | **New file** | `Ctrl` + `T` |
 | **Open file** | `Ctrl` + `O` |
 | **Save / Save As** | `Ctrl` + `S` / `Ctrl` + `Shift` + `S` |
-| **Find and replace (editor)** | `Ctrl` + `F` |
+| **Find (and replace, in the editor)** | `Ctrl` + `F` |
 | **Edit / view Markdown** | `Ctrl` + `E` |
 | **Split view** | `Ctrl` + `\` |
 | **Focus mode** | `Ctrl` + `Shift` + `F` |
 | **Next / previous tab** | `Ctrl` + `Tab` / `Ctrl` + `Shift` + `Tab` |
 | **Jump to tab** | `Ctrl` + `1` to `9` (9 = last) |
-| **Close tab** | `Ctrl` + `W` or `Escape` |
+| **Close tab** | `Ctrl` + `W`, or `Escape` in the reading view |
 | **Go home / Settings** | `Alt` + `Home` / `Ctrl` + `,` |
 | **Zoom in / out / reset** | `Ctrl` + `+` / `-` / `0` |
 | **Print preview / Export PDF** | `Ctrl` + `P` / `Ctrl` + `Shift` + `E` |
