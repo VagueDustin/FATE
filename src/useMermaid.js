@@ -219,9 +219,10 @@ async function renderFences(container, cache, isCancelled) {
         diagram = { id, svg: sanitizeDiagram(svg, id) };
         remember(cache, key, diagram);
       } catch (err) {
-        // Invalid diagram source: keep the fence as highlighted text, don't retry it forever.
+        // Invalid diagram source: keep the fence as highlighted text, don't retry it forever. A
+        // warning, not an error: the mistake is the document's, and the app is fine.
         code.setAttribute('data-mermaid-failed', '1');
-        console.error('Mermaid diagram failed to render:', err?.message || err);
+        console.warn('Mermaid diagram failed to render:', err?.message || err);
         continue;
       } finally {
         removeLeftovers(id);

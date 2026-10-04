@@ -1440,6 +1440,13 @@ function App() {
     const snapshot = editor ? editor.getDocSnapshot() : null;
     const content = snapshot ? snapshot.toString() : doc.kind === 'markdown' ? doc.source : null;
     if (content === null) return false;
+    /*
+     * Nothing to save writes nothing. Saving a clean tab used to rewrite its file anyway, and a file
+     * with mixed line endings came back normalised to its majority ending: changed on disk by a
+     * Ctrl+S that changed nothing. A deleted file (Save recreates it) or one changed on disk (Save
+     * keeps your version) still saves.
+     */
+    if (!forceAs && doc.path && !doc.untitled && !doc.diskDeleted && !doc.diskChange && !isDocDirty(doc)) return true;
     const format = doc.format ?? undefined;
 
     setStatusError('');
