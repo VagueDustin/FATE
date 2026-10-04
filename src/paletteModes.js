@@ -357,15 +357,22 @@ function headerText(src, node, bodyName) {
  * lose their marks, inline HTML tags go.
  */
 export function plainHeading(text) {
-  return text
+  let plain = text
     .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/`+([^`]*)`+/g, '$1')
     .replace(/(\*\*|__)(?=\S)(.+?)(?<=\S)\1/g, '$2')
     .replace(/(^|[^\w*])\*(?=\S)(.+?)(?<=\S)\*(?![\w*])/g, '$1$2')
-    .replace(/(^|[^\w_])_(?=\S)(.+?)(?<=\S)_(?![\w_])/g, '$1$2')
-    .replace(/<[^>]+>/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+    .replace(/(^|[^\w_])_(?=\S)(.+?)(?<=\S)_(?![\w_])/g, '$1$2');
+  /*
+   * Inline HTML tags go, repeatedly until none are left (`<<b>i>` hides a tag inside a tag), and so
+   * does a tag left unclosed at the end. The label is rendered as text, so this is only cosmetic, but
+   * a single pass is the classic incomplete-sanitising mistake and code scanning rightly flags it.
+   */
+  for (let previous; previous !== plain; ) {
+    previous = plain;
+    plain = plain.replace(/<[^<>]*>/g, '');
+  }
+  return plain.replace(/<[a-zA-Z/!][^>]*$/, '').replace(/\s+/g, ' ').trim();
 }
 
 /** An ATX heading line's text: without the opening #s and the optional closing #s. */

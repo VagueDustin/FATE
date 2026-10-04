@@ -112,10 +112,12 @@ jobs:
           persist-credentials: false
 
       # TODO(pin): replace @v4 with the full commit SHA: gh api repos/actions/setup-node/commits/v4 --jq .sha
+      # No npm cache in release builds: a Run workflow recovery checks out a tag the dispatcher
+      # chose, and a cache saved by that run would land in the default branch's scope for later
+      # runs to restore (cache poisoning). Releases are rare; a cold npm ci costs a minute.
       - uses: actions/setup-node@v4 # v4
         with:
           node-version: 22
-          cache: npm
 
       - name: Release metadata
         id: meta

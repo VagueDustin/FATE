@@ -142,7 +142,9 @@ function sanitizeDiagram(svg, id) {
   const template = document.createElement('template');
   template.innerHTML = svgPurifier.sanitize(svg, SVG_CONFIG);
   const root = template.content;
-  const scope = new RegExp(`^#${id.replace(/[-]/g, '\\-')}(?![\\w-])`);
+  // The id is FATE's own (letters, digits, hyphens), escaped in full anyway, so the scope check can
+  // never be widened by what the id contains.
+  const scope = new RegExp(`^#${id.replace(/[\\^$.*+?()[\]{}|/-]/g, '\\$&')}(?![\\w-])`);
   for (const style of root.querySelectorAll('style')) {
     const sheet = new CSSStyleSheet();
     try {

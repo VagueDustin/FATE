@@ -80,9 +80,10 @@ jobs:
           # --no-sandbox: Ubuntu 24.04 runners forbid the unprivileged user namespaces Chromium's
           # sandbox needs. A main-process crash shows Electron's error dialog and keeps running,
           # so the log is what tells: a healthy start is still running, quietly, when timeout ends
-          # it (124, or 137 if it needed the KILL).
-          timeout -k 5 20 xvfb-run -a dist-electron/linux-unpacked/FATE --no-sandbox "$PWD/README.md" > app.log 2>&1
-          status=$?
+          # it (124, or 137 if it needed the KILL). `|| status=$?`, not a bare `status=$?` on the
+          # next line: Actions runs steps with `bash -e`, which would end the step at that 124.
+          status=0
+          timeout -k 5 20 xvfb-run -a dist-electron/linux-unpacked/FATE --no-sandbox "$PWD/README.md" > app.log 2>&1 || status=$?
           cat app.log
           if [ "$status" -ne 124 ] && [ "$status" -ne 137 ]; then
             echo "::error::The packaged app exited by itself (status $status) instead of running."
