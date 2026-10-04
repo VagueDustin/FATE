@@ -1,0 +1,72 @@
+# Maintainer: VagueDustin Enterprises <enterprises@vaguedustin.com>
+#
+# Repackages the released .deb for Arch. Only the .deb's file payload is used: its post-install
+# script registers FATE's apt repository, which has no meaning here, and the apt keyring is left out.
+# Updates come from the AUR; FATE sees the "pacman" package-type marker and keeps its own updater off.
+
+pkgname=fate-editor-bin
+_pkgname=fate-editor
+pkgver=1.13.3
+pkgrel=1
+pkgdesc='Text and code editor with tabs, split view, diffs and a live Markdown preview with KaTeX and Mermaid'
+arch=('x86_64')
+url='https://github.com/VagueDustin/FATE'
+license=('AGPL-3.0-only')
+# The .deb's Depends, translated to Arch names, plus alsa-lib (Chromium audio).
+depends=('alsa-lib'
+         'at-spi2-core'
+         'gtk3'
+         'hicolor-icon-theme'
+         'libnotify'
+         'libsecret'
+         'libxss'
+         'libxtst'
+         'nss'
+         'util-linux-libs'
+         'xdg-utils')
+optdepends=('libappindicator-gtk3: tray icon support')
+provides=("$_pkgname")
+conflicts=("$_pkgname")
+options=('!strip' '!debug')
+source=("FATE-${pkgver}-amd64.deb::${url}/releases/download/v${pkgver}/FATE-${pkgver}-amd64.deb"
+        "LICENSE-${pkgver}::https://raw.githubusercontent.com/VagueDustin/FATE/v${pkgver}/LICENSE")
+noextract=("FATE-${pkgver}-amd64.deb")
+sha256sums=('cc1b96e9d79362295d4d65ccc2b8d4d6328cde3488e41bf6d1f11ba506cd8be3'
+            '0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0')
+
+prepare() {
+  mkdir -p deb
+  bsdtar -xf "FATE-${pkgver}-amd64.deb" -C deb
+  mkdir -p root
+  bsdtar -xf deb/data.tar.* -C root
+}
+
+package() {
+  local _app='root/opt/FATE - Formatted Article & Text Editor'
+
+  # Application, in a path without spaces.
+  install -d "$pkgdir/opt/$_pkgname"
+  cp -a "$_app/." "$pkgdir/opt/$_pkgname/"
+  # Arch kernels allow unprivileged user namespaces, so Chromium's sandbox needs no SUID helper.
+  chmod 0755 "$pkgdir/opt/$_pkgname/chrome-sandbox"
+  # Tells FATE that pacman delivers updates; the in-app updater stays off and says so.
+  printf 'pacman\n' > "$pkgdir/opt/$_pkgname/resources/package-type"
+
+  install -d "$pkgdir/usr/bin"
+  ln -s "/opt/$_pkgname/FATE" "$pkgdir/usr/bin/$_pkgname"
+
+  # Desktop entry: point Exec at the launcher. The two seds mirror the upstream desktop-entry fix
+  # (VagueDustin/FATE#17) and can be dropped once a release includes it.
+  install -Dm644 root/usr/share/applications/FATE.desktop "$pkgdir/usr/share/applications/FATE.desktop"
+  sed -i \
+    -e "s|^Exec=.*|Exec=/usr/bin/$_pkgname %U|" \
+    -e 's|^StartupWMClass=.*|StartupWMClass=fate-markdown-viewer|' \
+    -e 's|image/svg+xml;||' \
+    "$pkgdir/usr/share/applications/FATE.desktop"
+
+  cp -a root/usr/share/icons "$pkgdir/usr/share/"
+  install -Dm644 root/usr/share/metainfo/com.vaguedustin.fate.metainfo.xml -t "$pkgdir/usr/share/metainfo/"
+  install -Dm644 root/usr/share/mime/packages/FATE.xml -t "$pkgdir/usr/share/mime/packages/"
+
+  install -Dm644 "LICENSE-${pkgver}" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

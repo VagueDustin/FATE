@@ -153,8 +153,13 @@ sudo curl -fsSL -o /etc/yum.repos.d/fate.repo https://github.com/VagueDustin/FAT
 sudo dnf install fate
 ```
 
+**Arch / Manjaro / EndeavourOS / CachyOS.** Install `fate-editor-bin` from the AUR with any AUR helper,
+for example `paru -S fate-editor-bin`. It repackages the released `.deb`, and the AUR helper keeps it
+updated (FATE's own updater stays off). The launcher is `fate-editor`.
+
 **Any Linux.** Download `FATE-<version>-x86_64.AppImage` from the latest release, `chmod +x` it and run
-it. It updates itself.
+it. It updates itself. AppImages need FUSE 2, which some distributions no longer install by default:
+`sudo pacman -S fuse2` on Arch, `sudo apt install libfuse2t64` on Ubuntu 24.04 and later.
 
 **Flathub.** Not listed yet. The Flatpak manifest in `flatpak/` is ready and is built and linted on every
 release; the Flathub submission itself has to be made by the maintainer.
