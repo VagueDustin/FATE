@@ -10,9 +10,9 @@
 #   test       install `fate` from the apt repo in a Debian container and from the dnf repo in a
 #              Fedora container, exactly as a user would
 #
-# The maintainer's part is unchanged: build Windows locally, then
-#     gh release create vX.Y.Z FATE-Setup-X.Y.Z.exe latest.yml --title ... --notes ...
-# which creates the tag and fires this.
+# The maintainer's part is
+#     gh release create vX.Y.Z --title ... --notes ...
+# which creates the tag and fires this and build-windows.yml (the Windows installer and latest.yml).
 #
 # ── How the apt/dnf repositories live entirely in GitHub Releases ─────────────────────────────
 # Both package managers need an index, a signature, and the packages. The packages are the

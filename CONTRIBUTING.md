@@ -107,6 +107,7 @@ Say in the PR what you tried. "Built it and clicked through it on Windows 11" is
   integration, updates), the preload bridge and the snap confinement helpers.
 - `build/`: generated output and gitignored, with a few tracked exceptions (below).
 - `snap/`, `flatpak/` and `.github/workflows/build-linux.yml`: Linux distribution channels.
+- `.github/workflows/build-windows.yml`: the Windows installer and Microsoft Store package.
 
 **Note:** `build/` is gitignored except for hand-authored build source: `build/installer.nsh` (the
 NSIS installer script), `build/com.vaguedustin.fate.metainfo.xml` (the AppStream metadata the Linux
@@ -133,7 +134,8 @@ dnf repositories (served from GitHub Releases under the rolling prerelease tags 
 `repodata`), the Snap Store (`snap/snapcraft.yaml`) and Flathub (`flatpak/`). The workflow's header
 comment explains the moving parts. The one rule to know is that the two rolling releases must stay
 marked *prerelease*, or electron-updater on Windows and the AppImage will treat them as the latest
-version.
+version. The same tag fires `.github/workflows/build-windows.yml`, which attaches the Windows
+installer and `latest.yml` to the release.
 
 ---
 
