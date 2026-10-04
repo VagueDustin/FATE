@@ -951,13 +951,26 @@ kbd {
   flex: 1;
 }
 
+/* Each entry is a <button> in its <li>, so the contents can be reached and used from the keyboard.
+   The li carries the per-level indent, weight and colour; the button draws the row and inherits
+   the rest, so entries look exactly as they did when the li itself was clickable. */
 .toc-list li {
-  padding: 0.4rem 0.5rem;
   margin-bottom: 0.1rem;
-  border-radius: var(--radius-sm);
-  border-left: 3px solid transparent;
   color: var(--text-muted);
   font-size: 0.85rem;
+}
+
+.toc-link {
+  display: block;
+  width: 100%;
+  padding: 0.4rem 0.5rem;
+  border: 0;
+  border-left: 3px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
   transition: background 0.16s var(--ease), color 0.16s var(--ease);
   white-space: nowrap;
@@ -965,14 +978,23 @@ kbd {
   text-overflow: ellipsis;
 }
 
-.toc-list li:hover {
+.toc-link:hover {
   background: var(--accent-subtle);
   color: var(--text-primary);
+}
+
+.toc-link:focus-visible {
+  outline: 2px solid var(--border-emphasis);
+  outline-offset: -2px;
 }
 
 .toc-list li.active {
   color: var(--text-accent);
   font-weight: 600;
+}
+
+.toc-list li.active .toc-link {
+  color: inherit;
   border-left-color: var(--accent-default);
   background: var(--accent-subtle);
 }
@@ -1071,6 +1093,189 @@ kbd {
   overflow-y: auto;
   padding: 2.25rem 2rem 4rem;
   scroll-behavior: smooth;
+}
+
+/* ── Reading view: remote images, find, links ────────────────────────────────────────────────
+   .viewer-doc wraps the scrolling document so the find bar can float over its top-right corner
+   while the remote-images bar above it takes its own row. Remote images are placeholders until
+   the user loads them (src/markdown.js); find paints matches with the CSS Custom Highlight API
+   (src/previewFind.js), so the matches are ::highlight() rules, not elements. */
+.viewer-doc {
+  position: relative; /* anchors .find-bar */
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.remote-images-bar {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.6rem;
+  padding: 0.45rem 1rem;
+  background: var(--surface-raised);
+  border-bottom: 1px solid var(--border-default);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+/* Clear of the floating "Show contents" button. */
+.remote-images-bar.with-reveal {
+  padding-left: 3.4rem;
+}
+
+.remote-images-icon {
+  flex-shrink: 0;
+  color: var(--accent-default);
+}
+
+.remote-images-text {
+  flex: 1 1 12rem;
+}
+
+.remote-images-btn {
+  padding: 0.25rem 0.7rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--surface-highest);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.18s var(--ease), color 0.18s var(--ease);
+}
+
+.remote-images-btn:hover {
+  border-color: var(--border-emphasis);
+  color: var(--text-accent);
+}
+
+.remote-images-btn:focus-visible {
+  outline: 2px solid var(--border-emphasis);
+  outline-offset: 2px;
+}
+
+/* An image that wasn't loaded: its alt text and where it would have come from. */
+.markdown-body .remote-image {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  max-width: 100%;
+  padding: 0.2rem 0.6rem;
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  font-size: 0.85em;
+  line-height: 1.5;
+  vertical-align: middle;
+}
+
+.markdown-body .remote-image::before {
+  content: '';
+  flex-shrink: 0;
+  align-self: center;
+  width: 14px;
+  height: 14px;
+  background-color: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cpath d='M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40Zm0,16V158.75l-26.07-26.06a16,16,0,0,0-22.63,0l-20,20-44-44a16,16,0,0,0-22.62,0L40,149.37V56ZM40,172l52-52,80,80H40Zm176,28H194.63l-36-36,20-20L216,181.38V200ZM144,100a12,12,0,1,1,12,12A12,12,0,0,1,144,100Z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+.markdown-body .remote-image-alt {
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.markdown-body .remote-image-host {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+/* A relative link whose file doesn't exist (set when the click finds out). */
+.markdown-body a[data-link-state='missing'] {
+  color: var(--status-danger);
+  border-bottom-color: var(--status-danger);
+  text-decoration: line-through;
+}
+
+.find-bar {
+  position: absolute;
+  top: 0.6rem;
+  right: 1.4rem; /* clear of the document's scrollbar */
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  max-width: calc(100% - 2rem);
+  padding: 0.3rem 0.35rem 0.3rem 0.45rem;
+  background: var(--surface-overlay);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-panel);
+}
+
+.find-input {
+  flex: 1 1 14rem;
+  width: 14rem;
+  min-width: 4rem;
+  padding: 0.3rem 0.5rem;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  outline: none;
+}
+
+.find-input:focus {
+  border-color: var(--border-emphasis);
+}
+
+.find-input::placeholder {
+  color: var(--text-faint);
+}
+
+.find-count {
+  flex-shrink: 0;
+  min-width: 4.75rem;
+  padding: 0 0.35rem;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.find-count.none {
+  color: var(--status-danger);
+}
+
+.find-bar .icon-btn {
+  width: 26px;
+  height: 26px;
+}
+
+.find-bar .icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+  color: var(--text-muted);
+  background: transparent;
+  border-color: transparent;
+}
+
+::highlight(fate-find) {
+  background-color: color-mix(in srgb, var(--accent-default) 35%, transparent);
+}
+
+::highlight(fate-find-current) {
+  background-color: var(--accent-default);
+  color: var(--text-inverse);
 }
 
 /* ════════════════════════════════════════════════════════════════════════════════════════════
@@ -2882,6 +3087,7 @@ kbd {
   .doc-panes,
   .viewer-layout,
   .viewer-main,
+  .viewer-doc,
   .markdown-container,
   .markdown-body {
     background: #fff !important;
@@ -2919,8 +3125,17 @@ kbd {
   .split-bar,
   .diff-view,
   .md-edit-split,
-  .markdown-body .code-copy {
+  .markdown-body .code-copy,
+  .remote-images-bar,
+  .find-bar {
     display: none !important;
+  }
+
+  /* Find matches stay on screen; paper gets the plain text. */
+  ::highlight(fate-find),
+  ::highlight(fate-find-current) {
+    background-color: transparent;
+    color: inherit;
   }
 
   /* A split prints only the active pane, full width. */
@@ -3008,7 +3223,8 @@ kbd {
   }
 
   .markdown-body table th,
-  .markdown-body table td {
+  .markdown-body table td,
+  .markdown-body .remote-image {
     border-color: #bbb !important;
   }
 

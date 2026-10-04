@@ -24,6 +24,8 @@
  * Everything is delegated from `document`, so every preview (tabs, split panes, edit mode) is
  * covered with no per-component wiring and the HTML from renderMarkdown stays a static string.
  */
+import { installPreviewLinks } from './previewLinks.js';
+import { installPreviewFind } from './previewFind.js';
 
 const IS_WINDOWS = window.electronAPI?.platform === 'win32';
 
@@ -189,6 +191,9 @@ function onCopy(event) {
     // fate-local:// images only resolve inside FATE; anywhere else they paste as a broken box.
     if (!/^(https?|data):/i.test(img.getAttribute('src') ?? '')) img.replaceWith(img.alt ?? '');
   }
+  // An image that wasn't loaded (see markdown.js) copies as its alt text too, not "alt host".
+  const placeholders = holder.querySelectorAll('.remote-image');
+  for (const box of placeholders) box.replaceWith(box.dataset.alt ?? '');
   // SVG (mermaid diagrams) is left whole: without its attributes it is not a picture any more.
   for (const el of holder.querySelectorAll('*')) {
     if (!el.closest('svg')) stripPresentation(el);
@@ -196,8 +201,10 @@ function onCopy(event) {
 
   const content = wrapInContext(holder, context, root);
   const html = content.innerHTML;
-  // Chromium's own plain text for everything but maths (it is what users already get today).
-  const text = hasMath ? renderedText(content, root) : selection.toString();
+  // Chromium's own plain text for everything but maths and unloaded images (it is what users
+  // already get today); those are swapped for text above (TeX, alt text), so their plain text
+  // comes from the cleaned copy.
+  const text = hasMath || placeholders.length ? renderedText(content, root) : selection.toString();
 
   event.preventDefault();
   event.clipboardData.setData('text/plain', toClipboardText(text));
@@ -221,12 +228,20 @@ export function selectPreviewDocument() {
   return true;
 }
 
-/** Install the document-level handlers; returns the uninstaller (App's mount effect). */
+/**
+ * Install the document-level handlers; returns the uninstaller (App's mount effect). Every other
+ * document-level preview handler is installed from here as well, so App keeps a single call: link
+ * clicks (previewLinks.js) and Ctrl+F in the reading view (previewFind.js).
+ */
 export function installPreviewClipboard() {
   document.addEventListener('copy', onCopy);
   document.addEventListener('click', onClick);
+  const uninstallLinks = installPreviewLinks();
+  const uninstallFind = installPreviewFind();
   return () => {
     document.removeEventListener('copy', onCopy);
     document.removeEventListener('click', onClick);
+    uninstallLinks();
+    uninstallFind();
   };
 }
