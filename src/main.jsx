@@ -30,9 +30,17 @@ import '@fontsource/inter/latin-700.css'
 import './brand.css'
 import './index.css'
 import App from './App.jsx'
+import ErrorBoundary from './components/ErrorBoundary.jsx'
 
+/*
+ * The error boundary wraps everything: an exception while rendering shows a recovery screen
+ * instead of a blank window, after writing every unsaved buffer to the hot-exit backups (see
+ * components/ErrorBoundary.jsx).
+ */
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </StrictMode>,
 )
