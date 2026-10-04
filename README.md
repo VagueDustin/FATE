@@ -220,7 +220,8 @@ You need [Node.js](https://nodejs.org/) (CI uses Node 22) and git.
    npm run icons
    npm run electron:build
    ```
-   The output goes to `dist-electron/`.
+   The output goes to `dist-electron/`. The **Build Windows** GitHub Actions workflow
+   (`.github/workflows/build-windows.yml`) builds the same on every release tag.
 6. **Build the Linux packages (AppImage, `.deb` and `.rpm`):**
    ```bash
    npm run icons
@@ -252,14 +253,20 @@ or Gear Lever if you want it in the menu and the *Open With* list.
 
 ### Releases
 
-Releases are cut by the maintainer. The Windows installer is built locally and published with
-`gh release create vX.Y.Z FATE-Setup-X.Y.Z.exe latest.yml --title ... --notes ...`. That creates the tag,
-and the **Build Linux** workflow does the rest: it builds and attaches the AppImage, `.deb`, signed
-`.rpm` and `.snap`; republishes the apt and dnf repositories; uploads the snap to the Snap Store; builds
-and lints the Flathub manifest; and installs `fate` from the live repositories in Debian and Fedora
-containers as a smoke test. *Run workflow* on a branch builds everything and attaches it to the run
-only. The AppImage updates itself through `latest-linux.yml`, the same way the Windows installer uses
-`latest.yml`; the `.deb` and `.rpm` update through the package manager.
+Releases are cut by the maintainer: bump the version, then
+`gh release create vX.Y.Z --title ... --notes ...`. That creates the tag, and two workflows build and
+publish everything from it. **Build Windows** (`.github/workflows/build-windows.yml`) builds the NSIS
+installer and the Microsoft Store `.appx`, attaches `FATE-Setup-X.Y.Z.exe` and `latest.yml` to the
+release, and keeps the `.appx` on the run for the Store submission. **Build Linux** builds and attaches
+the AppImage, `.deb`, signed `.rpm` and `.snap`; republishes the apt and dnf repositories; uploads the
+snap to the Snap Store; builds and lints the Flathub manifest; and installs `fate` from the live
+repositories in Debian and Fedora containers as a smoke test. *Run workflow* on a branch builds
+everything and attaches it to the run only. The AppImage updates itself through `latest-linux.yml`, the
+same way the Windows installer uses `latest.yml`; the `.deb` and `.rpm` update through the package
+manager. For the ten minutes or so before the workflows attach those two files, update checks report
+them missing and succeed on the next check. A release created with a locally built installer
+(`gh release create vX.Y.Z FATE-Setup-X.Y.Z.exe latest.yml ...`) still works: Build Windows leaves
+those files in place.
 
 One-time setup, all in the repository: `scripts/setup-signing-key.sh` creates the
 `FATE_GPG_PRIVATE_KEY` secret, and `scripts/setup-snap-store-token.ps1` creates the
