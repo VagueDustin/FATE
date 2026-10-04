@@ -27,10 +27,14 @@ name: Build Windows
 on:
   push:
     tags: ['v*']
-  # A change to this workflow builds on its own PR (artifacts only), since Run workflow is only
-  # offered once a workflow is on the default branch.
+  # A PR that changes this workflow or the Windows build configuration builds too (artifacts only),
+  # so a broken installer or Store package shows up on the PR rather than at release time.
   pull_request:
-    paths: ['.github/workflows/build-windows.yml']
+    paths:
+      - '.github/workflows/build-windows.yml'
+      - 'package.json'
+      - 'build/installer.nsh'
+      - 'scripts/escape-appx-manifest.cjs'
   workflow_dispatch:
     inputs:
       release_tag:
