@@ -175,8 +175,12 @@ function CommandPalette({ items, onClose, modes = null, initialQuery = '' }) {
               >
                 {Icon && <Icon size={15} weight="duotone" className="palette-icon" />}
                 <span className="palette-label">{item.label}</span>
-                {(item.detail ?? item.section) && (
-                  <span className="palette-section">{item.detail ?? item.section}</span>
+                {/* A mode row's detail (a file name and line, a symbol's kind and line) keeps its
+                    case; the section labels of the main list are small caps. */}
+                {item.detail != null ? (
+                  <span className="palette-section palette-detail">{item.detail}</span>
+                ) : (
+                  item.section && <span className="palette-section">{item.section}</span>
                 )}
               </li>
             );

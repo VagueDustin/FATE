@@ -2546,9 +2546,15 @@ kbd {
   color: var(--text-muted);
 }
 
-.palette-item.error,
 .palette-item.error .palette-icon {
   color: var(--status-danger);
+}
+
+.palette-detail {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.72rem;
+  font-weight: 500;
 }
 
 .palette-hint {
