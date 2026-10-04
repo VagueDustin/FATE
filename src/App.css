@@ -2513,6 +2513,69 @@ kbd {
   font-size: 0.85rem;
 }
 
+/* ── 1.14.0: palette modes, dialog focus, shortcut recording ─────────────────────────────────
+   Palette: the badge naming the active mode (":" Go to line, "@" Go to symbol, "#" Search open
+   tabs), the rows a mode shows as hints or input errors, and the quiet footer that lists the
+   prefixes while the query is empty. Settings and the palette now take focus themselves
+   (src/dialogFocus.js); the dialog box only holds it after a click on empty space, so it gets
+   no focus ring. The shortcut recording hint is an always-present live region, empty (and
+   taking no space) until a binding is being recorded. */
+.palette:focus,
+.settings-modal:focus {
+  outline: none;
+}
+
+.palette-mode {
+  flex-shrink: 0;
+  padding: 0.12rem 0.5rem;
+  border-radius: var(--radius-pill);
+  background: var(--accent-subtle);
+  color: var(--text-accent);
+  font-size: 0.7rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.palette-item.disabled {
+  cursor: default;
+  color: var(--text-muted);
+}
+
+.palette-item.disabled.selected {
+  background: var(--surface-highest);
+  color: var(--text-muted);
+}
+
+.palette-item.error,
+.palette-item.error .palette-icon {
+  color: var(--status-danger);
+}
+
+.palette-hint {
+  flex-shrink: 0;
+  padding: 0.45rem 0.9rem;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 0.72rem;
+  line-height: 1.6;
+  color: var(--text-faint);
+}
+
+.palette-hint kbd {
+  margin-right: 0.1rem;
+}
+
+.shortcut-recording-hint {
+  color: var(--text-accent);
+}
+
+.shortcut-recording-hint:empty {
+  margin: 0;
+}
+
+.shortcuts-head + .shortcut-recording-hint {
+  margin-top: 0.75rem;
+}
+
 /* ── Split view ──────────────────────────────────────────────────────────────────────────── */
 /* Layout is CSS-only so the panes never re-parent, because re-parenting would remount the editors and
    lose their state. Active pane left (order 0), split pane right (order 1). */
