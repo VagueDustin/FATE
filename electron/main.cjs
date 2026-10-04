@@ -52,6 +52,12 @@ const MAX_RECENT_FILES = 8;
    The renderer owns the markdown-vs-code routing decision (see fileKindForName in App.jsx).
    ════════════════════════════════════════════════════════════════════════════════════════════ */
 
+/*
+ * The types registered with the "Markdown Document" ProgID on Windows. `txt` stays here although
+ * since 1.14.0 the renderer opens .txt as plain text (fileKinds.js): a registration moved to another
+ * ProgID would orphan the default users already gave FATE for .txt, and Windows answers that by
+ * resetting it. The ProgID decides the icon and the Explorer type name, not how FATE opens the file.
+ */
 const MARKDOWN_EXTENSIONS = ['md', 'markdown', 'txt'];
 
 /** Code files offered in the open dialog's curated filter and registered on Windows. */

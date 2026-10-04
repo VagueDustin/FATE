@@ -30,7 +30,8 @@ const UNINSTALLED = macroArgs('UnregisterCodeType');
 
 test('main.cjs and fileKinds.js list the same code and Markdown types', () => {
   assert.deepEqual(sorted(RENDERER_CODE), sorted(MAIN_CODE));
-  assert.deepEqual(sorted(RENDERER_MARKDOWN), sorted(mainArray('MARKDOWN_EXTENSIONS')));
+  // .txt opens as plain text since 1.14.0 but keeps its Windows registration (see main.cjs).
+  assert.deepEqual(sorted([...RENDERER_MARKDOWN, 'txt']), sorted(mainArray('MARKDOWN_EXTENSIONS')));
 });
 
 test('the installer registers exactly the associable code types', () => {
