@@ -275,6 +275,7 @@
   "overrides": {
     "mermaid": {
       "katex": "$katex"
-    }
+    },
+    "global-agent": "^4.1.3"
   }
 }
