@@ -52,7 +52,9 @@ const CACHE_LIMIT = 40;
  * ── Sanitising the SVG ───────────────────────────────────────────────────────────────────────
  * The diagram goes in with innerHTML, so it gets the same treatment as the document around it,
  * even though mermaid's strict mode sanitises its own output: DOMPurify with the SVG profile (and
- * HTML inside <foreignObject>, which holds the node labels). Beyond that:
+ * HTML inside <foreignObject>, which holds the node labels), plus MathML, the same allow-list the
+ * document gets: mermaid renders `$$…$$` in a label with KaTeX as MathML, and without the profile
+ * the formula was stripped and the node came out empty. Beyond that:
  *   - No <img> or SVG <image>.
  *   - The diagram's own <style> keeps only rules scoped to the diagram (mermaid prefixes every
  *     rule with the SVG's id, `classDef` included), and keyframes that don't reuse a name the app
@@ -93,7 +95,7 @@ svgPurifier.addHook('uponSanitizeElement', (node, data) => {
 });
 
 const SVG_CONFIG = {
-  USE_PROFILES: { svg: true, svgFilters: true, html: true },
+  USE_PROFILES: { svg: true, svgFilters: true, html: true, mathMl: true },
   ADD_TAGS: ['foreignobject'],
   HTML_INTEGRATION_POINTS: { foreignobject: true },
   FORBID_TAGS: ['image', 'script', 'iframe', 'frame', 'object', 'embed', 'link', 'meta', 'base', 'form', 'input', 'button', 'textarea', 'select', 'dialog'],
