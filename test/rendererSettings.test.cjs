@@ -25,7 +25,7 @@ test('every setting the renderer writes today is accepted', () => {
   ok('editorWrap', true);
   ok('editorTabSize', 4);
   ok('editorLint', false);
-  ok('fonts', { ui: 'inter', markdown: 'system:Georgia', code: 'jetbrains-mono', markdownSize: 16, editorSize: 14, ligatures: true, perType: { ps1: 'cascadia-code' } });
+  ok('fonts', { ui: 'inter', display: 'cinzel', markdown: 'system:Georgia', heading: 'system:Georgia', code: 'jetbrains-mono', markdownSize: 16, editorSize: 14, ligatures: true, perType: { ps1: 'cascadia-code' } });
   ok('restoreSession', true);
   ok('customTheme', { base: '#070B1A', accent: '#D4AF37' });
   ok('customTheme', null);
