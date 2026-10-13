@@ -29,7 +29,7 @@ jobs:
           persist-credentials: false
 
       # TODO(pin): replace @v4 with the full commit SHA: gh api repos/actions/setup-node/commits/v4 --jq .sha
-      - uses: actions/setup-node@v4 # v4
+      - uses: actions/setup-node@v7 # v4
         with:
           node-version: 22
           cache: npm

@@ -140,7 +140,7 @@ jobs:
       # No npm cache in release builds: a Run workflow recovery checks out a tag the dispatcher
       # chose, and a cache saved by that run would land in the default branch's scope for later
       # runs to restore (cache poisoning). Releases are rare; a cold npm ci costs a minute.
-      - uses: actions/setup-node@v4 # v4
+      - uses: actions/setup-node@v7 # v4
         with:
           node-version: 22
 
