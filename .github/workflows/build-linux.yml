@@ -248,7 +248,7 @@ jobs:
           tar -cf snapbuild.tar snapbuild
 
       # TODO(pin): replace @v4 with the full commit SHA: gh api repos/actions/upload-artifact/commits/v4 --jq .sha
-      - uses: actions/upload-artifact@v4 # v4
+      - uses: actions/upload-artifact@v7 # v4
         with:
           name: ${{ steps.meta.outputs.artifact }}
           if-no-files-found: error
@@ -260,7 +260,7 @@ jobs:
             dist-electron/*.rpm
             dist-electron/latest-linux.yml
 
-      - uses: actions/upload-artifact@v4 # v4 (TODO(pin), as above)
+      - uses: actions/upload-artifact@v7 # v4 (TODO(pin), as above)
         with:
           name: snapbuild
           if-no-files-found: error
@@ -299,7 +299,7 @@ jobs:
           ls -la "$SNAP_FILE"
           echo "artifact=FATE-snap-$VERSION-run$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/upload-artifact@v4 # v4 (TODO(pin), as above)
+      - uses: actions/upload-artifact@v7 # v4 (TODO(pin), as above)
         with:
           name: ${{ steps.name.outputs.artifact }}
           if-no-files-found: error
@@ -804,7 +804,7 @@ jobs:
           exit "$failed"
 
       # TODO(pin): replace @v4 with the full commit SHA: gh api repos/actions/upload-artifact/commits/v4 --jq .sha
-      - uses: actions/upload-artifact@v4 # v4
+      - uses: actions/upload-artifact@v7 # v4
         with:
           name: flathub-submission-${{ needs.build.outputs.version }}
           retention-days: 30
