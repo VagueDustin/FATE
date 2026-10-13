@@ -263,7 +263,7 @@
     "marked": "^18.1.0",
     "marked-highlight": "^2.2.4",
     "marked-katex-extension": "^5.1.13",
-    "mermaid": "^11.16.1",
+    "mermaid": "^12.1.0",
     "png-to-ico": "^3.0.2",
     "puppeteer-core": "^25.13.0",
     "react": "^19.3.0",
