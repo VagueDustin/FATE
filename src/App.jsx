@@ -1933,6 +1933,7 @@ function App() {
          */
         .finally(() => api.appReady());
 
+      api.getRuntimeInfo?.().then(setRuntimeInfo).catch(() => {});
       const mergeFonts = (newFonts) => {
         if (!Array.isArray(newFonts) || newFonts.length === 0) return;
         setSystemFonts((prev) => Array.from(new Set([...prev, ...newFonts])).sort((a, b) => a.localeCompare(b)));

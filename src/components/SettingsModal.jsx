@@ -10,7 +10,7 @@ import {
   shortcutParts, formatShortcutLabel, normalizeBinding,
   clampSidebarWidth, SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX
 } from '../settingsMeta.js';
-import { PROSE_FONTS, CODE_FONTS, fontById, systemFontEntry } from '../fonts.js';
+import { PROSE_FONTS, DISPLAY_FONTS, CODE_FONTS, fontById, systemFontEntry } from '../fonts.js';
 import { CODE_EXTENSIONS } from '../fileKinds.js';
 import { DEFAULT_CUSTOM, CUSTOM_FIELDS, customThemeCss } from '../themeCustom.js';
 import { useDialogFocus } from '../dialogFocus.js';
@@ -663,8 +663,8 @@ function SettingsModal({
                     <FontPicker labelledBy={idFor('font-ui')} systemFonts={systemFonts} value={fonts.ui} options={PROSE_FONTS} onChange={(id) => setFonts({ ui: id })} />
                   </div>
                   <div className="setting-item">
-                    <span className="setting-label" id={idFor('font-display')}>UI Title / Display font</span>
-                    <FontPicker labelledBy={idFor('font-display')} systemFonts={systemFonts} value={fonts.display} options={PROSE_FONTS} onChange={(id) => setFonts({ display: id })} />
+                    <span className="setting-label" id={idFor('font-display')}>Title and display font</span>
+                    <FontPicker labelledBy={idFor('font-display')} systemFonts={systemFonts} value={fonts.display} options={DISPLAY_FONTS} onChange={(id) => setFonts({ display: id })} />
                   </div>
                 </div>
 
@@ -676,7 +676,7 @@ function SettingsModal({
                   </div>
                   <div className="setting-item">
                     <span className="setting-label" id={idFor('font-heading')}>Document heading font</span>
-                    <FontPicker labelledBy={idFor('font-heading')} systemFonts={systemFonts} value={fonts.heading} options={PROSE_FONTS} onChange={(id) => setFonts({ heading: id })} />
+                    <FontPicker labelledBy={idFor('font-heading')} systemFonts={systemFonts} value={fonts.heading} options={DISPLAY_FONTS} onChange={(id) => setFonts({ heading: id })} />
                   </div>
                   <SizeSlider label="Document text size" value={fonts.markdownSize} min={12} max={22} onChange={(v) => setFonts({ markdownSize: v })} />
                 </div>

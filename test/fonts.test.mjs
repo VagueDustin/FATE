@@ -1,22 +1,36 @@
 // Unit tests for fonts resolution, defaults, system fonts, and CSS variable mapping (src/fonts.js).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  resolveFonts, DEFAULT_FONTS, PROSE_FONTS, CODE_FONTS,
-  fontById, isSystemFontId, systemFontEntry, fontStack, applyFonts
-} from '../src/fonts.js';
+import { register } from 'node:module';
 
-test('DEFAULT_FONTS uses system fonts as primary defaults', () => {
-  assert.equal(DEFAULT_FONTS.ui, 'system-sans');
-  assert.equal(DEFAULT_FONTS.display, 'system-sans');
-  assert.equal(DEFAULT_FONTS.markdown, 'system-sans');
-  assert.equal(DEFAULT_FONTS.heading, 'system-sans');
-  assert.equal(DEFAULT_FONTS.code, 'system-mono');
+// src/fonts.js imports its @fontsource stylesheets, which Vite bundles but Node cannot load.
+// Stub every .css import with an empty module before fonts.js is imported.
+register('data:text/javascript,' + encodeURIComponent(
+  "export async function load(url, context, next) {" +
+  "  if (url.endsWith('.css')) return { format: 'module', source: '', shortCircuit: true };" +
+  "  return next(url, context);" +
+  "}"
+));
+
+const {
+  resolveFonts, DEFAULT_FONTS, PROSE_FONTS, DISPLAY_FONTS, CODE_FONTS,
+  isSystemFontId, systemFontEntry, fontStack, applyFonts
+} = await import('../src/fonts.js');
+
+test('DEFAULT_FONTS keeps the bundled faces: Cinzel display and headings, Inter text, JetBrains Mono code', () => {
+  assert.equal(DEFAULT_FONTS.ui, 'inter');
+  assert.equal(DEFAULT_FONTS.display, 'cinzel');
+  assert.equal(DEFAULT_FONTS.markdown, 'inter');
+  assert.equal(DEFAULT_FONTS.heading, 'cinzel');
+  assert.equal(DEFAULT_FONTS.code, 'jetbrains-mono');
 });
 
-test('PROSE_FONTS and CODE_FONTS list system fonts first', () => {
-  assert.equal(PROSE_FONTS[0].id, 'system-sans');
-  assert.equal(CODE_FONTS[0].id, 'system-mono');
+test('DISPLAY_FONTS offers Cinzel plus every prose face; system defaults stay selectable', () => {
+  assert.equal(DISPLAY_FONTS[0].id, 'cinzel');
+  for (const f of PROSE_FONTS) assert.ok(DISPLAY_FONTS.some((d) => d.id === f.id));
+  assert.ok(PROSE_FONTS.some((f) => f.id === 'system-sans'));
+  assert.ok(CODE_FONTS.some((f) => f.id === 'system-mono'));
+  assert.ok(!PROSE_FONTS.some((f) => f.id === 'cinzel'), 'Cinzel is a display face, not a body face');
 });
 
 test('isSystemFontId and systemFontEntry identify and format system fonts', () => {
@@ -34,11 +48,22 @@ test('isSystemFontId and systemFontEntry identify and format system fonts', () =
 
 test('resolveFonts merges stored settings and handles display & heading', () => {
   const resolvedDefault = resolveFonts(undefined);
-  assert.equal(resolvedDefault.ui, 'system-sans');
-  assert.equal(resolvedDefault.display, 'system-sans');
-  assert.equal(resolvedDefault.markdown, 'system-sans');
-  assert.equal(resolvedDefault.heading, 'system-sans');
-  assert.equal(resolvedDefault.code, 'system-mono');
+  assert.equal(resolvedDefault.ui, 'inter');
+  assert.equal(resolvedDefault.display, 'cinzel');
+  assert.equal(resolvedDefault.markdown, 'inter');
+  assert.equal(resolvedDefault.heading, 'cinzel');
+  assert.equal(resolvedDefault.code, 'jetbrains-mono');
+
+  // Settings saved before display/heading existed keep the Cinzel look.
+  const legacy = resolveFonts({ ui: 'lora', markdown: 'lora', code: 'fira-code' });
+  assert.equal(legacy.display, 'cinzel');
+  assert.equal(legacy.heading, 'cinzel');
+
+  // Unknown ids fall back to the defaults; Cinzel is accepted for display/heading only.
+  const bad = resolveFonts({ ui: 'cinzel', display: 'nope', heading: 'cinzel' });
+  assert.equal(bad.ui, 'inter');
+  assert.equal(bad.display, 'cinzel');
+  assert.equal(bad.heading, 'cinzel');
 
   const custom = resolveFonts({
     ui: 'inter',
@@ -56,6 +81,7 @@ test('resolveFonts merges stored settings and handles display & heading', () => 
 
 test('fontStack returns valid CSS font-family strings', () => {
   assert.ok(fontStack('system-sans', 'system-sans').includes('system-ui'));
+  assert.ok(fontStack('cinzel', 'inter').includes("'Cinzel'"));
   assert.ok(fontStack('system:Arial', 'system-sans').includes("'Arial'"));
   assert.ok(fontStack('inter', 'system-sans').includes("'Inter'"));
 });
@@ -80,6 +106,11 @@ test('applyFonts sets all CSS custom properties on document element', () => {
     code: 'system-mono'
   });
 
+  applyFonts(fonts);
+  applyFonts(resolveFonts(undefined));
+  assert.ok(properties['--font-display'].includes("'Cinzel'"));
+  assert.ok(properties['--font-heading'].includes("'Cinzel'"));
+  assert.ok(properties['--font-sans'].includes("'Inter'"));
   applyFonts(fonts);
 
   assert.ok(properties['--font-sans']);

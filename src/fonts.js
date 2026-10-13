@@ -11,6 +11,8 @@
  *
  *   --font-sans          interface font (chrome, home screen, settings)
  *   --font-doc           markdown document body; .markdown-body reads var(--font-doc, --font-sans)
+ *   --font-display       titles and display text in the interface; defaults to Cinzel
+ *   --font-heading       markdown document headings h1-h6; defaults to Cinzel
  *   --font-mono          default code font (editor, md code blocks, mono status readouts)
  *   --doc-font-size      markdown body size
  *   --editor-font-size   editor size
@@ -21,7 +23,8 @@
  * var(--editor-font, var(--font-mono)). A tab of .ps1 in Cascadia and a tab of .py in Fira Code
  * can sit side by side.
  *
- * Cinzel (--font-display) is deliberately NOT user-configurable; it is the brand's display face.
+ * Cinzel is the brand's display face and the default for both --font-display and --font-heading.
+ * Users can pick another face for either, but out of the box FATE looks exactly as designed.
  */
 
 // Prose / interface faces
@@ -64,30 +67,36 @@ const SYSTEM_MONO = "ui-monospace, 'Cascadia Code', SFMono-Regular, Consolas, mo
 
 /** Interface / document faces. `sample` is the preview line the picker renders in the face. */
 export const PROSE_FONTS = [
-  { id: 'system-sans', label: 'System default', kind: 'sans', stack: SYSTEM_SANS },
   { id: 'inter', label: 'Inter', kind: 'sans', stack: `'Inter', ${SYSTEM_SANS}` },
   { id: 'ibm-plex-sans', label: 'IBM Plex Sans', kind: 'sans', stack: `'IBM Plex Sans', ${SYSTEM_SANS}` },
   { id: 'source-serif', label: 'Source Serif 4', kind: 'serif', stack: `'Source Serif 4', Georgia, serif` },
   { id: 'lora', label: 'Lora', kind: 'serif', stack: `'Lora', Georgia, serif` },
-  { id: 'merriweather', label: 'Merriweather', kind: 'serif', stack: `'Merriweather', Georgia, serif` }
+  { id: 'merriweather', label: 'Merriweather', kind: 'serif', stack: `'Merriweather', Georgia, serif` },
+  { id: 'system-sans', label: 'System default', kind: 'sans', stack: SYSTEM_SANS }
+];
+
+/** Display and heading faces: the brand's Cinzel (bundled in main.jsx) first, then every prose face. */
+export const DISPLAY_FONTS = [
+  { id: 'cinzel', label: 'Cinzel', kind: 'serif', stack: "'Cinzel', Georgia, serif" },
+  ...PROSE_FONTS
 ];
 
 export const CODE_FONTS = [
-  { id: 'system-mono', label: 'System monospace', stack: SYSTEM_MONO },
   { id: 'jetbrains-mono', label: 'JetBrains Mono', stack: `'JetBrains Mono', ${SYSTEM_MONO}` },
   { id: 'fira-code', label: 'Fira Code', stack: `'Fira Code', ${SYSTEM_MONO}`, ligatures: true },
   { id: 'cascadia-code', label: 'Cascadia Code', stack: `'Cascadia Code', ${SYSTEM_MONO}`, ligatures: true },
   { id: 'source-code-pro', label: 'Source Code Pro', stack: `'Source Code Pro', ${SYSTEM_MONO}` },
   { id: 'ibm-plex-mono', label: 'IBM Plex Mono', stack: `'IBM Plex Mono', ${SYSTEM_MONO}` },
-  { id: 'roboto-mono', label: 'Roboto Mono', stack: `'Roboto Mono', ${SYSTEM_MONO}` }
+  { id: 'roboto-mono', label: 'Roboto Mono', stack: `'Roboto Mono', ${SYSTEM_MONO}` },
+  { id: 'system-mono', label: 'System monospace', stack: SYSTEM_MONO }
 ];
 
 export const DEFAULT_FONTS = {
-  ui: 'system-sans',
-  display: 'system-sans',
-  markdown: 'system-sans',
-  heading: 'system-sans',
-  code: 'system-mono',
+  ui: 'inter',
+  display: 'cinzel',
+  markdown: 'inter',
+  heading: 'cinzel',
+  code: 'jetbrains-mono',
   markdownSize: 16,
   editorSize: 14,
   ligatures: true,
@@ -95,7 +104,7 @@ export const DEFAULT_FONTS = {
   perType: {}
 };
 
-const ALL_FONTS = [...PROSE_FONTS, ...CODE_FONTS];
+const ALL_FONTS = [...DISPLAY_FONTS, ...CODE_FONTS];
 
 /*
  * ── System fonts (1.11.3) ─────────────────────────────────────────────────────────────────────
@@ -139,6 +148,8 @@ export function resolveFonts(stored) {
   const s = stored && typeof stored === 'object' ? stored : {};
   const proseId = (id, fallback) =>
     isSystemFontId(id) || PROSE_FONTS.some((f) => f.id === id) ? id : fallback;
+  const displayId = (id, fallback) =>
+    isSystemFontId(id) || DISPLAY_FONTS.some((f) => f.id === id) ? id : fallback;
   const codeId = (id, fallback) =>
     isSystemFontId(id) || CODE_FONTS.some((f) => f.id === id) ? id : fallback;
 
@@ -153,9 +164,9 @@ export function resolveFonts(stored) {
 
   return {
     ui: proseId(s.ui, DEFAULT_FONTS.ui),
-    display: proseId(s.display, DEFAULT_FONTS.display),
+    display: displayId(s.display, DEFAULT_FONTS.display),
     markdown: proseId(s.markdown, DEFAULT_FONTS.markdown),
-    heading: proseId(s.heading, DEFAULT_FONTS.heading),
+    heading: displayId(s.heading, DEFAULT_FONTS.heading),
     code: codeId(s.code, DEFAULT_FONTS.code),
     markdownSize: clamp(s.markdownSize, 12, 22, DEFAULT_FONTS.markdownSize),
     editorSize: clamp(s.editorSize, 10, 20, DEFAULT_FONTS.editorSize),
@@ -168,9 +179,9 @@ export function resolveFonts(stored) {
 export function applyFonts(fonts) {
   const root = document.documentElement.style;
   root.setProperty('--font-sans', fontStack(fonts.ui, DEFAULT_FONTS.ui));
-  root.setProperty('--font-display', fontStack(fonts.display || fonts.ui, DEFAULT_FONTS.display));
+  root.setProperty('--font-display', fontStack(fonts.display, DEFAULT_FONTS.display));
   root.setProperty('--font-doc', fontStack(fonts.markdown, DEFAULT_FONTS.markdown));
-  root.setProperty('--font-heading', fontStack(fonts.heading || fonts.markdown, DEFAULT_FONTS.heading));
+  root.setProperty('--font-heading', fontStack(fonts.heading, DEFAULT_FONTS.heading));
   root.setProperty('--font-mono', fontStack(fonts.code, DEFAULT_FONTS.code, true));
   root.setProperty('--doc-font-size', `${fonts.markdownSize}px`);
   root.setProperty('--editor-font-size', `${fonts.editorSize}px`);
