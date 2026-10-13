@@ -13,6 +13,7 @@ const appMenu = require('./appMenu.cjs');
 const { createSpellcheckController, resolveSpellcheckSetting } = require('./spellcheck.cjs');
 const { removeStaleTempFiles } = require('./tempCleanup.cjs');
 const { candidateFilePaths } = require('./launchArgs.cjs');
+const { shouldSelfRegister } = require('./windowsRegistration.cjs');
 
 /**
  * ProgId that electron-builder's NSIS installer actually registers for `.md`.
@@ -777,9 +778,17 @@ function ensureWindowsRegistration() {
   /*
    * app.isPackaged, NOT the NODE_ENV check: a production-mode dev run (`electron .` without
    * NODE_ENV) passes isDev but runs from node_modules' electron.exe, and self-healing from there
-   * would register ProgIds pointing at the dev toolchain. Only a real installed build registers.
+   * would register ProgIds pointing at the dev toolchain. Only a real installed build registers,
+   * and never one on an isolated profile (a test copy; see windowsRegistration.cjs).
    */
-  if (process.platform !== 'win32' || !app.isPackaged || isWindowsStore) return;
+  const registers = shouldSelfRegister({
+    platform: process.platform,
+    isPackaged: app.isPackaged,
+    isWindowsStore,
+    env: process.env,
+    argv: process.argv
+  });
+  if (!registers) return;
 
   const stampKey = 'registrationStamp';
   // The trailing number is the registration SCHEMA version. Bump it whenever the shape of the
