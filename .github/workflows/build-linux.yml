@@ -277,7 +277,7 @@ jobs:
     outputs:
       artifact: ${{ steps.name.outputs.artifact }}
     steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: snapbuild
 
@@ -335,11 +335,11 @@ jobs:
           ref: refs/tags/${{ needs.build.outputs.release_tag }}
           persist-credentials: false
 
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ${{ needs.build.outputs.artifact }}
           path: dist
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ${{ needs.snap.outputs.artifact }}
           path: dist
@@ -660,7 +660,7 @@ jobs:
         run: |
           echo "::notice::SNAPCRAFT_STORE_CREDENTIALS is not set; the snap was built and attached to the release but not uploaded to the Snap Store. See README → Building from source → Releases."
 
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         if: env.HAS_SNAP_CREDENTIALS == 'true'
         with:
           name: ${{ needs.snap.outputs.artifact }}
