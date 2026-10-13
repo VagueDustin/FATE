@@ -110,11 +110,10 @@ jobs:
         with:
           persist-credentials: false
 
-      # TODO(pin): replace @v4 with the full commit SHA: gh api repos/actions/setup-node/commits/v4 --jq .sha
       # No npm cache in release builds: a Run workflow recovery checks out a tag the dispatcher
       # chose, and a cache saved by that run would land in the default branch's scope for later
       # runs to restore (cache poisoning). Releases are rare; a cold npm ci costs a minute.
-      - uses: actions/setup-node@v7 # v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
 
@@ -171,8 +170,7 @@ jobs:
             exit 1
           fi
 
-      # TODO(pin): replace @v4 with the full commit SHA: gh api repos/actions/upload-artifact/commits/v4 --jq .sha
-      - uses: actions/upload-artifact@v7 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ steps.meta.outputs.artifact }}
           if-no-files-found: error
