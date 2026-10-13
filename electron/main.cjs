@@ -4,7 +4,9 @@ const fs = require('fs');
 const { execFile } = require('child_process');
 const { autoUpdater } = require('electron-updater');
 const { pathToFileURL } = require('url');
-const Store = require('electron-store');
+// electron-store 9 and later are ES modules only. Electron's Node loads them with require(), which
+// hands back the module namespace, so the class is its default export.
+const { default: Store } = require('electron-store');
 const { describeFsError } = require('./fsAccess.cjs');
 const { isAllowedNavigation, classifyExternalUrl, resolveLocalImagePath } = require('./linkSecurity.cjs');
 const appMenu = require('./appMenu.cjs');
@@ -250,9 +252,38 @@ function rememberRecentFile(filePath) {
   const key = watchKey(filePath);
   const deduped = existing.filter((entry) => watchKey(entry.path) !== key);
   deduped.unshift({ path: normalized, openedAt: Date.now() });
+  lastDocumentFolder = path.dirname(normalized);
   store.set('recentFiles', deduped.slice(0, MAX_RECENT_FILES));
   if (process.platform === 'win32') app.addRecentDocument(normalized);
   recentsChanged();
+}
+
+/*
+ * Where the file dialogs start. Since Electron 43 a dialog with no `defaultPath` opens in Downloads
+ * every time and Windows no longer brings back the last folder; on Linux even a bare file name is
+ * put in Downloads. So FATE passes a folder itself: the one the latest document was opened from or
+ * saved to (also what tops the recents list) or, for Save As, the document's own folder. With
+ * neither, Electron's default applies.
+ */
+let lastDocumentFolder = null;
+
+function isExistingFolder(folder) {
+  try {
+    return fs.statSync(folder).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/** `defaultPath` for a file dialog: `fileName` (or nothing) in `preferredFolder` or the latest document's folder. */
+function dialogDefaultPath(fileName = '', preferredFolder = null) {
+  if (fileName && path.isAbsolute(fileName)) return fileName;
+  const latest = storedRecents()[0];
+  const folder = [preferredFolder, lastDocumentFolder, latest && path.dirname(latest.path)].find(
+    (candidate) => candidate && isExistingFolder(candidate)
+  );
+  if (!folder) return fileName;
+  return fileName ? path.join(folder, fileName) : folder;
 }
 
 /** Drop one entry whose file is gone, so the list heals itself instead of offering it again. */
@@ -1027,7 +1058,7 @@ async function showPrintPreview(docName) {
 async function exportPdf(docName) {
   const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
     title: 'Export as PDF',
-    defaultPath: `${safeFileStem(docName)}.pdf`,
+    defaultPath: dialogDefaultPath(`${safeFileStem(docName)}.pdf`),
     filters: [{ name: 'PDF Document', extensions: ['pdf'] }]
   });
   if (canceled || !filePath) return { ok: false, canceled: true };
@@ -1375,7 +1406,7 @@ function createWindow() {
       ]);
     }
     if (/^https?:/i.test(linkURL)) {
-      groups.push([{ label: 'Copy Link Address', click: () => clipboard.writeText(linkURL) }]);
+      groups.push([{ label: 'Copy Link Address', click: () => clipboard.writeText(linkURL).catch(() => {}) }]);
     }
     if (isEditable) {
       groups.push(
@@ -2046,6 +2077,7 @@ app.whenReady().then(() => {
 
   ipcMain.handle('open-file-dialog', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
+      defaultPath: dialogDefaultPath(),
       properties: ['openFile'],
       // "All files" FIRST, so it is the default: FATE opens any text file, and hiding
       // `web.config`, `.properties` or an extensionless Dockerfile behind a filter switch made
@@ -2101,7 +2133,7 @@ app.whenReady().then(() => {
     try {
       const result = await dialog.showSaveDialog(mainWindow, {
         title: 'Save As',
-        defaultPath: suggested,
+        defaultPath: dialogDefaultPath(suggested, fromPath && path.dirname(fromPath)),
         // "All files" first: with a curated filter selected, Windows appends that filter's first
         // extension to any name typed without one, so saving a new buffer as `Dockerfile` or
         // `.env` produced `Dockerfile.md`. The typed name is now taken literally.

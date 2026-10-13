@@ -217,7 +217,7 @@
     ]
   },
   "dependencies": {
-    "electron-store": "^8.1.0",
+    "electron-store": "^11.0.2",
     "electron-updater": "^6.8.3"
   },
   "devDependencies": {
@@ -252,7 +252,7 @@
     "concurrently": "^10.0.6",
     "cross-env": "^10.1.0",
     "dompurify": "^3.4.16",
-    "electron": "^42.3.3",
+    "electron": "^44.7.0",
     "electron-builder": "^26.8.1",
     "eslint": "^10.12.0",
     "eslint-plugin-react-hooks": "^7.1.1",
