@@ -206,6 +206,12 @@ async function renderFences(container, cache, isCancelled) {
     secure: MERMAID_SECURE_KEYS,
     dompurifyConfig: LABEL_PURIFY,
     theme: isLightTheme() ? 'default' : 'dark',
+    // Mermaid 12 lays diagrams out with ELK and draws them in its `neo` look unless told otherwise,
+    // which re-flows and restyles every existing document. Keep the layout and look diagrams have
+    // always had in FATE; a document can still ask for `layout: elk` or `look: neo` in its front
+    // matter or an init directive.
+    layout: 'dagre',
+    look: 'classic',
     fontFamily: 'inherit'
   });
 
