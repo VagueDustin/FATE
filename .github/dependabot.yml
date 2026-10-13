@@ -7,6 +7,12 @@ updates:
     schedule:
       interval: monthly
     open-pull-requests-limit: 5
+    ignore:
+      # marked-katex-extension (latest 5.1.13) only accepts katex <0.19, so 0.19 breaks npm ci.
+      # 0.18.11 is deprecated upstream ("published with breaking changes"); package.json pins 0.18.10.
+      # Drop this once marked-katex-extension supports katex 0.19.
+      - dependency-name: katex
+        versions: ['>=0.18.11']
     groups:
       npm-minor-patch:
         patterns:
