@@ -176,6 +176,8 @@ jobs:
         with:
           name: ${{ steps.meta.outputs.artifact }}
           if-no-files-found: error
+          # A week for PR builds; release-tag and manual runs keep theirs for 30 days.
+          retention-days: ${{ github.event_name == 'pull_request' && 7 || 30 }}
           path: |
             dist-electron/FATE-Setup-*.exe
             dist-electron/FATE-Setup-*.exe.blockmap

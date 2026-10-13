@@ -252,6 +252,8 @@ jobs:
         with:
           name: ${{ steps.meta.outputs.artifact }}
           if-no-files-found: error
+          # Release-candidate builds (tags and manual runs): long enough to re-run publish, not forever.
+          retention-days: 30
           path: |
             dist-electron/*.AppImage
             dist-electron/*.deb
@@ -301,6 +303,7 @@ jobs:
         with:
           name: ${{ steps.name.outputs.artifact }}
           if-no-files-found: error
+          retention-days: 30
           path: ${{ steps.snap.outputs.snap }}
 
   # ── Sign and publish: the only job with the signing key. No npm, no third-party actions. ────
@@ -804,4 +807,5 @@ jobs:
       - uses: actions/upload-artifact@v4 # v4
         with:
           name: flathub-submission-${{ needs.build.outputs.version }}
+          retention-days: 30
           path: flatpak/rendered/
