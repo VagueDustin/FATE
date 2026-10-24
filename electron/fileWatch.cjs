@@ -25,7 +25,8 @@
  *
  * The reads themselves belong to the caller (`read`, async), and so does what a read means
  * (`onRead`). This module guarantees that only the newest read is delivered: a read that was
- * overtaken by a newer one, or by a `hold`, is dropped.
+ * overtaken by newer events, or by a `hold`, is dropped. Reads of one path never overlap (see
+ * readNow), and a file overtaken on every read still updates every couple of bursts.
  *
  * `hold(path)` is for FATE's own saves. While a save is writing, events for that path are parked
  * and any read already in flight is discarded (it may have caught the file mid-replace); when
@@ -63,7 +64,10 @@ function createFileWatcher(options) {
     retryDelays = [100, 300, 1000, 2000, 5000]
   } = options;
 
-  /** key → entry: { path, handle, timer, retryTimer, burstStart, renamed, attempt, holds, pending, seq, closed } */
+  /**
+   * key → entry: { path, handle, timer, retryTimer, burstStart, renamed, attempt, holds, pending,
+   * seq, closed, reading, again, againTimer, lastDelivered } (the last four: see readNow)
+   */
   const entries = new Map();
 
   function closeHandle(entry) {
@@ -205,23 +209,57 @@ function createFileWatcher(options) {
     }, retryDelays[entry.attempt]);
   }
 
+  /*
+   * One read per path at a time. Reading and decoding a big file takes longer than a burst
+   * (maxWaitMs), and a log written continuously used to start a fresh full read every second while
+   * the last was still decoding, all on Electron's main thread. Events during a read now ask for
+   * one more, which starts after a pause as long as that read took: a 500 MB log being written
+   * leaves the main thread free at least half the time, and a small file notices no difference.
+   */
   async function readNow(entry) {
     if (entry.holds > 0) {
       entry.pending = true;
       return;
     }
+    if (entry.reading) {
+      entry.again = true;
+      return;
+    }
+    entry.reading = true;
     const seq = ++entry.seq;
+    const started = Date.now();
     let result;
+    let failure = null;
     try {
       result = await read(entry.path);
     } catch (err) {
-      if (entry.closed || seq !== entry.seq) return;
-      if (MISSING.has(err.code)) lost(entry);
-      else onError(entry.path, err);
+      failure = err;
+    }
+    entry.reading = false;
+    const overtaken = entry.again && !entry.closed;
+    if (overtaken) {
+      entry.again = false;
+      clearTimeout(entry.againTimer);
+      entry.againTimer = setTimeout(() => {
+        entry.againTimer = null;
+        readNow(entry);
+      }, Date.now() - started);
+    }
+    // Superseded by one of FATE's own saves, or by the tab closing.
+    if (entry.closed || seq !== entry.seq) return;
+    /*
+     * Overtaken by newer events: the next read tells the truth, so this one is dropped, unless
+     * the tab would otherwise go without any update for long. That only happens when every read
+     * is overtaken, a big log written without pause, and then the newest whole read is the best
+     * there is.
+     */
+    if (overtaken && Date.now() - entry.lastDelivered < 2 * maxWaitMs) return;
+    if (failure) {
+      if (MISSING.has(failure.code)) lost(entry);
+      else onError(entry.path, failure);
       return;
     }
-    // Superseded by a newer read, by one of FATE's own saves, or by the tab closing.
-    if (entry.closed || seq !== entry.seq) return;
+    entry.lastDelivered = Date.now();
     onRead(entry.path, result);
   }
 
@@ -235,7 +273,7 @@ function createFileWatcher(options) {
     let entry = entries.get(key);
     if (entry && entry.handle && !rearm) return;
     if (!entry) {
-      entry = { path: filePath, handle: null, timer: null, retryTimer: null, burstStart: 0, renamed: false, attempt: 0, holds: 0, pending: false, seq: 0, closed: false };
+      entry = { path: filePath, handle: null, timer: null, retryTimer: null, burstStart: 0, renamed: false, attempt: 0, holds: 0, pending: false, seq: 0, closed: false, lastDelivered: Date.now() };
       entries.set(key, entry);
     }
     clearTimeout(entry.retryTimer);
@@ -255,6 +293,7 @@ function createFileWatcher(options) {
     entry.closed = true;
     clearTimeout(entry.timer);
     clearTimeout(entry.retryTimer);
+    clearTimeout(entry.againTimer);
     closeHandle(entry);
     entries.delete(key);
   }

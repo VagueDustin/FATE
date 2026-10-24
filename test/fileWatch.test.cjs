@@ -213,3 +213,29 @@ test('a save that starts while a burst is being checked holds the read back', as
   await sleep(200);
   assert.deepEqual(reads, ['saved by FATE']);
 });
+
+test('a slow read is never overlapped by another, and the newest text still arrives', async (t) => {
+  // A big log being written: every read takes longer than a burst does.
+  let inFlight = 0;
+  let most = 0;
+  const { file, reads, watcher } = setup(t, {
+    read: async (p) => {
+      most = Math.max(most, ++inFlight);
+      await sleep(250);
+      const text = await fs.promises.readFile(p, 'utf8');
+      inFlight--;
+      return text;
+    },
+    debounceMs: 20,
+    maxWaitMs: 60
+  });
+  watcher.watch(file);
+  for (let i = 1; i <= 15; i++) {
+    fs.writeFileSync(file, `v${i}`);
+    await sleep(40);
+  }
+  assert.ok(await waitFor(() => reads.at(-1) === 'v15', 5000), `last delivered: ${reads.at(-1)}`);
+  assert.equal(most, 1, 'one read at a time');
+  assert.ok(reads.length > 1, 'a file overtaken on every read still updates on the way');
+  assert.ok(reads.length < 15, `${reads.length} reads for 15 writes`);
+});

@@ -368,6 +368,16 @@ function sameFormat(a, b) {
   return !!a && !!b && a.encoding === b.encoding && a.bom === b.bom && a.eol === b.eol;
 }
 
+function encodeBody(text, encoding) {
+  if (encoding === 'utf8') return Buffer.from(text, 'utf8');
+  if (encoding === 'utf16le') return Buffer.from(text, 'utf16le');
+  if (encoding === 'utf16be') return Buffer.from(text, 'utf16le').swap16();
+  return encodeCp1252(text);
+}
+
+/** Characters per piece when line breaks are widened (see encode); `chunk` is for the tests. */
+const ENCODE_CHUNK = 16 * 1024 * 1024;
+
 /**
  * Encode renderer text for disk: `\n` → format.eol, then the encoding, then the BOM. Any `\r`
  * already in the text is normalised first, so stray CRs cannot turn into `\r\r\n`.
@@ -376,7 +386,7 @@ function sameFormat(a, b) {
  *
  * @returns {Buffer}
  */
-function encode(text, format) {
+function encode(text, format, { chunk = ENCODE_CHUNK } = {}) {
   if (typeof text !== 'string') throw codedError('BAD_ARGS', 'Expected the document text as a string');
   const f = resolveFormat(format);
   const lf = normalizeText(text);
@@ -384,13 +394,29 @@ function encode(text, format) {
     const err = findUnencodable(lf);
     if (err) throw err;
   }
-  const body = f.eol === '\n' ? lf : lf.replace(/\n/g, f.eol);
-
   let data;
-  if (f.encoding === 'utf8') data = Buffer.from(body, 'utf8');
-  else if (f.encoding === 'utf16le') data = Buffer.from(body, 'utf16le');
-  else if (f.encoding === 'utf16be') data = Buffer.from(body, 'utf16le').swap16();
-  else data = encodeCp1252(body);
+  if (f.eol === '\n') {
+    data = encodeBody(lf, f.encoding);
+  } else {
+    /*
+     * In pieces, each cut just after a line break. Widening every \n to \r\n makes the text
+     * longer, and a big LF document under the open cap could come out past the longest string V8
+     * allows (about 536M units), failing the save with a RangeError. A piece with no line break
+     * in it is cut short of a surrogate pair rather than through one.
+     */
+    const parts = [];
+    for (let start = 0; start < lf.length; ) {
+      let end = Math.min(lf.length, start + chunk);
+      if (end < lf.length) {
+        const nl = lf.lastIndexOf('\n', end - 1);
+        if (nl >= start) end = nl + 1;
+        else if ((lf.charCodeAt(end - 1) & 0xfc00) === 0xd800) end = end - 1 > start ? end - 1 : end + 1;
+      }
+      parts.push(encodeBody(lf.slice(start, end).replace(/\n/g, f.eol), f.encoding));
+      start = end;
+    }
+    data = Buffer.concat(parts);
+  }
 
   if (!f.bom) return data;
   const bom = BOMS.find((b) => b.encoding === f.encoding);
