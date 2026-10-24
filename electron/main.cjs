@@ -1092,9 +1092,8 @@ async function showPrintPreview(docName) {
      * would block the next preview from writing FATE-preview-<pid>.pdf again. tempCleanup.cjs
      * removes the handed-off copies on a later launch.
      */
-    let handoff = file;
+    let handoff = file.replace(/\.pdf$/, `-${Date.now()}.pdf`);
     try {
-      handoff = file.replace(/\.pdf$/, `-${Date.now()}.pdf`);
       fs.renameSync(file, handoff);
     } catch {
       handoff = file;
