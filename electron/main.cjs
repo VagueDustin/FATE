@@ -125,11 +125,12 @@ const MAX_FILE_BYTES = 25 * 1024 * 1024;
  * ignoring the file. Up to 1.12.0 this was an extension whitelist, and an `Open with → FATE` on
  * anything not on it (`web.config`, say) did nothing whatsoever.
  */
-function isOpenableArg(arg) {
+async function isOpenableArg(arg) {
   if (!arg || arg.startsWith('-')) return false;
   let stat;
   try {
-    stat = fs.statSync(arg);
+    // Not statSync: a path on an unreachable share froze the whole window for the SMB timeout.
+    stat = await fs.promises.stat(arg);
   } catch (err) {
     // Under snap confinement a path the sandbox may not see fails with EACCES, not ENOENT; the
     // user still asked for that file. Keep it and let openAndWatchFile say why it will not open;
@@ -291,21 +292,25 @@ function rememberRecentFile(filePath) {
  */
 let lastDocumentFolder = null;
 
+/**
+ * Off the main thread and with a deadline, like the recents checks below: up to 1.15.0 this was
+ * statSync, so when the latest document sat on a NAS that had gone offline, Ctrl+O, Save As and
+ * Export PDF froze the whole window for the network timeout. A folder with no answer in time is
+ * passed over.
+ */
 function isExistingFolder(folder) {
-  try {
-    return fs.statSync(folder).isDirectory();
-  } catch {
-    return false;
-  }
+  const check = fs.promises.stat(folder).then((stat) => stat.isDirectory(), () => false);
+  return Promise.race([check, new Promise((resolve) => setTimeout(resolve, RECENT_CHECK_TIMEOUT_MS, false))]);
 }
 
 /** `defaultPath` for a file dialog: `fileName` (or nothing) in `preferredFolder` or the latest document's folder. */
-function dialogDefaultPath(fileName = '', preferredFolder = null) {
+async function dialogDefaultPath(fileName = '', preferredFolder = null) {
   if (fileName && path.isAbsolute(fileName)) return fileName;
   const latest = storedRecents()[0];
-  const folder = [preferredFolder, lastDocumentFolder, latest && path.dirname(latest.path)].find(
-    (candidate) => candidate && isExistingFolder(candidate)
-  );
+  const candidates = [preferredFolder, lastDocumentFolder, latest && path.dirname(latest.path)];
+  // All at once, so dead shares cost one deadline in total, not one each.
+  const exists = await Promise.all(candidates.map((candidate) => (candidate ? isExistingFolder(candidate) : false)));
+  const folder = candidates.find((_, i) => exists[i]);
   if (!folder) return fileName;
   return fileName ? path.join(folder, fileName) : folder;
 }
@@ -1094,7 +1099,7 @@ async function showPrintPreview(docName) {
 async function exportPdf(docName) {
   const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
     title: 'Export as PDF',
-    defaultPath: dialogDefaultPath(`${safeFileStem(docName)}.pdf`),
+    defaultPath: await dialogDefaultPath(`${safeFileStem(docName)}.pdf`),
     filters: [{ name: 'PDF Document', extensions: ['pdf'] }]
   });
   if (canceled || !filePath) return { ok: false, canceled: true };
@@ -2108,17 +2113,15 @@ let openArgsQueue = Promise.resolve();
 function handleArgs(argv, cwd) {
   // argv also carries the exe path, the app path in dev, and Chromium switches; see
   // isOpenableArg for why this is a shape check and not an extension list.
-  const seen = new Set();
-  const files = candidateFilePaths(argv, { cwd }).filter((filePath) => {
-    const key = watchKey(filePath);
-    if (seen.has(key) || !isOpenableArg(filePath)) return false;
-    seen.add(key);
-    return true;
-  });
+  const candidates = candidateFilePaths(argv, { cwd });
   // One at a time, and one command line after another: the tabs open in the order given, and the
   // last file named is the one left in front.
   openArgsQueue = openArgsQueue.then(async () => {
-    for (const filePath of files) {
+    const seen = new Set();
+    for (const filePath of candidates) {
+      const key = watchKey(filePath);
+      if (seen.has(key) || !(await isOpenableArg(filePath))) continue;
+      seen.add(key);
       try {
         await openAndWatchFile(filePath);
       } catch (err) {
@@ -2202,7 +2205,7 @@ app.whenReady().then(() => {
 
   ipcMain.handle('open-file-dialog', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
-      defaultPath: dialogDefaultPath(),
+      defaultPath: await dialogDefaultPath(),
       properties: ['openFile'],
       // "All files" FIRST, so it is the default: FATE opens any text file, and hiding
       // `web.config`, `.properties` or an extensionless Dockerfile behind a filter switch made
@@ -2258,7 +2261,7 @@ app.whenReady().then(() => {
     try {
       const result = await dialog.showSaveDialog(mainWindow, {
         title: 'Save As',
-        defaultPath: dialogDefaultPath(suggested, fromPath && path.dirname(fromPath)),
+        defaultPath: await dialogDefaultPath(suggested, fromPath && path.dirname(fromPath)),
         // "All files" first: with a curated filter selected, Windows appends that filter's first
         // extension to any name typed without one, so saving a new buffer as `Dockerfile` or
         // `.env` produced `Dockerfile.md`. The typed name is now taken literally.
