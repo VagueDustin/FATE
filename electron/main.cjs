@@ -1055,8 +1055,10 @@ async function showPrintPreview(docName) {
   });
   previewWindow.setMenu(Menu.buildFromTemplate(appMenu.buildPreviewMenuTemplate()));
 
+  let handedOff = false;
   previewWindow.on('closed', () => {
     previewWindow = null;
+    if (handedOff) return; // the system viewer has it now; tempCleanup.cjs removes it next launch
     // Best-effort cleanup; a leftover temp PDF is harmless but there is no reason to keep it.
     try {
       fs.unlinkSync(file);
@@ -1077,6 +1079,8 @@ async function showPrintPreview(docName) {
   previewWindow.webContents.once('did-fail-load', (_e, errorCode, errorDescription) => {
     console.error(`Print preview failed to render PDF (${errorCode}: ${errorDescription}); ` +
                   'falling back to the system PDF handler.');
+    // destroy() fires 'closed', which deleted the PDF before the system viewer could open it.
+    handedOff = true;
     if (previewWindow && !previewWindow.isDestroyed()) previewWindow.destroy();
     previewWindow = null;
     shell.openPath(file);
