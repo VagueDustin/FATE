@@ -329,6 +329,14 @@ function App() {
   const pendingRestoresRef = useRef(new Map());
   const backupStateRef = useRef(new Map());
   const backupQueueRef = useRef(new Map());
+  /**
+   * pathKey → the last disk generation main sent with this file's text (`meta.diskGen`). Saves
+   * carry it, so main can refuse one from a tab that has not seen the latest change yet.
+   */
+  const diskGenRef = useRef(new Map());
+  const noteDiskGen = (p, gen) => {
+    if (p && typeof gen === 'number') diskGenRef.current.set(pathKey(p), gen);
+  };
   const quittingRef = useRef(false);
   const restoreStartedRef = useRef(false);
   /** The current render's operations, for listeners registered once (IPC, menu, keys, timers). */
@@ -1084,6 +1092,7 @@ function App() {
       setStatusError(res?.error || `Couldn't reopen ${doc.name}`);
       return;
     }
+    noteDiskGen(doc.path, res.diskGen);
     const latest = getDoc(id);
     if (!latest || isDocDirty(latest)) return; // edited while the file was read: leave it be
     reloadDoc(latest, res.content, res.format ?? null);
@@ -1454,7 +1463,7 @@ function App() {
     try {
       let res;
       if (doc.path && !forceAs) {
-        res = await window.electronAPI.saveFile(doc.path, content, format);
+        res = await window.electronAPI.saveFile(doc.path, content, format, diskGenRef.current.get(pathKey(doc.path)));
         /*
          * Main only saves to paths it has open (opened by any route, or chosen in Save As). A tab
          * restored from a backup whose file was gone, or would not reopen, has a path main never
@@ -1475,6 +1484,7 @@ function App() {
       }
       if (res?.code === 'CHANGED_ON_DISK') {
         // Someone else's edit landed first: nothing was written, and the bar offers the choice.
+        noteDiskGen(doc.path, res.diskGen);
         const latest = getDoc(id);
         if (latest) applyDiskContent(latest, res.content, res.format ?? null);
         setStatusError(res.error);
@@ -1954,6 +1964,7 @@ function App() {
       }
 
       api.onOpenFile((content, name, path, meta) => {
+        noteDiskGen(path, meta.diskGen);
         opsRef.current.openDocument(content, name, path, meta);
       });
 
@@ -1963,6 +1974,7 @@ function App() {
        * changed-on-disk bar (see applyDiskContent).
        */
       api.onFileChanged((content, changedPath, meta) => {
+        noteDiskGen(changedPath, meta.diskGen);
         opsRef.current.onDiskChange(content, changedPath, meta);
       });
       api.onFileDeleted?.((deletedPath) => opsRef.current.markDeleted(deletedPath));

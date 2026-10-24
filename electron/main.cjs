@@ -272,14 +272,23 @@ function rememberRecentFile(filePath) {
 let lastDocumentFolder = null;
 
 /**
- * Off the main thread and with a deadline, like the recents checks below: up to 1.15.0 this was
- * statSync, so when the latest document sat on a NAS that had gone offline, Ctrl+O, Save As and
- * Export PDF froze the whole window for the network timeout. A folder with no answer in time is
- * passed over.
+ * Off the main thread, like the recents checks below: up to 1.15.0 this was statSync, so when the
+ * latest document sat on a NAS that had gone offline, Ctrl+O, Save As and Export PDF froze the
+ * whole window for the network timeout. A check still running is shared, so a dead share ties up
+ * one libuv thread, not one more per dialog.
  */
+const folderChecks = new Map();
+
 function isExistingFolder(folder) {
-  const check = fs.promises.stat(folder).then((stat) => stat.isDirectory(), () => false);
-  return Promise.race([check, new Promise((resolve) => setTimeout(resolve, RECENT_CHECK_TIMEOUT_MS, false))]);
+  let check = folderChecks.get(folder);
+  if (!check) {
+    check = fs.promises
+      .stat(folder)
+      .then((stat) => stat.isDirectory(), () => false)
+      .finally(() => folderChecks.delete(folder));
+    folderChecks.set(folder, check);
+  }
+  return check;
 }
 
 /** `defaultPath` for a file dialog: `fileName` (or nothing) in `preferredFolder` or the latest document's folder. */
@@ -287,9 +296,17 @@ async function dialogDefaultPath(fileName = '', preferredFolder = null) {
   if (fileName && path.isAbsolute(fileName)) return fileName;
   const latest = storedRecents()[0];
   const candidates = [preferredFolder, lastDocumentFolder, latest && path.dirname(latest.path)];
-  // All at once, so dead shares cost one deadline in total, not one each.
-  const exists = await Promise.all(candidates.map((candidate) => (candidate ? isExistingFolder(candidate) : false)));
-  const folder = candidates.find((_, i) => exists[i]);
+  /*
+   * All checked at once, then taken in order of preference against one deadline: a live first
+   * choice answers at once, and dead shares cost one deadline in all, after which a folder that
+   * has not answered is passed over.
+   */
+  const checks = candidates.map((candidate) => (candidate ? isExistingFolder(candidate) : null));
+  const deadline = new Promise((resolve) => setTimeout(resolve, RECENT_CHECK_TIMEOUT_MS, false));
+  let folder = null;
+  for (let i = 0; i < candidates.length && !folder; i++) {
+    if (checks[i] && (await Promise.race([checks[i], deadline]))) folder = candidates[i];
+  }
   if (!folder) return fileName;
   return fileName ? path.join(folder, fileName) : folder;
 }
@@ -1179,7 +1196,7 @@ let mainWindow;
  * that uses them.
  */
 const { ENCODINGS, ENCODING_LABELS, defaultFormat, encode, resolveFormat, sameFormat, normalizeText, textDigest } = require('./fileFormat.cjs');
-const { readTextFile, writeFileAtomic } = require('./textFiles.cjs');
+const { readTextFile, writeFileAtomic, diskChangeSince } = require('./textFiles.cjs');
 const { createFileWatcher } = require('./fileWatch.cjs');
 const { createBackupStore } = require('./backups.cjs');
 const { isRendererSettingKey, checkRendererSetting } = require('./rendererSettings.cjs');
@@ -1205,10 +1222,20 @@ const { isRendererSettingKey, checkRendererSetting } = require('./rendererSettin
  *                    flip back to UTF-8 at the next watch event.
  *   knownStamps      path → { size, mtimeMs } of the file as FATE last read or wrote it, so a
  *                    save can tell in one stat whether the file moved on since (diskMovedOn).
+ *   diskGens         path → how many times main has sent the renderer this file's disk text
+ *                    (open, reload, reopen, a refused save). Each delivery carries its number
+ *                    and a save carries the last one the tab received, so a save from a tab that
+ *                    has not seen the latest change yet is caught. Never reset: only ever higher.
  */
 const fileFormats = new Map();
 const knownText = new Map();
 const knownStamps = new Map();
+const diskGens = new Map();
+const nextDiskGen = (key) => {
+  const gen = (diskGens.get(key) ?? 0) + 1;
+  diskGens.set(key, gen);
+  return gen;
+};
 const forcedEncodings = new Map();
 
 /**
@@ -1290,7 +1317,7 @@ const fileWatcher = createFileWatcher({
      * The path rides along so the renderer can route the update to the right tab; the format,
      * because it can change on its own (a CRLF → LF conversion arrives with the text unchanged).
      */
-    if (mainWindow) mainWindow.webContents.send('file-changed', doc.text, filePath, { format });
+    if (mainWindow) mainWindow.webContents.send('file-changed', doc.text, filePath, { format, diskGen: nextDiskGen(key) });
   },
   onDeleted: (filePath) => {
     if (mainWindow && isOpenPath(filePath)) mainWindow.webContents.send('file-deleted', filePath);
@@ -1929,7 +1956,8 @@ function deliverOpenedFile(filePath, opts, doc, err) {
      */
     mainWindow.webContents.send('open-file', doc.text, path.basename(filePath), filePath, {
       fromRestore: !!opts.fromRestore,
-      format
+      format,
+      diskGen: nextDiskGen(key)
     });
   }
   fileWatcher.watch(filePath);
@@ -2045,39 +2073,39 @@ function prepareSave(name, content, passedFormat, recordedFormat) {
  * Has the file changed since FATE last read or wrote it, in a way the tab has not seen? Up to
  * 1.15.0 a save simply wrote: an external edit still in the watcher's debounce when Save was
  * pressed (the hold below drops it), or any edit on a mount that never reports changes, was
- * replaced without a word. Size and mtime first, so an ordinary save costs one stat; the text is
- * read only when they moved. Resolves null to go ahead, or a CHANGED_ON_DISK failure carrying the
- * disk text, which the renderer shows in its changed-on-disk bar. Must run under the path's hold.
+ * replaced without a word. The check itself is diskChangeSince (textFiles.cjs). `tabGen` is the
+ * last disk generation the tab received (see diskGens). Resolves null to go ahead, a
+ * CHANGED_ON_DISK failure carrying the disk text, which the renderer shows in its changed-on-disk
+ * bar, or CHANGED_UNREADABLE. Must run under the path's hold.
  */
-async function diskMovedOn(filePath, content) {
+async function diskMovedOn(filePath, content, tabGen) {
   const key = watchKey(filePath);
-  let stat;
-  try {
-    stat = await fs.promises.stat(filePath);
-  } catch {
-    return null; // gone: the save writes it again, as the deleted-file bar says it will
+  // The tab has not seen the latest disk text main sent it (still in flight, or not handled yet):
+  // what main knows is no guide to what the user saw, so the file is read and compared afresh.
+  const stale = typeof tabGen === 'number' && tabGen < (diskGens.get(key) ?? 0);
+  const check = await diskChangeSince(filePath, {
+    known: stale ? {} : { stamp: knownStamps.get(key), digest: knownText.get(key), format: fileFormats.get(key) },
+    savingDigest: textDigest(normalizeText(content)),
+    read: readDocument,
+    formatOf: (doc) => adoptFormat(key, doc)
+  });
+  if (check.stamp) knownStamps.set(key, check.stamp);
+  const name = path.basename(filePath);
+  if (check.verdict === 'unreadable') {
+    // Recorded above, so Save again goes ahead: the same choice as Keep mine.
+    const why = check.error.code === 'TOO_LARGE' ? 'it is now too large to open' : 'it no longer looks like text';
+    return saveFailure('CHANGED_UNREADABLE', `${name} changed on disk and ${why}, so it wasn't saved. Save again to overwrite it, or use Save As.`);
   }
-  const known = knownStamps.get(key);
-  if (known && stat.size === known.size && stat.mtimeMs === known.mtimeMs) return null;
-  let doc;
-  try {
-    doc = await readDocument(filePath);
-  } catch {
-    return null; // can't read it now, so there is no text to offer: save as FATE always did
-  }
-  knownStamps.set(key, doc.stamp);
-  const digest = textDigest(doc.text);
-  // Touched but not changed (a scan, a sync client), or already exactly what is being saved.
-  if (digest === knownText.get(key) || digest === textDigest(normalizeText(content))) return null;
-  const format = adoptFormat(key, doc);
-  fileFormats.set(key, format);
-  knownText.set(key, digest);
+  if (check.verdict !== 'changed') return null;
+  fileFormats.set(key, check.format);
+  knownText.set(key, check.digest);
   return {
     ok: false,
     code: 'CHANGED_ON_DISK',
-    error: `${path.basename(filePath)} changed on disk, so it wasn't saved. Reload, keep yours, or compare.`,
-    content: doc.text,
-    format
+    error: `${name} changed on disk, so it wasn't saved. Reload, keep yours, or compare.`,
+    content: check.doc.text,
+    format: check.format,
+    diskGen: nextDiskGen(key)
   };
 }
 
@@ -2087,12 +2115,12 @@ async function diskMovedOn(filePath, content) {
  * come back to the renderer as an external change; then it is re-armed, because an atomic save
  * leaves a new file at the path.
  */
-async function commitSave(filePath, prepared, content, { guard = false } = {}) {
+async function commitSave(filePath, prepared, content, { guard = false, tabGen } = {}) {
   const key = watchKey(filePath);
   const release = fileWatcher.hold(filePath);
   try {
     if (guard) {
-      const moved = await diskMovedOn(filePath, content);
+      const moved = await diskMovedOn(filePath, content, tabGen);
       if (moved) return moved;
     }
     await writeFileAtomic(filePath, prepared.data);
@@ -2132,10 +2160,16 @@ function handleArgs(argv, cwd) {
   // last file named is the one left in front.
   openArgsQueue = openArgsQueue.then(async () => {
     const seen = new Set();
-    for (const filePath of candidates) {
+    for (const [i, filePath] of candidates.entries()) {
       const key = watchKey(filePath);
       if (seen.has(key) || !(await isOpenableArg(filePath))) continue;
       seen.add(key);
+      // The page went away mid-batch (a crash, a reload): the rest waits for it to come back, as a
+      // command line arriving now would. Slot 0 is the exe path candidateFilePaths skips.
+      if (!rendererReady) {
+        pendingSecondInstanceArgs.push({ argv: ['', ...candidates.slice(i)], cwd });
+        return;
+      }
       try {
         await openAndWatchFile(filePath);
       } catch (err) {
@@ -2246,7 +2280,7 @@ app.whenReady().then(() => {
    * write somewhere new. Resolves { ok: true, format } with the format actually written, or
    * { ok: false, code, error }.
    */
-  ipcMain.handle('save-file', async (event, filePath, content, format) => {
+  ipcMain.handle('save-file', async (event, filePath, content, format, diskGen) => {
     if (typeof filePath !== 'string' || !filePath) return saveFailure('BAD_ARGS', 'No file path to save to');
     if (typeof content !== 'string') return saveFailure('BAD_ARGS', 'Nothing to save');
     const name = path.basename(filePath);
@@ -2254,7 +2288,7 @@ app.whenReady().then(() => {
       return saveFailure('NOT_OPEN', `Can't save ${name}: it isn't a file FATE has open. Use Save As instead.`);
     }
     const prepared = prepareSave(name, content, format, fileFormats.get(watchKey(filePath)));
-    return prepared.ok ? commitSave(filePath, prepared, content, { guard: true }) : prepared;
+    return prepared.ok ? commitSave(filePath, prepared, content, { guard: true, tabGen: diskGen }) : prepared;
   });
 
   /**
@@ -2329,7 +2363,7 @@ app.whenReady().then(() => {
       knownText.set(key, textDigest(doc.text));
       knownStamps.set(key, doc.stamp);
       forcedEncodings.set(key, encoding);
-      return { ok: true, content: doc.text, format: doc.format };
+      return { ok: true, content: doc.text, format: doc.format, diskGen: nextDiskGen(key) };
     } catch (err) {
       if (err.code === 'BINARY' || err.code === 'INVALID') {
         return { ok: false, code: err.code, error: `Can't reopen ${name} as ${ENCODING_LABELS[encoding]}: ${err.message}.` };

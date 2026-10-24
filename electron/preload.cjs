@@ -60,13 +60,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
    *
    * `saveFile` writes the buffer back to the path it was opened from; the main process remembers
    * the written content so its file watcher can tell our own save apart from an external edit
-   * (otherwise every save would echo back as a "file changed on disk" event).
+   * (otherwise every save would echo back as a "file changed on disk" event). It first checks the
+   * file has not changed since, and resolves { ok: false, code: 'CHANGED_ON_DISK', content, format,
+   * diskGen } instead of writing when it has. `diskGen` is the last `meta.diskGen` the renderer
+   * received for the path (open, reload, reopen, a refused save), so a change still on its way to
+   * the tab is caught too.
    *
    * `saveFileAs` opens a save dialog and, on success, retargets the watcher and recents to the new
    * path WITHOUT re-sending 'open-file'. The response carries { filePath, name } and the renderer
    * updates its own state, keeping cursor and scroll position intact.
    */
-  saveFile: (filePath, content, format) => ipcRenderer.invoke('save-file', filePath, content, format),
+  saveFile: (filePath, content, format, diskGen) => ipcRenderer.invoke('save-file', filePath, content, format, diskGen),
   saveFileAs: (suggestedName, content, oldPath, format) =>
     ipcRenderer.invoke('save-file-as', suggestedName, content, oldPath, format),
 
