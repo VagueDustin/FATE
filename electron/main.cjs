@@ -184,7 +184,30 @@ if (process.env.FATE_USER_DATA) {
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) app.quit();
 
-const store = new Store({
+/*
+ * A config.json that does not parse (a crash or power cut part-way through a write; under snap
+ * conf writes in place, not atomically) threw from here, before any window existed, on every
+ * launch, and FATE could not start again until someone deleted the file by hand. It is set aside
+ * beside the original instead, and FATE starts on its defaults (test/storeRecovery.test.cjs pins
+ * the SyntaxError this relies on).
+ */
+function openStore(options) {
+  try {
+    return new Store(options);
+  } catch (err) {
+    if (!(err instanceof SyntaxError)) throw err;
+    const file = path.join(app.getPath('userData'), 'config.json');
+    try {
+      fs.renameSync(file, `${file}.corrupt-${Date.now()}`);
+    } catch {
+      /* already gone, or unmovable: conf rewrites it either way */
+    }
+    console.warn(`Settings file did not parse and was set aside: ${err.message}`);
+    return new Store({ ...options, clearInvalidConfig: true });
+  }
+}
+
+const store = openStore({
   defaults: {
     // 'fate' = VagueDustin Enterprises navy & gold (utility tier), the default since 1.5.0.
     // Installs carrying the pre-1.5.0 'dark' value are migrated to 'fate' in the renderer; see
