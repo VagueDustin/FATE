@@ -79,8 +79,13 @@ export function sniffLanguage(content) {
 /** Files up to this size get a full JSON.parse when their first token doesn't settle it. */
 const JSON_PARSE_LIMIT = 1024 * 1024;
 
-/** Whitespace and JSONC comments, which may sit between JSON tokens. */
-const GAP = String.raw`(?:\s|//[^\n]*(?:\n|$)|/\*[\s\S]*?\*/)*`;
+/**
+ * Whitespace and JSONC comments, which may sit between JSON tokens. A block comment ends at its
+ * FIRST `*\/`: the lazy `/\*[\s\S]*?\*\/` it replaced could also stretch across several comments,
+ * so a failing match tried every way of grouping them, doubling the time per comment. A file with
+ * thirty comments before an unquoted key froze the window on open.
+ */
+const GAP = String.raw`(?:\s|//[^\n]*(?:\n|$)|/\*(?:[^*]|\*(?!/))*\*/)*`;
 const SCALAR = String.raw`(?:-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)`;
 const OBJECT_HEAD = new RegExp(String.raw`^\{${GAP}["}]`);
 const ARRAY_HEAD = new RegExp(String.raw`^\[${GAP}(?:[[{"]|${SCALAR}${GAP}[,\]]|\]${GAP}$)`);
