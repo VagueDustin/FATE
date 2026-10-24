@@ -116,6 +116,15 @@ test('isAllowedShortcut: Ctrl, Alt or Meta required, except F1-F12 and a lone Es
   }
 });
 
+test('isAllowedShortcut: not the fixed tab keys App handles before any binding', () => {
+  for (const bad of ['Control+1', 'Control+9', 'Control+PageUp', 'Control+PageDown', 'Control+Shift+PageDown']) {
+    assert.ok(!isAllowedShortcut(bad), bad);
+  }
+  for (const ok of ['Control+Shift+1', 'Alt+1', 'Control+Alt+PageUp', 'Control+0']) {
+    assert.ok(isAllowedShortcut(ok), ok);
+  }
+});
+
 test('shortcutParts and formatShortcutLabel read like keycaps', () => {
   assert.deepEqual(shortcutParts('Control+Shift+S', 'linux'), ['Ctrl', 'Shift', 'S']);
   assert.equal(formatShortcutLabel('Control+Plus', 'win32'), 'Ctrl+Plus');

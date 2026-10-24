@@ -2125,8 +2125,10 @@ function App() {
         return;
       }
 
-      // Fixed: Ctrl+1–9 jump (9 = last), Ctrl+PgUp/PgDn cycle.
-      if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && /^[1-9]$/.test(e.key)) {
+      // Fixed: Ctrl+1–9 jump (9 = last), Ctrl+PgUp/PgDn cycle. Not under Settings or the palette,
+      // where they switched tabs behind the open layer.
+      const modalOpen = showSettings || showPalette;
+      if (!modalOpen && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && /^[1-9]$/.test(e.key)) {
         e.preventDefault();
         const ds = docsRef.current;
         if (ds.length > 0) {
@@ -2135,7 +2137,7 @@ function App() {
         }
         return;
       }
-      if (e.ctrlKey && !e.altKey && !e.metaKey && (e.key === 'PageDown' || e.key === 'PageUp')) {
+      if (!modalOpen && e.ctrlKey && !e.altKey && !e.metaKey && (e.key === 'PageDown' || e.key === 'PageUp')) {
         e.preventDefault();
         opsRef.current.runAction(e.key === 'PageDown' ? 'nextTab' : 'prevTab');
         return;
