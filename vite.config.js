@@ -14,7 +14,8 @@ import react from '@vitejs/plugin-react'
  *   - images from the app, data:/blob:, local files over fate-local:, and https: for the
  *     remote images a user chooses to load (src/markdown.js keeps them out until then);
  *   - fonts bundled with the app, nothing fetched or connected to anywhere else, no plugins,
- *     frames, <base> or form submissions.
+ *     frames, <base> or form submissions;
+ *   - no media at all: on a file:// page 'self' also matches file://host/share, an SMB fetch.
  * With a policy in place Electron also stops printing its "Insecure Content-Security-Policy"
  * warning in the console.
  */
@@ -25,6 +26,7 @@ const CONTENT_SECURITY_POLICY = [
   "img-src 'self' data: blob: fate-local: https:",
   "font-src 'self' data:",
   "connect-src 'self'",
+  "media-src 'none'",
   "object-src 'none'",
   "frame-src 'none'",
   "base-uri 'none'",

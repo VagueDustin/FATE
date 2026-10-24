@@ -165,6 +165,10 @@ function annotateLines(root) {
  *     the app's elements. #fragment links look for either form (previewLinks.js).
  *   - Nothing that fetches by itself: `srcset`, `poster`, `background` and CSS `url()` in SVG
  *     paint attributes are dropped; <img> is handled below (remote images are opt-in).
+ *   - No <audio>, <video>, <source> or <track>: they fetch their `src` the moment they parse, past
+ *     the remote-image opt-in, and a `//host/share` src on this file:// page is an SMB request
+ *     that hands the Windows login hash to that host (C5 in previewPaths.js). Local media never
+ *     played here anyway (fate-local serves images only).
  */
 const purifier = DOMPurify(window);
 
@@ -174,7 +178,8 @@ const SANITIZE_CONFIG = {
   ADD_ATTR: ['class', 'style', 'aria-hidden', 'encoding', 'xmlns', 'viewBox', 'd', 'preserveAspectRatio'],
   FORBID_TAGS: [
     'style', 'form', 'button', 'textarea', 'select', 'option', 'optgroup', 'datalist', 'dialog',
-    'meta', 'link', 'base', 'iframe', 'frame', 'frameset', 'object', 'embed', 'image'
+    'meta', 'link', 'base', 'iframe', 'frame', 'frameset', 'object', 'embed', 'image',
+    'audio', 'video', 'source', 'track'
   ],
   FORBID_ATTR: [
     'popover', 'popovertarget', 'popovertargetaction', 'command', 'commandfor', 'interestfor',
