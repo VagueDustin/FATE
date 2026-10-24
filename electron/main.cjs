@@ -1989,8 +1989,11 @@ function showRestoreFailures() {
  */
 async function openRecentFile(filePath, opts) {
   if (typeof filePath !== 'string' || !filePath) return { ok: false, reason: 'missing' };
-  const result = await openAndWatchFile(filePath, { fromRestore: !!(opts && opts.fromRestore) });
-  if (result.reason === 'missing') forgetRecentFile(filePath);
+  const fromRestore = !!(opts && opts.fromRestore);
+  const result = await openAndWatchFile(filePath, { fromRestore });
+  // Not during session restore: an unplugged drive or an unmapped share at launch reads as
+  // missing, and used to wipe those files from the recents. The home screen greys them out.
+  if (result.reason === 'missing' && !fromRestore) forgetRecentFile(filePath);
   return result;
 }
 
