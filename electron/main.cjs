@@ -1364,7 +1364,9 @@ function createWindow() {
       return;
     }
     e.preventDefault();
-    clearTimeout(closeHandoffTimer);
+    // Asked already: the walk is open, or the escape hatch is counting down. Restarting the timer
+    // on every click kept a window whose page never answers open for as long as you kept trying.
+    if (closeHandoffTimer) return;
     closeHandoffTimer = setTimeout(() => {
       closeConfirmed = true;
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
@@ -1377,6 +1379,7 @@ function createWindow() {
   ipcMain.on('confirmed-close', (event, proceed) => {
     if (BrowserWindow.fromWebContents(event.sender) !== mainWindow) return;
     clearTimeout(closeHandoffTimer);
+    closeHandoffTimer = null;
     if (!proceed) {
       installAfterClose = false;
       return;
@@ -1519,8 +1522,32 @@ function createWindow() {
   });
   // 'did-navigate', not 'did-start-navigation': the latter also fires for the navigations
   // will-navigate then refuses, and the page that stays is still listening.
+  // The old page's tabs are gone, and with them its files: they stop being watched and stop being
+  // saveable, which nothing did on a reload before (no tab sends close-file as the page unloads).
+  // What the new page restores, it opens again.
   mainWindow.webContents.on('did-navigate', () => {
     rendererReady = false;
+    for (const key of [...fileFormats.keys()]) forgetPath(key);
+  });
+
+  /*
+   * The page crashed or was killed. Up to 1.15.0 nothing listened: the dirty flag stayed set, so
+   * every close went to a page that could never answer and the window stayed open until the
+   * 60-second escape hatch, and files from a second instance were sent to it and lost. The work
+   * is in the hot-exit backups, so the page reloads and restores it; a second crash within a
+   * minute is left on screen rather than looping.
+   */
+  let lastRendererCrash = 0;
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    if (details.reason === 'clean-exit') return;
+    console.error(`The window's renderer stopped (${details.reason}).`);
+    rendererReady = false;
+    documentEdited = false;
+    clearTimeout(closeHandoffTimer);
+    closeHandoffTimer = null;
+    const now = Date.now();
+    if (!closing && now - lastRendererCrash > 60000 && !mainWindow.isDestroyed()) mainWindow.webContents.reload();
+    lastRendererCrash = now;
   });
 
   // The page's renderer usually starts while the spellcheck dictionary is still loading, and then
