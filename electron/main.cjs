@@ -2445,7 +2445,12 @@ app.whenReady().then(() => {
     if(mainWindow) mainWindow.webContents.send('update-message', 'Update downloaded! Ready to install.', 'install');
   });
 
-  if (!isDev && !updateSource.managed) {
+  /*
+   * Only with the Automatic updates setting on. Up to 1.15.0 this ran on every launch regardless,
+   * so turning the setting off still contacted GitHub, downloaded the update and installed it on
+   * quit, against what PRIVACY.md promises.
+   */
+  if (!isDev && !updateSource.managed && store.get('autoUpdatesEnabled')) {
     // Offline launches reject here; the 'error' handler above has already told the status bar.
     autoUpdater.checkForUpdatesAndNotify().catch(() => {});
   }
