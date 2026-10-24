@@ -34,7 +34,7 @@ import {
 } from './fileKinds.js';
 import { defaultFormat, formatChanged, toggledEol } from './docFormat.js';
 import {
-  newBackupId, backupPayload, planRestore, untitledNumber, sameSignature, setCrashFlusher
+  newBackupId, backupPayload, planRestore, untitledNumber, sameSignature, setCrashFlusher, fitsBackup
 } from './hotExit.js';
 import { resolveFonts, applyFonts, editorFontFor, DEFAULT_FONTS } from './fonts.js';
 import {
@@ -323,12 +323,14 @@ function App() {
    *   pendingRestoresRef pathKey → backup waiting for its file's tab to open
    *   backupStateRef     backupId → what was last written ({ written, seen, pendingSince })
    *   backupQueueRef     backupId → promise chain, so a remove can never overtake a write
+   *   backupTooLargeRef  backupIds of tabs already told they are too large to back up
    *   quittingRef        set once the quit walk is done: no more backups, no unload guard
    */
   const liveEditorsRef = useRef(new Map());
   const pendingRestoresRef = useRef(new Map());
   const backupStateRef = useRef(new Map());
   const backupQueueRef = useRef(new Map());
+  const backupTooLargeRef = useRef(new Set());
   /**
    * pathKey → the last disk generation main sent with this file's text (`meta.diskGen`). Saves
    * carry it, so main can refuse one from a tab that has not seen the latest change yet.
@@ -550,6 +552,13 @@ function App() {
     doc.format, doc.name, doc.path, doc.kind, !!doc.editMode
   ];
 
+  /** Would main accept this doc's backup? From lengths alone: CodeMirror docs know theirs. */
+  const docFitsBackup = (doc, editor) => {
+    const content = editor ? editor.getDocSnapshot() : doc.kind === 'markdown' ? doc.source : doc.codeContent;
+    const saved = !doc.path ? null : editor ? editor.getSavedDoc() : docBaseline(doc);
+    return fitsBackup(content?.length ?? 0, saved?.length ?? 0);
+  };
+
   const writeBackup = (doc, editor) => {
     const api = window.electronAPI?.backups;
     const content = editor ? editor.getContent() : doc.kind === 'markdown' ? doc.source : doc.codeContent;
@@ -577,6 +586,17 @@ function App() {
         if (st) dropBackup(doc);
         continue;
       }
+      if (!docFitsBackup(doc, editor)) {
+        if (st) dropBackup(doc); // an older, smaller copy would bring back the wrong text
+        if (!backupTooLargeRef.current.has(doc.backupId)) {
+          backupTooLargeRef.current.add(doc.backupId);
+          patchDoc(doc.id, {
+            notice: { text: `${doc.name} is too large for crash recovery, so its unsaved changes are not backed up. Save often.` }
+          });
+        }
+        continue;
+      }
+      backupTooLargeRef.current.delete(doc.backupId); // cut back down to size: backed up again
       if (!st) {
         st = { written: null, seen: null, pendingSince: 0, retryAt: 0 };
         backupStateRef.current.set(doc.backupId, st);
@@ -611,7 +631,7 @@ function App() {
    */
   const flushBackupsNow = () => {
     const api = window.electronAPI?.backups;
-    const dirty = docsRef.current.filter((d) => d.dirty);
+    const dirty = docsRef.current.filter((d) => d.dirty && !backupTooLargeRef.current.has(d.backupId));
     if (!dirty.length) return Promise.resolve(true);
     if (!api?.write) return Promise.resolve(false);
     return Promise.all(
@@ -2237,6 +2257,10 @@ function App() {
           return;
         }
         opsRef.current.openDocument(text, file.name, resolvedPath);
+      };
+      reader.onerror = () => {
+        setIsLoading(false);
+        setStatusError(`Can't open ${file.name}: ${reader.error?.message || 'it could not be read'}`);
       };
       reader.readAsText(file);
     }

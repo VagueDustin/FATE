@@ -5,7 +5,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { readTextFile, writeFileAtomic, diskChangeSince } = require('../electron/textFiles.cjs');
+const { constants } = require('node:buffer');
+const { MAX_FILE_BYTES, readTextFile, writeFileAtomic, diskChangeSince } = require('../electron/textFiles.cjs');
 const { textDigest } = require('../electron/fileFormat.cjs');
 
 const posix = process.platform !== 'win32';
@@ -47,6 +48,13 @@ test('readTextFile refuses folders, oversized and binary files with coded errors
   fs.writeFileSync(bin, Buffer.from([0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01, 0x01, 0x00]));
   await assert.rejects(readTextFile(bin), (err) => err.code === 'BINARY');
   await assert.rejects(readTextFile(path.join(dir, 'missing.txt')), (err) => err.code === 'ENOENT');
+});
+
+test('the size cap stays under the longest string V8 can hold', () => {
+  // Decoded text is at most one UTF-16 unit per byte, so a file under the cap always decodes. Past
+  // MAX_STRING_LENGTH the decoder throws a RangeError that reads as a generic open failure.
+  assert.ok(MAX_FILE_BYTES <= constants.MAX_STRING_LENGTH, `${MAX_FILE_BYTES} > ${constants.MAX_STRING_LENGTH}`);
+  assert.ok(MAX_FILE_BYTES >= 160 * 1024 * 1024, 'a 160 MB report export must open (issue from 1.15.0)');
 });
 
 test('an atomic save replaces the file and leaves nothing behind', async (t) => {

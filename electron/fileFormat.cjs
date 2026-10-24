@@ -47,7 +47,7 @@ const BOMS = [
 
 /**
  * How much of a file the binary and UTF-16 sniffs look at. 8 KB is the same window the binary
- * sniff has always used: enough to see an executable's or image's header, cheap on a 25 MB file.
+ * sniff has always used: enough to see an executable's or image's header, cheap on a 500 MB file.
  */
 const SNIFF_BYTES = 8192;
 
@@ -222,7 +222,7 @@ function normalizeText(text) {
 
 /**
  * A short fingerprint of a document's text, for "has the file really changed?" checks without
- * holding a second copy of a 25 MB log. Not a security measure; collisions are irrelevant here.
+ * holding a second copy of a 500 MB log. Not a security measure; collisions are irrelevant here.
  */
 function textDigest(text) {
   return crypto.createHash('sha1').update(text).digest('base64');
