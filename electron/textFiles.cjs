@@ -29,6 +29,17 @@ const fsp = fs.promises;
  */
 const realpath = promisify(fs.realpath);
 
+/**
+ * The largest file FATE opens. The ceiling is V8's, not FATE's: a JS string holds at most
+ * buffer.constants.MAX_STRING_LENGTH (2^29 - 24, about 536 million) UTF-16 units, and the decoded
+ * text of an N-byte file is at most N units in every encoding FATE reads, so a cap under that can
+ * always be decoded (test/textFiles.test.cjs holds it there). Up to 1.15.0 this was 25 MB, which
+ * refused real report exports and logs; measured on 1.15.0, a 160 MB file opens in under 2 s and
+ * a 500 MB one in about 4, with typing and saving unaffected (the editor's large-file mode
+ * starts at 5 MB, see src/fileKinds.js). IPC is not the limit: 300M characters cross in a second.
+ */
+const MAX_FILE_BYTES = 500 * 1024 * 1024;
+
 function codedError(code, message, extra) {
   const err = new Error(message);
   err.code = code;
@@ -240,14 +251,20 @@ async function writeFileAtomic(filePath, data, { mode = 0o666 } = {}) {
  * Resolves `{ verdict, stamp? }`, the stamp being the file's as it is now:
  *   'unchanged'   write (also when the disk already holds exactly the text being saved)
  *   'missing'     write: the save brings the file back
- *   'unknown'     write: it can't be checked (permissions), and the write reports any real error
+ *   'unknown'     write: it can't be checked (permissions), or it isn't a regular file any more,
+ *                 and the write reports any real error (writeFileAtomic refuses a non-file)
  *   'changed'     don't write. Also { doc, format, digest } for showing the disk text
  *   'unreadable'  don't write: it changed but can't be shown (too large, binary). Also { error }
  */
 async function diskChangeSince(filePath, { known = {}, savingDigest, read, formatOf = (doc) => doc.format }) {
   let stat;
   try {
-    const handle = await fsp.open(filePath, 'r');
+    /*
+     * Non-blocking where the platform has the flag: a plain read-only open of a FIFO waits for a
+     * writer to connect, so a path replaced by one would hang Save (and a quit that saves) for good.
+     * Windows has no such files at an ordinary path, and no O_NONBLOCK.
+     */
+    const handle = await fsp.open(filePath, fs.constants.O_RDONLY | (fs.constants.O_NONBLOCK ?? 0));
     try {
       stat = await handle.stat();
     } finally {
@@ -256,6 +273,7 @@ async function diskChangeSince(filePath, { known = {}, savingDigest, read, forma
   } catch (err) {
     return { verdict: err.code === 'ENOENT' ? 'missing' : 'unknown' };
   }
+  if (!stat.isFile()) return { verdict: 'unknown' };
   const stamp = { size: stat.size, mtimeMs: stat.mtimeMs };
   if (known.stamp && stamp.size === known.stamp.size && stamp.mtimeMs === known.stamp.mtimeMs) {
     return { verdict: 'unchanged', stamp };
@@ -276,4 +294,4 @@ async function diskChangeSince(filePath, { known = {}, savingDigest, read, forma
   return { verdict: 'changed', stamp: doc.stamp, doc, format, digest };
 }
 
-module.exports = { readTextFile, writeFileAtomic, diskChangeSince };
+module.exports = { MAX_FILE_BYTES, readTextFile, writeFileAtomic, diskChangeSince };

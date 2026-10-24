@@ -207,3 +207,38 @@ test('sameFormat, normalizeText and textDigest', () => {
   assert.ok(!ff.sameFormat(null, { encoding: 'utf8', bom: false, eol: '\n' }));
   assert.equal(ff.normalizeText('a\r\nb\rc\n'), 'a\nb\nc\n');
 });
+
+test('widened line breaks are encoded in pieces with exactly the bytes of one pass', () => {
+  // Small pieces so every boundary is exercised: a cut after a line break, a line longer than a
+  // piece, and a surrogate pair that would straddle a cut.
+  const texts = [
+    'one\ntwo\nthree\n',
+    'no line break at all, longer than a piece',
+    'a\n\n\nb',
+    `${'x'.repeat(6)}\u{1F600}${'y'.repeat(6)}\n\u{1F600}\n`,
+    '\n',
+    ''
+  ];
+  for (const encoding of ['utf8', 'utf16le', 'utf16be', 'windows1252']) {
+    for (const eol of ['\r\n', '\r']) {
+      for (const text of texts) {
+        if (encoding === 'windows1252' && /[\u{10000}-\u{10FFFF}]/u.test(text)) continue;
+        const format = { encoding, bom: encoding !== 'windows1252', eol };
+        const whole = ff.encode(text, format);
+        for (const chunk of [1, 2, 3, 7]) {
+          assert.ok(ff.encode(text, format, { chunk }).equals(whole), `${encoding} ${JSON.stringify(eol)} chunk ${chunk}: ${JSON.stringify(text)}`);
+        }
+      }
+    }
+  }
+  assert.equal(ff.encode('a\nb', { encoding: 'utf8', bom: false, eol: '\r\n' }, { chunk: 1 }).toString(), 'a\r\nb');
+});
+
+test('widening line breaks stays linear on one very long line', () => {
+  // Searching back for a line break from every piece made this quadratic: seconds, not ms.
+  const text = 'x'.repeat(4 * 1024 * 1024);
+  const start = Date.now();
+  const out = ff.encode(text, { encoding: 'utf8', bom: false, eol: '\r\n' }, { chunk: 1000 });
+  assert.equal(out.length, text.length);
+  assert.ok(Date.now() - start < 1500, `took ${Date.now() - start} ms`);
+});

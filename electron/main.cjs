@@ -47,8 +47,8 @@ const MAX_RECENT_FILES = 8;
 /* ════════════════════════════════════════════════════════════════════════════════════════════
    FILE TYPES
    The main process reads bytes and watches paths; it does not care what a file *is*. FATE opens
-   ANY text file. The only gates are size (MAX_FILE_BYTES) and a binary sniff (isProbablyBinary,
-   in fileFormat.cjs).
+   ANY text file. The only gates are size (MAX_FILE_BYTES, in textFiles.cjs) and a binary sniff
+   (isProbablyBinary, in fileFormat.cjs).
    These lists exist for the curated open-dialog filters and for Windows registration (which
    types the installer advertises FATE for). Up to 1.12.0 they ALSO gated the command line and
    drag & drop, so "Edit in FATE" on a `.config`, `.properties`, `.reg`, `.csv` or any other
@@ -108,13 +108,6 @@ const PROTECTED_EXTENSIONS = ['bat', 'cmd'];
 /** Every type FATE may register against: what the installer writes and the coverage counter walks. */
 const ASSOCIABLE_CODE_EXTENSIONS = CODE_EXTENSIONS.filter((e) => !PROTECTED_EXTENSIONS.includes(e));
 const ASSOCIABLE_EXTENSIONS = [...MARKDOWN_EXTENSIONS, ...ASSOCIABLE_CODE_EXTENSIONS];
-
-/**
- * Refuse files above this size rather than feeding them to the renderer. 25 MB of text is already
- * an unpleasant document; past that the single-string IPC payload and the editor both suffer, and
- * the likeliest candidates (giant logs, minified bundles) aren't things FATE is for.
- */
-const MAX_FILE_BYTES = 25 * 1024 * 1024;
 
 /**
  * Is this command-line argument a file the user wants opened?
@@ -1195,7 +1188,7 @@ let mainWindow;
  * that uses them.
  */
 const { ENCODINGS, ENCODING_LABELS, defaultFormat, encode, resolveFormat, sameFormat, normalizeText, textDigest } = require('./fileFormat.cjs');
-const { readTextFile, writeFileAtomic, diskChangeSince } = require('./textFiles.cjs');
+const { MAX_FILE_BYTES, readTextFile, writeFileAtomic, diskChangeSince } = require('./textFiles.cjs');
 const { createFileWatcher } = require('./fileWatch.cjs');
 const { createBackupStore } = require('./backups.cjs');
 const { isRendererSettingKey, checkRendererSetting } = require('./rendererSettings.cjs');
@@ -1215,7 +1208,7 @@ const { isRendererSettingKey, checkRendererSetting } = require('./rendererSettin
  *                    matches is not a change and is not sent. (This was lastSavedByApp, which knew
  *                    only FATE's own saves and compared raw text, so a CRLF file reloaded on every
  *                    stray event: its \r\n text never equalled the editor's \n text.) A digest,
- *                    so a 25 MB log is not held a second time.
+ *                    so a 500 MB log is not held a second time.
  *   forcedEncodings  path → the encoding picked with Reopen with encoding. Reloads keep decoding
  *                    with it; Windows-1252 text that happens to be valid UTF-8 would otherwise
  *                    flip back to UTF-8 at the next watch event.

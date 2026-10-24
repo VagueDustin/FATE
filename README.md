@@ -29,7 +29,7 @@ The only network request FATE makes is the update check on installs that update 
 
 ### Text and code editing
 
-- **Opens any text file.** Nothing is gated on the extension. The only limits are a 25 MB size cap and a
+- **Opens any text file.** Nothing is gated on the extension. The only limits are a 500 MB size cap and a
   check that refuses binary files, and both explain themselves.
 - **Files stay the way they were.** Line endings (CRLF or LF), encoding (UTF-8 with or without a byte-order
   mark, UTF-16 and Windows-1252) and indentation (tabs or spaces, and how wide) are detected and written

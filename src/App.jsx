@@ -34,7 +34,7 @@ import {
 } from './fileKinds.js';
 import { defaultFormat, formatChanged, toggledEol } from './docFormat.js';
 import {
-  newBackupId, backupPayload, planRestore, untitledNumber, sameSignature, setCrashFlusher
+  newBackupId, backupPayload, planRestore, untitledNumber, sameSignature, setCrashFlusher, fitsBackup
 } from './hotExit.js';
 import { resolveFonts, applyFonts, editorFontFor, DEFAULT_FONTS } from './fonts.js';
 import {
@@ -323,12 +323,16 @@ function App() {
    *   pendingRestoresRef pathKey → backup waiting for its file's tab to open
    *   backupStateRef     backupId → what was last written ({ written, seen, pendingSince })
    *   backupQueueRef     backupId → promise chain, so a remove can never overtake a write
+   *   backupTooLargeRef  backupIds of tabs already told they are too large to back up
    *   quittingRef        set once the quit walk is done: no more backups, no unload guard
    */
   const liveEditorsRef = useRef(new Map());
   const pendingRestoresRef = useRef(new Map());
   const backupStateRef = useRef(new Map());
   const backupQueueRef = useRef(new Map());
+  const backupTooLargeRef = useRef(new Set());
+  /** backupId → content + baseline length main refused as too large (its 192 MB cap on the file) */
+  const backupRefusedRef = useRef(new Map());
   /**
    * pathKey → the last disk generation main sent with this file's text (`meta.diskGen`). Saves
    * carry it, so main can refuse one from a tab that has not seen the latest change yet.
@@ -550,12 +554,33 @@ function App() {
     doc.format, doc.name, doc.path, doc.kind, !!doc.editMode
   ];
 
+  /** Would main accept this doc's backup? From lengths alone: CodeMirror docs know theirs. */
+  const docFitsBackup = (doc, editor) => {
+    const content = editor ? editor.getDocSnapshot() : doc.kind === 'markdown' ? doc.source : doc.codeContent;
+    const saved = !doc.path ? null : editor ? editor.getSavedDoc() : docBaseline(doc);
+    const contentLength = content?.length ?? 0;
+    const savedLength = saved?.length ?? 0;
+    /*
+     * Main also caps the whole backup file (192 MB), which characters alone can't predict: CJK
+     * text is three bytes each. Once main refuses a doc, it stays refused until it shrinks, rather
+     * than being serialised and refused again every few seconds.
+     */
+    const refusedAt = backupRefusedRef.current.get(doc.backupId);
+    if (refusedAt !== undefined && contentLength + savedLength >= refusedAt) return false;
+    return fitsBackup(contentLength, savedLength);
+  };
+
   const writeBackup = (doc, editor) => {
     const api = window.electronAPI?.backups;
     const content = editor ? editor.getContent() : doc.kind === 'markdown' ? doc.source : doc.codeContent;
     const saved = doc.path ? docBaseline(doc) : null;
     const data = backupPayload(doc, content, saved);
-    return queueBackupOp(doc.backupId, () => api.write(doc.backupId, data));
+    const length = content.length + (saved?.length ?? 0);
+    return queueBackupOp(doc.backupId, async () => {
+      const res = await api.write(doc.backupId, data);
+      if (res?.code === 'TOO_LARGE') backupRefusedRef.current.set(doc.backupId, length);
+      return res;
+    });
   };
 
   /**
@@ -577,6 +602,17 @@ function App() {
         if (st) dropBackup(doc);
         continue;
       }
+      if (!docFitsBackup(doc, editor)) {
+        if (st) dropBackup(doc); // an older, smaller copy would bring back the wrong text
+        if (!backupTooLargeRef.current.has(doc.backupId)) {
+          backupTooLargeRef.current.add(doc.backupId);
+          patchDoc(doc.id, {
+            notice: { text: `${doc.name} is too large for crash recovery, so its unsaved changes are not backed up. Save often.` }
+          });
+        }
+        continue;
+      }
+      backupTooLargeRef.current.delete(doc.backupId); // cut back down to size: backed up again
       if (!st) {
         st = { written: null, seen: null, pendingSince: 0, retryAt: 0 };
         backupStateRef.current.set(doc.backupId, st);
@@ -611,8 +647,10 @@ function App() {
    */
   const flushBackupsNow = () => {
     const api = window.electronAPI?.backups;
-    const dirty = docsRef.current.filter((d) => d.dirty);
-    if (!dirty.length) return Promise.resolve(true);
+    // A tab too large to back up is unsaved work this flush can't keep: never report it kept.
+    const skipped = docsRef.current.some((d) => d.dirty && backupTooLargeRef.current.has(d.backupId));
+    const dirty = docsRef.current.filter((d) => d.dirty && !backupTooLargeRef.current.has(d.backupId));
+    if (!dirty.length) return Promise.resolve(!skipped);
     if (!api?.write) return Promise.resolve(false);
     return Promise.all(
       dirty.map((doc) => {
@@ -623,9 +661,10 @@ function App() {
         if (doc.path) {
           saved = live ? live.handle.getSavedContent() : doc.kind === 'markdown' ? doc.savedSource : doc.savedContent ?? doc.codeContent;
         }
-        return api.write(doc.backupId, backupPayload(doc, content, saved)).then(() => true, () => false);
+        // Main resolves { ok: false } for a write it refused: that is a failure too.
+        return api.write(doc.backupId, backupPayload(doc, content, saved)).then((r) => r?.ok !== false, () => false);
       })
-    ).then((results) => results.every(Boolean));
+    ).then((results) => !skipped && results.every(Boolean));
   };
 
   /* ── Opening ─────────────────────────────────────────────────────────────────────────────── */
@@ -2237,6 +2276,10 @@ function App() {
           return;
         }
         opsRef.current.openDocument(text, file.name, resolvedPath);
+      };
+      reader.onerror = () => {
+        setIsLoading(false);
+        setStatusError(`Can't open ${file.name}: ${reader.error?.message || 'it could not be read'}`);
       };
       reader.readAsText(file);
     }

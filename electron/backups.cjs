@@ -35,7 +35,11 @@ const ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 const FILE_PATTERN = /^([A-Za-z0-9_-]{1,64})\.json$/;
 const KINDS = ['markdown', 'code'];
 
-/** Per text field (content, savedContent), in UTF-16 units. FATE opens files up to 25 MB. */
+/**
+ * Per text field (content, savedContent), in UTF-16 units. FATE opens files up to 500 MB, but a
+ * backup holds two copies in one JSON string, which V8 caps near 536M units; the renderer skips
+ * documents past this and says so on the tab (BACKUP_MAX_CHARS in src/hotExit.js, kept equal).
+ */
 const MAX_TEXT_CHARS = 64 * 1024 * 1024;
 /** A whole backup file, serialised. Also the most `list()` will read. */
 const MAX_FILE_BYTES = 192 * 1024 * 1024;
@@ -195,4 +199,4 @@ function createBackupStore(dir, { now = Date.now } = {}) {
   return { dir, write, remove, list, clear };
 }
 
-module.exports = { createBackupStore, ID_PATTERN, MAX_BACKUPS };
+module.exports = { createBackupStore, ID_PATTERN, MAX_BACKUPS, MAX_TEXT_CHARS };

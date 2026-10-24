@@ -15,8 +15,11 @@ import {
 import { renderSafely, escapeHtml } from '../src/renderSafely.js';
 import {
   BACKUP_ID_RE, newBackupId, backupPayload, planRestore, untitledNumber, sameSignature,
-  setCrashFlusher, flushForCrash, isRestorable
+  setCrashFlusher, flushForCrash, isRestorable, BACKUP_MAX_CHARS, fitsBackup
 } from '../src/hotExit.js';
+import { createRequire } from 'node:module';
+
+const { MAX_TEXT_CHARS } = createRequire(import.meta.url)('../electron/backups.cjs');
 
 /* ── changedSpan ─────────────────────────────────────────────────────────────────────────── */
 
@@ -206,6 +209,14 @@ test('backupPayload follows the preload contract', () => {
     backupPayload({ kind: 'code', name: 'Untitled-2', path: null, format: null, untitled: true }, 'text', undefined),
     { kind: 'code', name: 'Untitled-2', path: null, content: 'text', format: null, savedContent: null, untitled: true }
   );
+});
+
+test('fitsBackup matches what main will store', () => {
+  assert.equal(BACKUP_MAX_CHARS, MAX_TEXT_CHARS);
+  assert.equal(fitsBackup(BACKUP_MAX_CHARS, BACKUP_MAX_CHARS), true);
+  assert.equal(fitsBackup(BACKUP_MAX_CHARS + 1), false);
+  assert.equal(fitsBackup(10, BACKUP_MAX_CHARS + 1), false);
+  assert.equal(fitsBackup(0), true);
 });
 
 test('planRestore: newest backup per path wins, untitled keep their order, junk is dropped', () => {

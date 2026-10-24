@@ -5,7 +5,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { readTextFile, writeFileAtomic, diskChangeSince } = require('../electron/textFiles.cjs');
+const { constants } = require('node:buffer');
+const { MAX_FILE_BYTES, readTextFile, writeFileAtomic, diskChangeSince } = require('../electron/textFiles.cjs');
 const { textDigest } = require('../electron/fileFormat.cjs');
 
 const posix = process.platform !== 'win32';
@@ -47,6 +48,13 @@ test('readTextFile refuses folders, oversized and binary files with coded errors
   fs.writeFileSync(bin, Buffer.from([0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01, 0x01, 0x00]));
   await assert.rejects(readTextFile(bin), (err) => err.code === 'BINARY');
   await assert.rejects(readTextFile(path.join(dir, 'missing.txt')), (err) => err.code === 'ENOENT');
+});
+
+test('the size cap stays under the longest string V8 can hold', () => {
+  // Decoded text is at most one UTF-16 unit per byte, so a file under the cap always decodes. Past
+  // MAX_STRING_LENGTH the decoder throws a RangeError that reads as a generic open failure.
+  assert.ok(MAX_FILE_BYTES <= constants.MAX_STRING_LENGTH, `${MAX_FILE_BYTES} > ${constants.MAX_STRING_LENGTH}`);
+  assert.ok(MAX_FILE_BYTES >= 160 * 1024 * 1024, 'a 160 MB report export must open (issue from 1.15.0)');
 });
 
 test('an atomic save replaces the file and leaves nothing behind', async (t) => {
@@ -283,3 +291,17 @@ test('diskChangeSince: missing, and changed but unreadable', async (t) => {
   assert.ok(r.stamp, 'the stamp is reported, so a second Save can go ahead');
 });
 
+
+test('diskChangeSince: a folder at the path is left for the write to refuse', async (t) => {
+  const dir = tempDir(t);
+  const r = await diskChangeSince(dir, { known: {}, savingDigest: MINE, read: readTextFile });
+  assert.equal(r.verdict, 'unknown');
+});
+
+test('diskChangeSince: a FIFO at the path does not block the save check', { skip: !posix && 'no FIFOs at ordinary paths on Windows' }, async (t) => {
+  const fifo = path.join(tempDir(t), 'pipe');
+  require('node:child_process').execFileSync('mkfifo', [fifo]);
+  const timedOut = new Promise((resolve) => setTimeout(resolve, 2000, 'timed out'));
+  const r = await Promise.race([diskChangeSince(fifo, { known: {}, savingDigest: MINE, read: readTextFile }), timedOut]);
+  assert.equal(r?.verdict, 'unknown', `got ${JSON.stringify(r)}`);
+});

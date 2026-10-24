@@ -40,6 +40,18 @@ export function backupPayload(doc, content, savedContent) {
   return data;
 }
 
+/**
+ * The longest text main will back up, per field (MAX_TEXT_CHARS in electron/backups.cjs). FATE
+ * opens files far larger; past this a tab gets no backup, and says so, rather than serialising
+ * the whole document every few seconds only for main to refuse it.
+ */
+export const BACKUP_MAX_CHARS = 64 * 1024 * 1024;
+
+/** Can a backup hold these? Lengths, so callers can ask without serialising a CodeMirror doc. */
+export function fitsBackup(contentLength, savedLength = 0) {
+  return contentLength <= BACKUP_MAX_CHARS && savedLength <= BACKUP_MAX_CHARS;
+}
+
 /** A listed backup FATE can actually restore. */
 export function isRestorable(b) {
   return !!b && typeof b.id === 'string' && BACKUP_ID_RE.test(b.id) && typeof b.content === 'string';
