@@ -399,18 +399,17 @@ function encode(text, format, { chunk = ENCODE_CHUNK } = {}) {
     data = encodeBody(lf, f.encoding);
   } else {
     /*
-     * In pieces, each cut just after a line break. Widening every \n to \r\n makes the text
-     * longer, and a big LF document under the open cap could come out past the longest string V8
-     * allows (about 536M units), failing the save with a RangeError. A piece with no line break
-     * in it is cut short of a surrogate pair rather than through one.
+     * In pieces. Widening every \n to \r\n makes the text longer, and a big LF document under the
+     * open cap could come out past the longest string V8 allows (about 536M units), failing the
+     * save with a RangeError. A \n is one code unit, so a piece can end anywhere except between
+     * the halves of a surrogate pair: fixed-size pieces, each nudged off a high surrogate, keep
+     * this linear (searching back for a line break was quadratic on one very long line).
      */
     const parts = [];
     for (let start = 0; start < lf.length; ) {
       let end = Math.min(lf.length, start + chunk);
-      if (end < lf.length) {
-        const nl = lf.lastIndexOf('\n', end - 1);
-        if (nl >= start) end = nl + 1;
-        else if ((lf.charCodeAt(end - 1) & 0xfc00) === 0xd800) end = end - 1 > start ? end - 1 : end + 1;
+      if (end < lf.length && (lf.charCodeAt(end - 1) & 0xfc00) === 0xd800) {
+        end = end - 1 > start ? end - 1 : end + 1;
       }
       parts.push(encodeBody(lf.slice(start, end).replace(/\n/g, f.eol), f.encoding));
       start = end;

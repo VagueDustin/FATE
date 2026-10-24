@@ -291,3 +291,17 @@ test('diskChangeSince: missing, and changed but unreadable', async (t) => {
   assert.ok(r.stamp, 'the stamp is reported, so a second Save can go ahead');
 });
 
+
+test('diskChangeSince: a folder at the path is left for the write to refuse', async (t) => {
+  const dir = tempDir(t);
+  const r = await diskChangeSince(dir, { known: {}, savingDigest: MINE, read: readTextFile });
+  assert.equal(r.verdict, 'unknown');
+});
+
+test('diskChangeSince: a FIFO at the path does not block the save check', { skip: !posix && 'no FIFOs at ordinary paths on Windows' }, async (t) => {
+  const fifo = path.join(tempDir(t), 'pipe');
+  require('node:child_process').execFileSync('mkfifo', [fifo]);
+  const timedOut = new Promise((resolve) => setTimeout(resolve, 2000, 'timed out'));
+  const r = await Promise.race([diskChangeSince(fifo, { known: {}, savingDigest: MINE, read: readTextFile }), timedOut]);
+  assert.equal(r?.verdict, 'unknown', `got ${JSON.stringify(r)}`);
+});

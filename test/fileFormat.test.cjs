@@ -233,3 +233,12 @@ test('widened line breaks are encoded in pieces with exactly the bytes of one pa
   }
   assert.equal(ff.encode('a\nb', { encoding: 'utf8', bom: false, eol: '\r\n' }, { chunk: 1 }).toString(), 'a\r\nb');
 });
+
+test('widening line breaks stays linear on one very long line', () => {
+  // Searching back for a line break from every piece made this quadratic: seconds, not ms.
+  const text = 'x'.repeat(4 * 1024 * 1024);
+  const start = Date.now();
+  const out = ff.encode(text, { encoding: 'utf8', bom: false, eol: '\r\n' }, { chunk: 1000 });
+  assert.equal(out.length, text.length);
+  assert.ok(Date.now() - start < 1500, `took ${Date.now() - start} ms`);
+});
