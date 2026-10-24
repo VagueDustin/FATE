@@ -77,6 +77,15 @@ test('external: mailto opens directly', () => {
   });
 });
 
+test('external: mailto keeps compose fields and drops attachments', () => {
+  const { url } = classifyExternalUrl(
+    'mailto:a@example.com?subject=Hi%20there&attach=C:%5CUsers%5Cme%5Csecret.txt&Body=x&ATTACHMENT=y&cc=b@example.com'
+  );
+  assert.equal(url, 'mailto:a@example.com?subject=Hi%20there&Body=x&cc=b@example.com');
+  assert.equal(classifyExternalUrl('mailto:a@example.com?attach=/etc/passwd').url, 'mailto:a@example.com');
+  assert.equal(classifyExternalUrl('mailto:a@example.com').url, 'mailto:a@example.com');
+});
+
 test('external: everything else is refused', () => {
   for (const url of [
     'file:///C:/Users/me/Downloads/setup.exe',

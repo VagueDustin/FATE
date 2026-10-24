@@ -72,6 +72,25 @@ function parseUrl(raw) {
 const MAX_EXTERNAL_URL_LENGTH = 8192;
 
 /**
+ * The mailto fields a compose window needs. Everything else is dropped, `attach` above all: some
+ * mail clients attach the local file it names, so one click on a document's link could stage an
+ * email carrying the user's files.
+ */
+const MAILTO_FIELDS = new Set(['to', 'cc', 'bcc', 'subject', 'body', 'in-reply-to']);
+
+function cleanMailto(url) {
+  // Pairs are kept as written: re-serialising would turn %20 into '+', which mail clients show.
+  const kept = url.search.slice(1).split('&').filter((pair) => {
+    try {
+      return MAILTO_FIELDS.has(decodeURIComponent(pair.split('=')[0]).toLowerCase());
+    } catch {
+      return false;
+    }
+  });
+  return `mailto:${url.pathname}${kept.length ? `?${kept.join('&')}` : ''}`;
+}
+
+/**
  * How a link may leave FATE: `{ kind: 'web', url }` for http(s), which the caller opens only
  * after the user confirms; `{ kind: 'mailto', url }`, opened directly because all it can do is
  * open a compose window; or null, refused.
@@ -91,7 +110,7 @@ function classifyExternalUrl(rawUrl) {
   if (url.protocol === 'http:' || url.protocol === 'https:') {
     return url.hostname ? { kind: 'web', url: url.href } : null;
   }
-  if (url.protocol === 'mailto:') return { kind: 'mailto', url: url.href };
+  if (url.protocol === 'mailto:') return { kind: 'mailto', url: cleanMailto(url) };
   return null;
 }
 
