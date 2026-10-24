@@ -32,6 +32,8 @@ test('readTextFile decodes and reports the format', async (t) => {
   const doc = await readTextFile(file, { maxBytes: 1024 });
   assert.equal(doc.text, 'Write-Host hi\n');
   assert.deepEqual(doc.format, { encoding: 'utf16le', bom: true, eol: '\r\n' });
+  const stat = fs.statSync(file);
+  assert.deepEqual(doc.stamp, { size: stat.size, mtimeMs: stat.mtimeMs });
 });
 
 test('readTextFile refuses folders, oversized and binary files with coded errors', async (t) => {

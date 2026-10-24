@@ -1472,6 +1472,13 @@ function App() {
         markDocSaved(id, { content, snapshot, editor, format: res.format ?? format ?? null });
         return true;
       }
+      if (res?.code === 'CHANGED_ON_DISK') {
+        // Someone else's edit landed first: nothing was written, and the bar offers the choice.
+        const latest = getDoc(id);
+        if (latest) applyDiskContent(latest, res.content, res.format ?? null);
+        setStatusError(res.error);
+        return false;
+      }
       if (res?.code === 'UNENCODABLE') {
         // A Windows-1252 save of text it can't store. main's message suggests UTF-8.
         setStatusError(res.error || `${doc.name} has characters Windows-1252 can't store. Save it as UTF-8 instead.`);

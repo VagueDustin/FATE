@@ -36,8 +36,9 @@ function codedError(code, message, extra) {
 }
 
 /**
- * Read and decode a text file: `{ text, format, bytes }` (see fileFormat.cjs for `format`;
- * `bytes` is the raw Buffer, for callers that need to compare it with an encoding of the text).
+ * Read and decode a text file: `{ text, format, bytes, stamp }` (see fileFormat.cjs for `format`;
+ * `bytes` is the raw Buffer, for callers that need to compare it with an encoding of the text;
+ * `stamp` is { size, mtimeMs }, a cheap "has it changed since?" check for later).
  *
  * Throws the fs error as is (ENOENT, EACCES, …) or a coded one: NOT_FILE (a folder, a device,
  * a pipe: anything readFile could hang on or that isn't a document), TOO_LARGE (with `size`),
@@ -54,7 +55,7 @@ async function readTextFile(filePath, { maxBytes = Infinity, forcedEncoding = nu
   // It may have grown between the stat and the read (a log being written, say).
   if (buffer.length > maxBytes) throw codedError('TOO_LARGE', `${path.basename(filePath)} is too large`, { size: buffer.length });
   const { text, format } = decode(buffer, forcedEncoding, { defaultEol });
-  return { text, format, bytes: buffer };
+  return { text, format, bytes: buffer, stamp: { size: buffer.length, mtimeMs: stat.mtimeMs } };
 }
 
 /**

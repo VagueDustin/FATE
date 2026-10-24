@@ -1198,9 +1198,12 @@ const { isRendererSettingKey, checkRendererSetting } = require('./rendererSettin
  *   forcedEncodings  path → the encoding picked with Reopen with encoding. Reloads keep decoding
  *                    with it; Windows-1252 text that happens to be valid UTF-8 would otherwise
  *                    flip back to UTF-8 at the next watch event.
+ *   knownStamps      path → { size, mtimeMs } of the file as FATE last read or wrote it, so a
+ *                    save can tell in one stat whether the file moved on since (diskMovedOn).
  */
 const fileFormats = new Map();
 const knownText = new Map();
+const knownStamps = new Map();
 const forcedEncodings = new Map();
 
 /**
@@ -1271,6 +1274,7 @@ const fileWatcher = createFileWatcher({
   onRead: (filePath, doc) => {
     const key = watchKey(filePath);
     if (!fileFormats.has(key)) return; // the tab closed meanwhile
+    knownStamps.set(key, doc.stamp);
     const format = adoptFormat(key, doc);
     const digest = textDigest(doc.text);
     // Our own save landing, or a scan or indexer touching the file: not a change.
@@ -1809,6 +1813,7 @@ function forgetPath(filePath) {
   fileWatcher.unwatch(filePath);
   fileFormats.delete(key);
   knownText.delete(key);
+  knownStamps.delete(key);
   forcedEncodings.delete(key);
 }
 
@@ -1861,6 +1866,7 @@ function deliverOpenedFile(filePath, opts, doc, err) {
   const format = adoptFormat(key, doc);
   fileFormats.set(key, format);
   knownText.set(key, textDigest(doc.text));
+  knownStamps.set(key, doc.stamp);
   rememberRecentFile(filePath);
 
   if (mainWindow) {
@@ -1983,18 +1989,64 @@ function prepareSave(name, content, passedFormat, recordedFormat) {
 }
 
 /**
+ * Has the file changed since FATE last read or wrote it, in a way the tab has not seen? Up to
+ * 1.15.0 a save simply wrote: an external edit still in the watcher's debounce when Save was
+ * pressed (the hold below drops it), or any edit on a mount that never reports changes, was
+ * replaced without a word. Size and mtime first, so an ordinary save costs one stat; the text is
+ * read only when they moved. Resolves null to go ahead, or a CHANGED_ON_DISK failure carrying the
+ * disk text, which the renderer shows in its changed-on-disk bar. Must run under the path's hold.
+ */
+async function diskMovedOn(filePath, content) {
+  const key = watchKey(filePath);
+  let stat;
+  try {
+    stat = await fs.promises.stat(filePath);
+  } catch {
+    return null; // gone: the save writes it again, as the deleted-file bar says it will
+  }
+  const known = knownStamps.get(key);
+  if (known && stat.size === known.size && stat.mtimeMs === known.mtimeMs) return null;
+  let doc;
+  try {
+    doc = await readDocument(filePath);
+  } catch {
+    return null; // can't read it now, so there is no text to offer: save as FATE always did
+  }
+  knownStamps.set(key, doc.stamp);
+  const digest = textDigest(doc.text);
+  // Touched but not changed (a scan, a sync client), or already exactly what is being saved.
+  if (digest === knownText.get(key) || digest === textDigest(normalizeText(content))) return null;
+  const format = adoptFormat(key, doc);
+  fileFormats.set(key, format);
+  knownText.set(key, digest);
+  return {
+    ok: false,
+    code: 'CHANGED_ON_DISK',
+    error: `${path.basename(filePath)} changed on disk, so it wasn't saved. Reload, keep yours, or compare.`,
+    content: doc.text,
+    format
+  };
+}
+
+/**
  * Write encoded bytes atomically (textFiles.cjs) and record what is now on disk. The path's
  * watcher is held meanwhile, so neither a reload racing the write nor the write's own events can
  * come back to the renderer as an external change; then it is re-armed, because an atomic save
  * leaves a new file at the path.
  */
-async function commitSave(filePath, prepared, content) {
+async function commitSave(filePath, prepared, content, { guard = false } = {}) {
   const key = watchKey(filePath);
   const release = fileWatcher.hold(filePath);
   try {
+    if (guard) {
+      const moved = await diskMovedOn(filePath, content);
+      if (moved) return moved;
+    }
     await writeFileAtomic(filePath, prepared.data);
     fileFormats.set(key, prepared.format);
     knownText.set(key, textDigest(normalizeText(content)));
+    const stat = await fs.promises.stat(filePath).catch(() => null);
+    if (stat) knownStamps.set(key, { size: stat.size, mtimeMs: stat.mtimeMs });
     if (forcedEncodings.get(key) !== prepared.format.encoding) forcedEncodings.delete(key);
     fileWatcher.watch(filePath, { rearm: true });
     return { ok: true, format: prepared.format };
@@ -2149,7 +2201,7 @@ app.whenReady().then(() => {
       return saveFailure('NOT_OPEN', `Can't save ${name}: it isn't a file FATE has open. Use Save As instead.`);
     }
     const prepared = prepareSave(name, content, format, fileFormats.get(watchKey(filePath)));
-    return prepared.ok ? commitSave(filePath, prepared, content) : prepared;
+    return prepared.ok ? commitSave(filePath, prepared, content, { guard: true }) : prepared;
   });
 
   /**
@@ -2222,6 +2274,7 @@ app.whenReady().then(() => {
       if (!isOpenPath(filePath)) return { ok: false, code: 'NOT_OPEN', error: `${name} was closed` };
       fileFormats.set(key, doc.format);
       knownText.set(key, textDigest(doc.text));
+      knownStamps.set(key, doc.stamp);
       forcedEncodings.set(key, encoding);
       return { ok: true, content: doc.text, format: doc.format };
     } catch (err) {
