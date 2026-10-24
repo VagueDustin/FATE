@@ -1295,6 +1295,9 @@ const fileWatcher = createFileWatcher({
  */
 let documentEdited = false;
 
+/** Install update was clicked with unsaved work: install once the close walk says go. */
+let installAfterClose = false;
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -1370,11 +1373,15 @@ function createWindow() {
   ipcMain.on('confirmed-close', (event, proceed) => {
     if (BrowserWindow.fromWebContents(event.sender) !== mainWindow) return;
     clearTimeout(closeHandoffTimer);
-    if (!proceed) return;
+    if (!proceed) {
+      installAfterClose = false;
+      return;
+    }
     closeConfirmed = true;
     closeWalkDone = true;
     documentEdited = false;
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
+    if (installAfterClose) autoUpdater.quitAndInstall();
+    else if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
   });
 
   /*
@@ -2444,7 +2451,17 @@ app.whenReady().then(() => {
     checkForUpdatesNow();
   });
 
+  /*
+   * With unsaved work, the close walk runs first and the install waits for its answer. Up to 1.15.0
+   * quitAndInstall started the installer at once; it waits about a second for FATE to exit and then
+   * kills it, so the Save / Don't save box vanished mid-answer and recent edits went with it.
+   */
   ipcMain.handle('install-update', () => {
+    if (documentEdited && mainWindow && !mainWindow.isDestroyed()) {
+      installAfterClose = true;
+      mainWindow.close();
+      return;
+    }
     autoUpdater.quitAndInstall();
   });
 
