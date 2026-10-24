@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import DOMPurify from 'dompurify';
 
 /**
@@ -31,6 +31,22 @@ import DOMPurify from 'dompurify';
 let renderCounter = 0;
 
 const isLightTheme = () => document.documentElement.getAttribute('data-theme') === 'light';
+
+/**
+ * Whether the light theme is on, following `data-theme` on <html> (the one signal for a theme
+ * change; Starfield watches it the same way). Diagrams are drawn per theme; up to 1.15.0 nothing
+ * watched it, and diagrams kept the old theme's colours after a switch until the document changed.
+ */
+function useLightTheme() {
+  const [light, setLight] = useState(isLightTheme);
+  useEffect(() => {
+    const observer = new MutationObserver(() => setLight(isLightTheme()));
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => observer.disconnect();
+  }, []);
+  return light;
+}
+
 const FENCES = 'code.language-mermaid:not([data-mermaid-done]):not([data-mermaid-failed])';
 const CACHE_LIMIT = 40;
 
@@ -171,6 +187,9 @@ function removeLeftovers(id) {
   for (const leftover of [`d${id}`, `i${id}`, id]) document.getElementById(leftover)?.remove();
 }
 
+/** Each drawn diagram's original fence block, so a theme switch can put it back (restoreFences). */
+const drawnFrom = new WeakMap();
+
 function replaceFence(code, diagram) {
   const holder = document.createElement('div');
   holder.className = 'mermaid-diagram';
@@ -181,7 +200,21 @@ function replaceFence(code, diagram) {
   const line = block?.getAttribute('data-line');
   if (line != null) holder.setAttribute('data-line', line);
   code.setAttribute('data-mermaid-done', '1');
+  if (block) drawnFrom.set(holder, block);
   block?.replaceWith(holder);
+}
+
+/*
+ * Swap drawn diagrams back for their fences so they are drawn again. React can't do it: it only
+ * rewrites innerHTML when the HTML string itself changes, and on a theme switch it doesn't.
+ */
+function restoreFences(container) {
+  for (const holder of container.querySelectorAll('.mermaid-diagram')) {
+    const block = drawnFrom.get(holder);
+    if (!block) continue;
+    block.querySelector('code')?.removeAttribute('data-mermaid-done');
+    holder.replaceWith(block);
+  }
 }
 
 const cacheKey = (code) => `${isLightTheme() ? 'light' : 'dark'}\n${code.textContent}`;
@@ -251,6 +284,15 @@ async function renderFences(container, cache, isCancelled) {
  */
 export function useMermaid(containerRef, { html, hasMermaid, enabled, delay = 0 }) {
   const [cache] = useState(() => new Map());
+  const light = useLightTheme();
+
+  // The theme changed: fences back first, so the two effects below draw them in its colours.
+  const drawnLightRef = useRef(light);
+  useLayoutEffect(() => {
+    if (drawnLightRef.current === light) return;
+    drawnLightRef.current = light;
+    if (containerRef.current) restoreFences(containerRef.current);
+  }, [light, containerRef]);
 
   // Diagrams rendered before for the same source and theme go back in before the browser paints.
   useLayoutEffect(() => {
@@ -260,7 +302,7 @@ export function useMermaid(containerRef, { html, hasMermaid, enabled, delay = 0 
       const diagram = cache.get(cacheKey(code));
       if (usable(container, diagram)) replaceFence(code, diagram);
     }
-  }, [html, hasMermaid, containerRef, cache]);
+  }, [html, hasMermaid, light, containerRef, cache]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -276,5 +318,5 @@ export function useMermaid(containerRef, { html, hasMermaid, enabled, delay = 0 
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [html, hasMermaid, enabled, delay, containerRef, cache]);
+  }, [html, hasMermaid, enabled, delay, light, containerRef, cache]);
 }
