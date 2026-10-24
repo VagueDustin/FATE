@@ -87,7 +87,10 @@ function cleanMailto(url) {
       return false;
     }
   });
-  return `mailto:${url.pathname}${kept.length ? `?${kept.join('&')}` : ''}`;
+  // Everything before the query as the parser wrote it: `mailto://a@b` keeps its recipient in the
+  // host, not the path. The serialiser percent-encodes any earlier ? or #, so the split is exact.
+  const base = url.href.split(/[?#]/)[0];
+  return `${base}${kept.length ? `?${kept.join('&')}` : ''}`;
 }
 
 /**

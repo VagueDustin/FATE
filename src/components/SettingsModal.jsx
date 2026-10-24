@@ -1047,7 +1047,7 @@ function SettingsModal({
                   {/* Announced when recording starts, so a screen reader user knows what to press. */}
                   <p className="setting-hint group-hint shortcut-recording-hint" role="status">
                     {activeShortcutRebind
-                      ? 'Press the new shortcut: Ctrl or Alt with a key, or a function key (F1–F12). Esc cancels.'
+                      ? 'Press the new shortcut: Ctrl or Alt with a key, or a function key (F1-F12). Ctrl+1-9 and Ctrl+PgUp/PgDn are kept for switching tabs. Esc cancels.'
                       : ''}
                   </p>
                   {SHORTCUT_ACTIONS.map((a) => {

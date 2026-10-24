@@ -48,7 +48,9 @@ test('real JSON is still JSON', () => {
 });
 
 test('many block comments before a non-JSON token fail fast instead of backtracking', () => {
-  const text = `{${' /* c */'.repeat(60)} key: 1 }`;
+  // 28: enough that the old regex takes seconds and fails the assertion. More would make it hang
+  // the run instead (a regex blocks the event loop, so the test runner's timeout can't stop it).
+  const text = `{${' /* c */'.repeat(28)} key: 1 }`;
   const start = performance.now();
   assert.equal(sniffed(text), null);
   assert.ok(performance.now() - start < 250, `took ${(performance.now() - start).toFixed(0)} ms`);

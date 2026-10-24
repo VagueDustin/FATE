@@ -2137,7 +2137,7 @@ function App() {
         return;
       }
 
-      // Fixed: Ctrl+1–9 jump (9 = last), Ctrl+PgUp/PgDn cycle. Not under Settings or the palette,
+      // Fixed: Ctrl+1-9 jump (9 = last), Ctrl+PgUp/PgDn cycle. Not under Settings or the palette,
       // where they switched tabs behind the open layer.
       const modalOpen = showSettings || showPalette;
       if (!modalOpen && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && /^[1-9]$/.test(e.key)) {
@@ -2162,8 +2162,9 @@ function App() {
       for (const { id } of SHORTCUT_ACTIONS) {
         if (matchesShortcut(e, settings.shortcuts[id])) {
           if (escapeHeld) return;
-          // Escape-as-close must not swallow Escape while a modal layer is open above the tabs.
-          if (id === 'close' && (showSettings || showPalette)) return;
+          // Escape-as-close must not swallow Escape while a modal layer is open above the tabs, and
+          // nothing may switch tabs behind one (Ctrl+Tab passes the dialogs' focus trap on purpose).
+          if (modalOpen && (id === 'close' || id === 'nextTab' || id === 'prevTab' || id === 'goHome')) return;
           e.preventDefault();
           opsRef.current.runAction(id);
           return;

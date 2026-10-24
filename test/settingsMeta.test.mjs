@@ -125,6 +125,14 @@ test('isAllowedShortcut: not the fixed tab keys App handles before any binding',
   }
 });
 
+test('resolveShortcuts keeps a stored fixed tab key on the action it already performs', () => {
+  const resolved = resolveShortcuts({ nextTab: 'Control+PageDown', prevTab: 'Control+PageUp', save: 'Control+2' });
+  assert.equal(resolved.nextTab, 'Control+PageDown');
+  assert.equal(resolved.prevTab, 'Control+PageUp');
+  assert.equal(resolved.save, 'Control+S', 'a binding that never fired goes back to its default');
+  assert.equal(resolveShortcuts({ save: 'Control+PageDown' }).save, 'Control+S');
+});
+
 test('shortcutParts and formatShortcutLabel read like keycaps', () => {
   assert.deepEqual(shortcutParts('Control+Shift+S', 'linux'), ['Ctrl', 'Shift', 'S']);
   assert.equal(formatShortcutLabel('Control+Plus', 'win32'), 'Ctrl+Plus');

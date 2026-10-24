@@ -84,6 +84,8 @@ test('external: mailto keeps compose fields and drops attachments', () => {
   assert.equal(url, 'mailto:a@example.com?subject=Hi%20there&Body=x&cc=b@example.com');
   assert.equal(classifyExternalUrl('mailto:a@example.com?attach=/etc/passwd').url, 'mailto:a@example.com');
   assert.equal(classifyExternalUrl('mailto:a@example.com').url, 'mailto:a@example.com');
+  assert.equal(classifyExternalUrl('mailto://a@example.com?subject=Hi&attach=x').url, 'mailto://a@example.com?subject=Hi');
+  assert.equal(classifyExternalUrl('mailto:a@example.com#frag?attach=x').url, 'mailto:a@example.com');
 });
 
 test('external: everything else is refused', () => {

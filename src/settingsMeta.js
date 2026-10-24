@@ -93,13 +93,20 @@ export const DEFAULT_SHORTCUTS = Object.fromEntries(
  * recorder should never have accepted back to its default: before 1.14.0 a bare letter could be
  * recorded, so "H" bound to Close tab closed tabs while typing, across restarts.
  */
+/**
+ * Fixed tab keys (see isAllowedShortcut) a stored binding may still name when they do the same
+ * thing anyway. Resetting such a binding to its default could land it on a key the user had given
+ * another action.
+ */
+const SAME_AS_FIXED = { nextTab: /^Control\+(?:Shift\+)?PageDown$/, prevTab: /^Control\+(?:Shift\+)?PageUp$/ };
+
 export function resolveShortcuts(stored) {
   const merged = { ...DEFAULT_SHORTCUTS };
   if (stored && typeof stored === 'object') {
     for (const [k, v] of Object.entries(stored)) {
       if (!(k in merged) || typeof v !== 'string' || !v) continue;
       const binding = normalizeBinding(v);
-      if (binding && isAllowedShortcut(binding)) merged[k] = binding;
+      if (binding && (isAllowedShortcut(binding) || SAME_AS_FIXED[k]?.test(binding))) merged[k] = binding;
     }
   }
   return merged;

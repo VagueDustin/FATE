@@ -62,7 +62,9 @@ marked.use({
       // The info string's first word names the language; the rest (```js title="x") is ignored.
       const language = (lang || '').match(/\S*/)[0];
       const html = hljs.highlight(text, { language: hljs.getLanguage(language) ? language : 'plaintext' }).value;
-      const cls = language ? ` class="hljs language-${language.replace(/[&<>"']/g, (c) => ATTR_ESCAPES[c])}"` : '';
+      // marked's own non-encoding escape: an entity already in the info string is left as it is.
+      const escaped = language.replace(/[<>"']|&(?!(?:#\d{1,7}|#[Xx][a-fA-F0-9]{1,6}|\w+);)/g, (c) => ATTR_ESCAPES[c]);
+      const cls = language ? ` class="hljs language-${escaped}"` : '';
       return `<pre><code${cls}>${html.replace(/\n$/, '')}\n</code></pre>`;
     }
   }

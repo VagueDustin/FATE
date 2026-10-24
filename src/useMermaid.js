@@ -83,7 +83,8 @@ const MERMAID_SECURE_KEYS = [
   'themeCSS', 'dompurifyConfig', 'fontFamily', 'altFontFamily'
 ];
 const LABEL_PURIFY = {
-  FORBID_TAGS: ['style', 'img', 'image', 'picture', 'source', 'video', 'audio', 'track', 'iframe', 'object', 'embed', 'link', 'meta'],
+  // `input` (type=image) and `feImage` fetch their src/href too, under img-src, which allows https.
+  FORBID_TAGS: ['style', 'img', 'image', 'picture', 'source', 'video', 'audio', 'track', 'iframe', 'object', 'embed', 'link', 'meta', 'input', 'feImage'],
   FORBID_ATTR: ['style', 'srcset', 'poster', 'background']
 };
 
@@ -114,7 +115,7 @@ const SVG_CONFIG = {
   USE_PROFILES: { svg: true, svgFilters: true, html: true, mathMl: true },
   ADD_TAGS: ['foreignobject'],
   HTML_INTEGRATION_POINTS: { foreignobject: true },
-  FORBID_TAGS: ['image', 'script', 'iframe', 'frame', 'object', 'embed', 'link', 'meta', 'base', 'form', 'input', 'button', 'textarea', 'select', 'dialog'],
+  FORBID_TAGS: ['image', 'feImage', 'script', 'iframe', 'frame', 'object', 'embed', 'link', 'meta', 'base', 'form', 'input', 'button', 'textarea', 'select', 'dialog'],
   FORBID_ATTR: ['popover', 'popovertarget', 'command', 'commandfor', 'interestfor', 'autofocus', 'contenteditable', 'srcset']
 };
 
@@ -217,7 +218,15 @@ function restoreFences(container) {
   }
 }
 
-const cacheKey = (code) => `${isLightTheme() ? 'light' : 'dark'}\n${code.textContent}`;
+const cacheKey = (code, light) => `${light ? 'light' : 'dark'}\n${code.textContent}`;
+
+/** Diagrams already drawn for this source and theme go straight back in. */
+function placeCached(container, cache, light) {
+  for (const code of container.querySelectorAll(FENCES)) {
+    const diagram = cache.get(cacheKey(code, light));
+    if (usable(container, diagram)) replaceFence(code, diagram);
+  }
+}
 
 /** A cached diagram can go in only once per preview: its SVG id must stay unique. */
 function usable(container, diagram) {
@@ -230,8 +239,16 @@ function remember(cache, key, diagram) {
   if (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value);
 }
 
-async function renderFences(container, cache, isCancelled) {
+async function renderFences(container, cache, isCancelledByReact) {
   const { default: mermaid } = await import('mermaid');
+  /*
+   * One theme per pass, read once: mermaid is configured with it and the cache is keyed by it. A
+   * switch mid-pass stops the pass at once, from the attribute itself; React's cleanup can run a
+   * task later, and a pass still going meanwhile drew old-theme diagrams, or cached them under the
+   * new theme's key.
+   */
+  const light = isLightTheme();
+  const isCancelled = () => isCancelledByReact() || isLightTheme() !== light;
   if (isCancelled() || !container.isConnected) return;
 
   mermaid.initialize({
@@ -240,7 +257,7 @@ async function renderFences(container, cache, isCancelled) {
     suppressErrorRendering: true,
     secure: MERMAID_SECURE_KEYS,
     dompurifyConfig: LABEL_PURIFY,
-    theme: isLightTheme() ? 'default' : 'dark',
+    theme: light ? 'default' : 'dark',
     // Mermaid 12 lays diagrams out with ELK and draws them in its `neo` look unless told otherwise,
     // which re-flows and restyles every existing document. Keep the layout and look diagrams have
     // always had in FATE; a document can still ask for `layout: elk` or `look: neo` in its front
@@ -253,7 +270,7 @@ async function renderFences(container, cache, isCancelled) {
   for (const code of container.querySelectorAll(FENCES)) {
     if (isCancelled()) return;
     if (!code.isConnected) continue; // a re-render replaced it meanwhile
-    const key = cacheKey(code);
+    const key = cacheKey(code, light);
     let diagram = cache.get(key);
     if (!usable(container, diagram)) {
       const id = `fate-mermaid-${++renderCounter}`;
@@ -286,27 +303,30 @@ export function useMermaid(containerRef, { html, hasMermaid, enabled, delay = 0 
   const [cache] = useState(() => new Map());
   const light = useLightTheme();
 
-  // The theme changed: fences back first, so the two effects below draw them in its colours.
+  /** The theme this preview's diagrams are drawn in. */
   const drawnLightRef = useRef(light);
-  useLayoutEffect(() => {
-    if (drawnLightRef.current === light) return;
-    drawnLightRef.current = light;
-    if (containerRef.current) restoreFences(containerRef.current);
-  }, [light, containerRef]);
 
   // Diagrams rendered before for the same source and theme go back in before the browser paints.
   useLayoutEffect(() => {
     const container = containerRef.current;
     if (!hasMermaid || !container) return;
-    for (const code of container.querySelectorAll(FENCES)) {
-      const diagram = cache.get(cacheKey(code));
-      if (usable(container, diagram)) replaceFence(code, diagram);
-    }
-  }, [html, hasMermaid, light, containerRef, cache]);
+    placeCached(container, cache, drawnLightRef.current);
+  }, [html, hasMermaid, containerRef, cache]);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!hasMermaid || !enabled || !container) return;
+    /*
+     * The theme changed (here, or while this pane was hidden): swap the diagrams back for their
+     * fences and draw them again. Only now, while the pane is visible: a hidden tab that did this
+     * on the switch held raw fences of another height, so its kept scroll position came back on
+     * different content.
+     */
+    if (drawnLightRef.current !== light) {
+      drawnLightRef.current = light;
+      restoreFences(container);
+      placeCached(container, cache, light);
+    }
     let cancelled = false;
     const timer = setTimeout(() => {
       renderFences(container, cache, () => cancelled).catch((err) => {
