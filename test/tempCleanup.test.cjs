@@ -25,10 +25,13 @@ const DAY = 24 * 60 * 60 * 1000;
 test('removes FATE temp files older than a day', async (t) => {
   const dir = scratchDir(t);
   touch(dir, 'FATE-preview-1234.pdf', 2 * DAY);
+  touch(dir, 'FATE-preview-1234-1761300000000.pdf', 2 * DAY); // handed to the system viewer
   touch(dir, 'fate-ps-1234-7.ps1', 2 * DAY);
   touch(dir, 'fate-registration-1234.reg', 2 * DAY);
   const removed = await removeStaleTempFiles(dir);
-  assert.deepEqual(removed.sort(), ['FATE-preview-1234.pdf', 'fate-ps-1234-7.ps1', 'fate-registration-1234.reg']);
+  assert.deepEqual(removed.sort(), [
+    'FATE-preview-1234-1761300000000.pdf', 'FATE-preview-1234.pdf', 'fate-ps-1234-7.ps1', 'fate-registration-1234.reg'
+  ]);
   assert.deepEqual(fs.readdirSync(dir), []);
 });
 

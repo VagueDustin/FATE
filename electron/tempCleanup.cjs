@@ -20,7 +20,7 @@ const fs = require('fs');
 const path = require('path');
 
 const STALE_TEMP_FILE_PATTERNS = Object.freeze([
-  /^FATE-preview-\d+\.pdf$/, // showPrintPreview in main.cjs
+  /^FATE-preview-\d+(?:-\d+)?\.pdf$/, // showPrintPreview in main.cjs (-<time>: handed to the system viewer)
   /^fate-ps-\d+-\d+\.ps1$/, // runPowerShell in main.cjs
   /^fate-registration-\d+\.reg$/ // ensureWindowsRegistration in main.cjs
 ]);

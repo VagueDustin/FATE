@@ -7,6 +7,7 @@ const { pathToFileURL } = require('url');
 // electron-store 9 and later are ES modules only. Electron's Node loads them with require(), which
 // hands back the module namespace, so the class is its default export.
 const { default: Store } = require('electron-store');
+const { openStore } = require('./storeRecovery.cjs');
 const { describeFsError } = require('./fsAccess.cjs');
 const { isAllowedNavigation, classifyExternalUrl, resolveLocalImagePath } = require('./linkSecurity.cjs');
 const appMenu = require('./appMenu.cjs');
@@ -185,30 +186,8 @@ if (process.env.FATE_USER_DATA) {
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) app.quit();
 
-/*
- * A config.json that does not parse (a crash or power cut part-way through a write; under snap
- * conf writes in place, not atomically) threw from here, before any window existed, on every
- * launch, and FATE could not start again until someone deleted the file by hand. It is set aside
- * beside the original instead, and FATE starts on its defaults (test/storeRecovery.test.cjs pins
- * the SyntaxError this relies on).
- */
-function openStore(options) {
-  try {
-    return new Store(options);
-  } catch (err) {
-    if (!(err instanceof SyntaxError)) throw err;
-    const file = path.join(app.getPath('userData'), 'config.json');
-    try {
-      fs.renameSync(file, `${file}.corrupt-${Date.now()}`);
-    } catch {
-      /* already gone, or unmovable: conf rewrites it either way */
-    }
-    console.warn(`Settings file did not parse and was set aside: ${err.message}`);
-    return new Store({ ...options, clearInvalidConfig: true });
-  }
-}
-
-const store = openStore({
+/* A config.json that does not parse no longer stops FATE starting: see storeRecovery.cjs. */
+const store = openStore(Store, path.join(app.getPath('userData'), 'config.json'), {
   defaults: {
     // 'fate' = VagueDustin Enterprises navy & gold (utility tier), the default since 1.5.0.
     // Installs carrying the pre-1.5.0 'dark' value are migrated to 'fate' in the renderer; see
@@ -230,7 +209,7 @@ const store = openStore({
     // dictionary from Google's servers. See electron/spellcheck.cjs.
     spellcheck: process.platform === 'win32'
   }
-});
+}, { recover: gotTheLock });
 
 /*
  * Drop settings that no longer exist, so an upgraded install doesn't carry dead keys forever.
@@ -1068,10 +1047,8 @@ async function showPrintPreview(docName) {
   });
   previewWindow.setMenu(Menu.buildFromTemplate(appMenu.buildPreviewMenuTemplate()));
 
-  let handedOff = false;
   previewWindow.on('closed', () => {
     previewWindow = null;
-    if (handedOff) return; // the system viewer has it now; tempCleanup.cjs removes it next launch
     // Best-effort cleanup; a leftover temp PDF is harmless but there is no reason to keep it.
     try {
       fs.unlinkSync(file);
@@ -1092,11 +1069,22 @@ async function showPrintPreview(docName) {
   previewWindow.webContents.once('did-fail-load', (_e, errorCode, errorDescription) => {
     console.error(`Print preview failed to render PDF (${errorCode}: ${errorDescription}); ` +
                   'falling back to the system PDF handler.');
-    // destroy() fires 'closed', which deleted the PDF before the system viewer could open it.
-    handedOff = true;
+    /*
+     * The system viewer gets its own copy under a unique name. destroy() fires 'closed', which
+     * deleted the PDF before the viewer could open it, and a viewer that keeps its file open
+     * would block the next preview from writing FATE-preview-<pid>.pdf again. tempCleanup.cjs
+     * removes the handed-off copies on a later launch.
+     */
+    let handoff = file;
+    try {
+      handoff = file.replace(/\.pdf$/, `-${Date.now()}.pdf`);
+      fs.renameSync(file, handoff);
+    } catch {
+      handoff = file;
+    }
     if (previewWindow && !previewWindow.isDestroyed()) previewWindow.destroy();
     previewWindow = null;
-    shell.openPath(file);
+    shell.openPath(handoff);
   });
 
   previewWindow.loadURL(previewUrl);
@@ -1385,6 +1373,7 @@ function createWindow() {
     // on every click kept a window whose page never answers open for as long as you kept trying.
     if (closeHandoffTimer) return;
     closeHandoffTimer = setTimeout(() => {
+      closeHandoffTimer = null; // fired: a close cancelled after this must be able to ask again
       closeConfirmed = true;
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
     }, 60000);
@@ -1404,8 +1393,23 @@ function createWindow() {
     closeConfirmed = true;
     closeWalkDone = true;
     documentEdited = false;
-    if (installAfterClose) autoUpdater.quitAndInstall();
-    else if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
+    if (installAfterClose) {
+      installAfterClose = false;
+      // A failed install (installer gone, say) reports synchronously and quits nothing: arm the
+      // unsaved-work guard again, since the tabs the walk was told not to save are still dirty.
+      let failed = false;
+      const onError = () => {
+        failed = true;
+      };
+      autoUpdater.once('error', onError);
+      autoUpdater.quitAndInstall();
+      autoUpdater.removeListener('error', onError);
+      if (failed) {
+        closeConfirmed = false;
+        closeWalkDone = false;
+        documentEdited = true;
+      }
+    } else if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
   });
 
   /*
@@ -1544,6 +1548,7 @@ function createWindow() {
   // What the new page restores, it opens again.
   mainWindow.webContents.on('did-navigate', () => {
     rendererReady = false;
+    installAfterClose = false; // the page whose close walk it waited for is gone
     for (const key of [...fileFormats.keys()]) forgetPath(key);
   });
 
@@ -1560,6 +1565,7 @@ function createWindow() {
     console.error(`The window's renderer stopped (${details.reason}).`);
     rendererReady = false;
     documentEdited = false;
+    installAfterClose = false;
     clearTimeout(closeHandoffTimer);
     closeHandoffTimer = null;
     const now = Date.now();
@@ -2208,6 +2214,8 @@ app.whenReady().then(() => {
       return check;
     }
     store.set(key, val);
+    // An update the launch check already downloaded would otherwise still install on quit.
+    if (key === 'autoUpdatesEnabled') autoUpdater.autoInstallOnAppQuit = val === true;
     return { ok: true };
   });
 
