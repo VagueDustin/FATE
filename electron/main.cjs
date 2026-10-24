@@ -560,7 +560,9 @@ function runPowerShell(script, timeout = 60000) {
   return new Promise((resolve) => {
     const file = path.join(app.getPath('temp'), `fate-ps-${process.pid}-${psScriptSeq++}.ps1`);
     try {
-      fs.writeFileSync(file, script, 'utf-8');
+      // With a UTF-8 byte-order mark: Windows PowerShell 5.1 reads a file without one as ANSI, so
+      // a non-ASCII install path in the script never matched the one in the registry.
+      fs.writeFileSync(file, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(script, 'utf8')]));
     } catch (e) {
       resolve({ ok: false, error: e.message, stdout: '' });
       return;
@@ -821,7 +823,8 @@ function ensureWindowsRegistration() {
   const stampKey = 'registrationStamp';
   // The trailing number is the registration SCHEMA version. Bump it whenever the shape of the
   // .reg payload changes, so existing installs re-heal on update even at the same app version.
-  const stamp = `${process.execPath}|${app.getVersion()}|4`;
+  // 5: the .reg file became UTF-16, so values garbled under 4 (non-ASCII install folders) re-heal.
+  const stamp = `${process.execPath}|${app.getVersion()}|5`;
   if (store.get(stampKey) === stamp) return;
 
   const exe = process.execPath.replace(/\\/g, '\\\\');
@@ -878,7 +881,12 @@ function ensureWindowsRegistration() {
 
   const regFile = path.join(app.getPath('temp'), `fate-registration-${process.pid}.reg`);
   try {
-    fs.writeFileSync(regFile, lines.join('\r\n'), 'utf-8');
+    /*
+     * UTF-16LE with a byte-order mark, the format "Version 5.00" files are. Up to 1.15.0 this was
+     * UTF-8 without one, which reg.exe reads as the ANSI code page: an install folder with a
+     * non-ASCII character got garbled commands registered, and the stamp kept them that way.
+     */
+    fs.writeFileSync(regFile, Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(lines.join('\r\n'), 'utf16le')]));
     execFile('reg', ['import', regFile], { windowsHide: true }, (err) => {
       try {
         fs.unlinkSync(regFile);
