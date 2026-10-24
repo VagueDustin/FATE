@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { List, ImageBroken } from '@phosphor-icons/react';
 import { renderMarkdown } from '../markdown.js';
+import { renderSafely } from '../renderSafely.js';
 import { useMermaid } from '../useMermaid.js';
 import { findFragmentTarget, scrollIntoPreview, takePendingFragment } from '../previewLinks.js';
 import PreviewFindBar from './PreviewFindBar.jsx';
@@ -45,9 +46,11 @@ function MarkdownView({
 }) {
   const [remoteLoadedHere, setRemoteLoadedHere] = useState(false);
   const remoteCount = doc.remoteImageCount ?? 0;
-  const withRemoteImages = remoteCount > 0 && (remoteImagesAllowed || remoteLoadedHere) && doc.source != null;
+  // With Always load on, App has already rendered doc.html with the images in; rendering it again
+  // here (as up to 1.15.0) doubled the work. Only a one-off "Load images" renders here.
+  const withRemoteImages = remoteCount > 0 && remoteLoadedHere && !remoteImagesAllowed && doc.source != null;
   const remoteRender = useMemo(
-    () => (withRemoteImages ? renderMarkdown(doc.source, doc.path, { remoteImages: true }) : null),
+    () => (withRemoteImages ? renderSafely(renderMarkdown, doc.source, doc.path, { remoteImages: true }) : null),
     [withRemoteImages, doc.source, doc.path]
   );
   const html = remoteRender?.html ?? doc.html;
@@ -250,7 +253,7 @@ function MarkdownView({
           </button>
         )}
 
-        {remoteCount > 0 && !withRemoteImages && (
+        {remoteCount > 0 && !remoteImagesAllowed && !remoteLoadedHere && (
           <div className={`remote-images-bar ${showReveal ? 'with-reveal' : ''}`} role="status">
             <ImageBroken size={16} weight="duotone" className="remote-images-icon" aria-hidden="true" />
             <span className="remote-images-text">
