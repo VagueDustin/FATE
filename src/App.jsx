@@ -1159,7 +1159,8 @@ function App() {
    */
   const closeDoc = async (docId) => {
     const doc = getDoc(docId);
-    if (!doc) return false;
+    // Already gone (a Save As onto its path replaced it) counts as closed: closeMany stopped here.
+    if (!doc) return true;
 
     if (isDocDirty(doc)) {
       const api = window.electronAPI;
@@ -2212,7 +2213,9 @@ function App() {
       setIsLoading(true);
       const reader = new FileReader();
       reader.onload = (ev) => {
-        const text = ev.target.result;
+        // Line breaks as main delivers them for every other open: a CR-only file otherwise met
+        // renderMarkdown's CR-based TeX repairs (`\rho`) at every line starting "ho".
+        const text = ev.target.result.replace(/\r\n?/g, '\n');
         if (looksBinary(text)) {
           setIsLoading(false);
           setStatusError(`Can't open ${file.name}: it looks like a binary file`);
