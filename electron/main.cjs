@@ -7,6 +7,7 @@ const { pathToFileURL } = require('url');
 // electron-store 9 and later are ES modules only. Electron's Node loads them with require(), which
 // hands back the module namespace, so the class is its default export.
 const { default: Store } = require('electron-store');
+const { openStore } = require('./storeRecovery.cjs');
 const { describeFsError } = require('./fsAccess.cjs');
 const { isAllowedNavigation, classifyExternalUrl, resolveLocalImagePath } = require('./linkSecurity.cjs');
 const appMenu = require('./appMenu.cjs');
@@ -125,11 +126,12 @@ const MAX_FILE_BYTES = 25 * 1024 * 1024;
  * ignoring the file. Up to 1.12.0 this was an extension whitelist, and an `Open with → FATE` on
  * anything not on it (`web.config`, say) did nothing whatsoever.
  */
-function isOpenableArg(arg) {
+async function isOpenableArg(arg) {
   if (!arg || arg.startsWith('-')) return false;
   let stat;
   try {
-    stat = fs.statSync(arg);
+    // Not statSync: a path on an unreachable share froze the whole window for the SMB timeout.
+    stat = await fs.promises.stat(arg);
   } catch (err) {
     // Under snap confinement a path the sandbox may not see fails with EACCES, not ENOENT; the
     // user still asked for that file. Keep it and let openAndWatchFile say why it will not open;
@@ -184,7 +186,8 @@ if (process.env.FATE_USER_DATA) {
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) app.quit();
 
-const store = new Store({
+/* A config.json that does not parse no longer stops FATE starting: see storeRecovery.cjs. */
+const store = openStore(Store, path.join(app.getPath('userData'), 'config.json'), {
   defaults: {
     // 'fate' = VagueDustin Enterprises navy & gold (utility tier), the default since 1.5.0.
     // Installs carrying the pre-1.5.0 'dark' value are migrated to 'fate' in the renderer; see
@@ -206,7 +209,7 @@ const store = new Store({
     // dictionary from Google's servers. See electron/spellcheck.cjs.
     spellcheck: process.platform === 'win32'
   }
-});
+}, { recover: gotTheLock });
 
 /*
  * Drop settings that no longer exist, so an upgraded install doesn't carry dead keys forever.
@@ -268,21 +271,42 @@ function rememberRecentFile(filePath) {
  */
 let lastDocumentFolder = null;
 
+/**
+ * Off the main thread, like the recents checks below: up to 1.15.0 this was statSync, so when the
+ * latest document sat on a NAS that had gone offline, Ctrl+O, Save As and Export PDF froze the
+ * whole window for the network timeout. A check still running is shared, so a dead share ties up
+ * one libuv thread, not one more per dialog.
+ */
+const folderChecks = new Map();
+
 function isExistingFolder(folder) {
-  try {
-    return fs.statSync(folder).isDirectory();
-  } catch {
-    return false;
+  let check = folderChecks.get(folder);
+  if (!check) {
+    check = fs.promises
+      .stat(folder)
+      .then((stat) => stat.isDirectory(), () => false)
+      .finally(() => folderChecks.delete(folder));
+    folderChecks.set(folder, check);
   }
+  return check;
 }
 
 /** `defaultPath` for a file dialog: `fileName` (or nothing) in `preferredFolder` or the latest document's folder. */
-function dialogDefaultPath(fileName = '', preferredFolder = null) {
+async function dialogDefaultPath(fileName = '', preferredFolder = null) {
   if (fileName && path.isAbsolute(fileName)) return fileName;
   const latest = storedRecents()[0];
-  const folder = [preferredFolder, lastDocumentFolder, latest && path.dirname(latest.path)].find(
-    (candidate) => candidate && isExistingFolder(candidate)
-  );
+  const candidates = [preferredFolder, lastDocumentFolder, latest && path.dirname(latest.path)];
+  /*
+   * All checked at once, then taken in order of preference against one deadline: a live first
+   * choice answers at once, and dead shares cost one deadline in all, after which a folder that
+   * has not answered is passed over.
+   */
+  const checks = candidates.map((candidate) => (candidate ? isExistingFolder(candidate) : null));
+  const deadline = new Promise((resolve) => setTimeout(resolve, RECENT_CHECK_TIMEOUT_MS, false));
+  let folder = null;
+  for (let i = 0; i < candidates.length && !folder; i++) {
+    if (checks[i] && (await Promise.race([checks[i], deadline]))) folder = candidates[i];
+  }
   if (!folder) return fileName;
   return fileName ? path.join(folder, fileName) : folder;
 }
@@ -532,7 +556,9 @@ function runPowerShell(script, timeout = 60000) {
   return new Promise((resolve) => {
     const file = path.join(app.getPath('temp'), `fate-ps-${process.pid}-${psScriptSeq++}.ps1`);
     try {
-      fs.writeFileSync(file, script, 'utf-8');
+      // With a UTF-8 byte-order mark: Windows PowerShell 5.1 reads a file without one as ANSI, so
+      // a non-ASCII install path in the script never matched the one in the registry.
+      fs.writeFileSync(file, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(script, 'utf8')]));
     } catch (e) {
       resolve({ ok: false, error: e.message, stdout: '' });
       return;
@@ -793,7 +819,8 @@ function ensureWindowsRegistration() {
   const stampKey = 'registrationStamp';
   // The trailing number is the registration SCHEMA version. Bump it whenever the shape of the
   // .reg payload changes, so existing installs re-heal on update even at the same app version.
-  const stamp = `${process.execPath}|${app.getVersion()}|4`;
+  // 5: the .reg file became UTF-16, so values garbled under 4 (non-ASCII install folders) re-heal.
+  const stamp = `${process.execPath}|${app.getVersion()}|5`;
   if (store.get(stampKey) === stamp) return;
 
   const exe = process.execPath.replace(/\\/g, '\\\\');
@@ -850,7 +877,12 @@ function ensureWindowsRegistration() {
 
   const regFile = path.join(app.getPath('temp'), `fate-registration-${process.pid}.reg`);
   try {
-    fs.writeFileSync(regFile, lines.join('\r\n'), 'utf-8');
+    /*
+     * UTF-16LE with a byte-order mark, the format "Version 5.00" files are. Up to 1.15.0 this was
+     * UTF-8 without one, which reg.exe reads as the ANSI code page: an install folder with a
+     * non-ASCII character got garbled commands registered, and the stamp kept them that way.
+     */
+    fs.writeFileSync(regFile, Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(lines.join('\r\n'), 'utf16le')]));
     execFile('reg', ['import', regFile], { windowsHide: true }, (err) => {
       try {
         fs.unlinkSync(regFile);
@@ -1054,9 +1086,21 @@ async function showPrintPreview(docName) {
   previewWindow.webContents.once('did-fail-load', (_e, errorCode, errorDescription) => {
     console.error(`Print preview failed to render PDF (${errorCode}: ${errorDescription}); ` +
                   'falling back to the system PDF handler.');
+    /*
+     * The system viewer gets its own copy under a unique name. destroy() fires 'closed', which
+     * deleted the PDF before the viewer could open it, and a viewer that keeps its file open
+     * would block the next preview from writing FATE-preview-<pid>.pdf again. tempCleanup.cjs
+     * removes the handed-off copies on a later launch.
+     */
+    let handoff = file.replace(/\.pdf$/, `-${Date.now()}.pdf`);
+    try {
+      fs.renameSync(file, handoff);
+    } catch {
+      handoff = file;
+    }
     if (previewWindow && !previewWindow.isDestroyed()) previewWindow.destroy();
     previewWindow = null;
-    shell.openPath(file);
+    shell.openPath(handoff);
   });
 
   previewWindow.loadURL(previewUrl);
@@ -1067,7 +1111,7 @@ async function showPrintPreview(docName) {
 async function exportPdf(docName) {
   const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
     title: 'Export as PDF',
-    defaultPath: dialogDefaultPath(`${safeFileStem(docName)}.pdf`),
+    defaultPath: await dialogDefaultPath(`${safeFileStem(docName)}.pdf`),
     filters: [{ name: 'PDF Document', extensions: ['pdf'] }]
   });
   if (canceled || !filePath) return { ok: false, canceled: true };
@@ -1151,7 +1195,7 @@ let mainWindow;
  * that uses them.
  */
 const { ENCODINGS, ENCODING_LABELS, defaultFormat, encode, resolveFormat, sameFormat, normalizeText, textDigest } = require('./fileFormat.cjs');
-const { readTextFile, writeFileAtomic } = require('./textFiles.cjs');
+const { readTextFile, writeFileAtomic, diskChangeSince } = require('./textFiles.cjs');
 const { createFileWatcher } = require('./fileWatch.cjs');
 const { createBackupStore } = require('./backups.cjs');
 const { isRendererSettingKey, checkRendererSetting } = require('./rendererSettings.cjs');
@@ -1175,9 +1219,22 @@ const { isRendererSettingKey, checkRendererSetting } = require('./rendererSettin
  *   forcedEncodings  path → the encoding picked with Reopen with encoding. Reloads keep decoding
  *                    with it; Windows-1252 text that happens to be valid UTF-8 would otherwise
  *                    flip back to UTF-8 at the next watch event.
+ *   knownStamps      path → { size, mtimeMs } of the file as FATE last read or wrote it, so a
+ *                    save can tell in one stat whether the file moved on since (diskMovedOn).
+ *   diskGens         path → how many times main has sent the renderer this file's disk text
+ *                    (open, reload, reopen, a refused save). Each delivery carries its number
+ *                    and a save carries the last one the tab received, so a save from a tab that
+ *                    has not seen the latest change yet is caught. Never reset: only ever higher.
  */
 const fileFormats = new Map();
 const knownText = new Map();
+const knownStamps = new Map();
+const diskGens = new Map();
+const nextDiskGen = (key) => {
+  const gen = (diskGens.get(key) ?? 0) + 1;
+  diskGens.set(key, gen);
+  return gen;
+};
 const forcedEncodings = new Map();
 
 /**
@@ -1248,6 +1305,7 @@ const fileWatcher = createFileWatcher({
   onRead: (filePath, doc) => {
     const key = watchKey(filePath);
     if (!fileFormats.has(key)) return; // the tab closed meanwhile
+    knownStamps.set(key, doc.stamp);
     const format = adoptFormat(key, doc);
     const digest = textDigest(doc.text);
     // Our own save landing, or a scan or indexer touching the file: not a change.
@@ -1258,7 +1316,7 @@ const fileWatcher = createFileWatcher({
      * The path rides along so the renderer can route the update to the right tab; the format,
      * because it can change on its own (a CRLF → LF conversion arrives with the text unchanged).
      */
-    if (mainWindow) mainWindow.webContents.send('file-changed', doc.text, filePath, { format });
+    if (mainWindow) mainWindow.webContents.send('file-changed', doc.text, filePath, { format, diskGen: nextDiskGen(key) });
   },
   onDeleted: (filePath) => {
     if (mainWindow && isOpenPath(filePath)) mainWindow.webContents.send('file-deleted', filePath);
@@ -1271,6 +1329,9 @@ const fileWatcher = createFileWatcher({
  * aggregate transition, so the window-close guard below can ask before discarding them.
  */
 let documentEdited = false;
+
+/** Install update was clicked with unsaved work: install once the close walk says go. */
+let installAfterClose = false;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -1334,8 +1395,11 @@ function createWindow() {
       return;
     }
     e.preventDefault();
-    clearTimeout(closeHandoffTimer);
+    // Asked already: the walk is open, or the escape hatch is counting down. Restarting the timer
+    // on every click kept a window whose page never answers open for as long as you kept trying.
+    if (closeHandoffTimer) return;
     closeHandoffTimer = setTimeout(() => {
+      closeHandoffTimer = null; // fired: a close cancelled after this must be able to ask again
       closeConfirmed = true;
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
     }, 60000);
@@ -1347,11 +1411,31 @@ function createWindow() {
   ipcMain.on('confirmed-close', (event, proceed) => {
     if (BrowserWindow.fromWebContents(event.sender) !== mainWindow) return;
     clearTimeout(closeHandoffTimer);
-    if (!proceed) return;
+    closeHandoffTimer = null;
+    if (!proceed) {
+      installAfterClose = false;
+      return;
+    }
     closeConfirmed = true;
     closeWalkDone = true;
     documentEdited = false;
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
+    if (installAfterClose) {
+      installAfterClose = false;
+      // A failed install (installer gone, say) reports synchronously and quits nothing: arm the
+      // unsaved-work guard again, since the tabs the walk was told not to save are still dirty.
+      let failed = false;
+      const onError = () => {
+        failed = true;
+      };
+      autoUpdater.once('error', onError);
+      autoUpdater.quitAndInstall();
+      autoUpdater.removeListener('error', onError);
+      if (failed) {
+        closeConfirmed = false;
+        closeWalkDone = false;
+        documentEdited = true;
+      }
+    } else if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
   });
 
   /*
@@ -1485,8 +1569,34 @@ function createWindow() {
   });
   // 'did-navigate', not 'did-start-navigation': the latter also fires for the navigations
   // will-navigate then refuses, and the page that stays is still listening.
+  // The old page's tabs are gone, and with them its files: they stop being watched and stop being
+  // saveable, which nothing did on a reload before (no tab sends close-file as the page unloads).
+  // What the new page restores, it opens again.
   mainWindow.webContents.on('did-navigate', () => {
     rendererReady = false;
+    installAfterClose = false; // the page whose close walk it waited for is gone
+    for (const key of [...fileFormats.keys()]) forgetPath(key);
+  });
+
+  /*
+   * The page crashed or was killed. Up to 1.15.0 nothing listened: the dirty flag stayed set, so
+   * every close went to a page that could never answer and the window stayed open until the
+   * 60-second escape hatch, and files from a second instance were sent to it and lost. The work
+   * is in the hot-exit backups, so the page reloads and restores it; a second crash within a
+   * minute is left on screen rather than looping.
+   */
+  let lastRendererCrash = 0;
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    if (details.reason === 'clean-exit') return;
+    console.error(`The window's renderer stopped (${details.reason}).`);
+    rendererReady = false;
+    documentEdited = false;
+    installAfterClose = false;
+    clearTimeout(closeHandoffTimer);
+    closeHandoffTimer = null;
+    const now = Date.now();
+    if (!closing && now - lastRendererCrash > 60000 && !mainWindow.isDestroyed()) mainWindow.webContents.reload();
+    lastRendererCrash = now;
   });
 
   // The page's renderer usually starts while the spellcheck dictionary is still loading, and then
@@ -1779,6 +1889,7 @@ function forgetPath(filePath) {
   fileWatcher.unwatch(filePath);
   fileFormats.delete(key);
   knownText.delete(key);
+  knownStamps.delete(key);
   forcedEncodings.delete(key);
 }
 
@@ -1831,6 +1942,7 @@ function deliverOpenedFile(filePath, opts, doc, err) {
   const format = adoptFormat(key, doc);
   fileFormats.set(key, format);
   knownText.set(key, textDigest(doc.text));
+  knownStamps.set(key, doc.stamp);
   rememberRecentFile(filePath);
 
   if (mainWindow) {
@@ -1843,7 +1955,8 @@ function deliverOpenedFile(filePath, opts, doc, err) {
      */
     mainWindow.webContents.send('open-file', doc.text, path.basename(filePath), filePath, {
       fromRestore: !!opts.fromRestore,
-      format
+      format,
+      diskGen: nextDiskGen(key)
     });
   }
   fileWatcher.watch(filePath);
@@ -1926,8 +2039,11 @@ function showRestoreFailures() {
  */
 async function openRecentFile(filePath, opts) {
   if (typeof filePath !== 'string' || !filePath) return { ok: false, reason: 'missing' };
-  const result = await openAndWatchFile(filePath, { fromRestore: !!(opts && opts.fromRestore) });
-  if (result.reason === 'missing') forgetRecentFile(filePath);
+  const fromRestore = !!(opts && opts.fromRestore);
+  const result = await openAndWatchFile(filePath, { fromRestore });
+  // Not during session restore: an unplugged drive or an unmapped share at launch reads as
+  // missing, and used to wipe those files from the recents. The home screen greys them out.
+  if (result.reason === 'missing' && !fromRestore) forgetRecentFile(filePath);
   return result;
 }
 
@@ -1953,18 +2069,64 @@ function prepareSave(name, content, passedFormat, recordedFormat) {
 }
 
 /**
+ * Has the file changed since FATE last read or wrote it, in a way the tab has not seen? Up to
+ * 1.15.0 a save simply wrote: an external edit still in the watcher's debounce when Save was
+ * pressed (the hold below drops it), or any edit on a mount that never reports changes, was
+ * replaced without a word. The check itself is diskChangeSince (textFiles.cjs). `tabGen` is the
+ * last disk generation the tab received (see diskGens). Resolves null to go ahead, a
+ * CHANGED_ON_DISK failure carrying the disk text, which the renderer shows in its changed-on-disk
+ * bar, or CHANGED_UNREADABLE. Must run under the path's hold.
+ */
+async function diskMovedOn(filePath, content, tabGen) {
+  const key = watchKey(filePath);
+  // The tab has not seen the latest disk text main sent it (still in flight, or not handled yet):
+  // what main knows is no guide to what the user saw, so the file is read and compared afresh.
+  const stale = typeof tabGen === 'number' && tabGen < (diskGens.get(key) ?? 0);
+  const check = await diskChangeSince(filePath, {
+    known: stale ? {} : { stamp: knownStamps.get(key), digest: knownText.get(key), format: fileFormats.get(key) },
+    savingDigest: textDigest(normalizeText(content)),
+    read: readDocument,
+    formatOf: (doc) => adoptFormat(key, doc)
+  });
+  if (check.stamp) knownStamps.set(key, check.stamp);
+  const name = path.basename(filePath);
+  if (check.verdict === 'unreadable') {
+    // Recorded above, so Save again goes ahead: the same choice as Keep mine.
+    const why = check.error.code === 'TOO_LARGE' ? 'it is now too large to open' : 'it no longer looks like text';
+    return saveFailure('CHANGED_UNREADABLE', `${name} changed on disk and ${why}, so it wasn't saved. Save again to overwrite it, or use Save As.`);
+  }
+  if (check.verdict !== 'changed') return null;
+  fileFormats.set(key, check.format);
+  knownText.set(key, check.digest);
+  return {
+    ok: false,
+    code: 'CHANGED_ON_DISK',
+    error: `${name} changed on disk, so it wasn't saved. Reload, keep yours, or compare.`,
+    content: check.doc.text,
+    format: check.format,
+    diskGen: nextDiskGen(key)
+  };
+}
+
+/**
  * Write encoded bytes atomically (textFiles.cjs) and record what is now on disk. The path's
  * watcher is held meanwhile, so neither a reload racing the write nor the write's own events can
  * come back to the renderer as an external change; then it is re-armed, because an atomic save
  * leaves a new file at the path.
  */
-async function commitSave(filePath, prepared, content) {
+async function commitSave(filePath, prepared, content, { guard = false, tabGen } = {}) {
   const key = watchKey(filePath);
   const release = fileWatcher.hold(filePath);
   try {
+    if (guard) {
+      const moved = await diskMovedOn(filePath, content, tabGen);
+      if (moved) return moved;
+    }
     await writeFileAtomic(filePath, prepared.data);
     fileFormats.set(key, prepared.format);
     knownText.set(key, textDigest(normalizeText(content)));
+    const stat = await fs.promises.stat(filePath).catch(() => null);
+    if (stat) knownStamps.set(key, { size: stat.size, mtimeMs: stat.mtimeMs });
     if (forcedEncodings.get(key) !== prepared.format.encoding) forcedEncodings.delete(key);
     fileWatcher.watch(filePath, { rearm: true });
     return { ok: true, format: prepared.format };
@@ -1992,17 +2154,21 @@ let openArgsQueue = Promise.resolve();
 function handleArgs(argv, cwd) {
   // argv also carries the exe path, the app path in dev, and Chromium switches; see
   // isOpenableArg for why this is a shape check and not an extension list.
-  const seen = new Set();
-  const files = candidateFilePaths(argv, { cwd }).filter((filePath) => {
-    const key = watchKey(filePath);
-    if (seen.has(key) || !isOpenableArg(filePath)) return false;
-    seen.add(key);
-    return true;
-  });
+  const candidates = candidateFilePaths(argv, { cwd });
   // One at a time, and one command line after another: the tabs open in the order given, and the
   // last file named is the one left in front.
   openArgsQueue = openArgsQueue.then(async () => {
-    for (const filePath of files) {
+    const seen = new Set();
+    for (const [i, filePath] of candidates.entries()) {
+      const key = watchKey(filePath);
+      if (seen.has(key) || !(await isOpenableArg(filePath))) continue;
+      seen.add(key);
+      // The page went away mid-batch (a crash, a reload): the rest waits for it to come back, as a
+      // command line arriving now would. Slot 0 is the exe path candidateFilePaths skips.
+      if (!rendererReady) {
+        pendingSecondInstanceArgs.push({ argv: ['', ...candidates.slice(i)], cwd });
+        return;
+      }
       try {
         await openAndWatchFile(filePath);
       } catch (err) {
@@ -2081,12 +2247,14 @@ app.whenReady().then(() => {
       return check;
     }
     store.set(key, val);
+    // An update the launch check already downloaded would otherwise still install on quit.
+    if (key === 'autoUpdatesEnabled') autoUpdater.autoInstallOnAppQuit = val === true;
     return { ok: true };
   });
 
   ipcMain.handle('open-file-dialog', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
-      defaultPath: dialogDefaultPath(),
+      defaultPath: await dialogDefaultPath(),
       properties: ['openFile'],
       // "All files" FIRST, so it is the default: FATE opens any text file, and hiding
       // `web.config`, `.properties` or an extensionless Dockerfile behind a filter switch made
@@ -2111,7 +2279,7 @@ app.whenReady().then(() => {
    * write somewhere new. Resolves { ok: true, format } with the format actually written, or
    * { ok: false, code, error }.
    */
-  ipcMain.handle('save-file', async (event, filePath, content, format) => {
+  ipcMain.handle('save-file', async (event, filePath, content, format, diskGen) => {
     if (typeof filePath !== 'string' || !filePath) return saveFailure('BAD_ARGS', 'No file path to save to');
     if (typeof content !== 'string') return saveFailure('BAD_ARGS', 'Nothing to save');
     const name = path.basename(filePath);
@@ -2119,7 +2287,7 @@ app.whenReady().then(() => {
       return saveFailure('NOT_OPEN', `Can't save ${name}: it isn't a file FATE has open. Use Save As instead.`);
     }
     const prepared = prepareSave(name, content, format, fileFormats.get(watchKey(filePath)));
-    return prepared.ok ? commitSave(filePath, prepared, content) : prepared;
+    return prepared.ok ? commitSave(filePath, prepared, content, { guard: true, tabGen: diskGen }) : prepared;
   });
 
   /**
@@ -2142,7 +2310,7 @@ app.whenReady().then(() => {
     try {
       const result = await dialog.showSaveDialog(mainWindow, {
         title: 'Save As',
-        defaultPath: dialogDefaultPath(suggested, fromPath && path.dirname(fromPath)),
+        defaultPath: await dialogDefaultPath(suggested, fromPath && path.dirname(fromPath)),
         // "All files" first: with a curated filter selected, Windows appends that filter's first
         // extension to any name typed without one, so saving a new buffer as `Dockerfile` or
         // `.env` produced `Dockerfile.md`. The typed name is now taken literally.
@@ -2192,8 +2360,9 @@ app.whenReady().then(() => {
       if (!isOpenPath(filePath)) return { ok: false, code: 'NOT_OPEN', error: `${name} was closed` };
       fileFormats.set(key, doc.format);
       knownText.set(key, textDigest(doc.text));
+      knownStamps.set(key, doc.stamp);
       forcedEncodings.set(key, encoding);
-      return { ok: true, content: doc.text, format: doc.format };
+      return { ok: true, content: doc.text, format: doc.format, diskGen: nextDiskGen(key) };
     } catch (err) {
       if (err.code === 'BINARY' || err.code === 'INVALID') {
         return { ok: false, code: err.code, error: `Can't reopen ${name} as ${ENCODING_LABELS[encoding]}: ${err.message}.` };
@@ -2421,7 +2590,17 @@ app.whenReady().then(() => {
     checkForUpdatesNow();
   });
 
+  /*
+   * With unsaved work, the close walk runs first and the install waits for its answer. Up to 1.15.0
+   * quitAndInstall started the installer at once; it waits about a second for FATE to exit and then
+   * kills it, so the Save / Don't save box vanished mid-answer and recent edits went with it.
+   */
   ipcMain.handle('install-update', () => {
+    if (documentEdited && mainWindow && !mainWindow.isDestroyed()) {
+      installAfterClose = true;
+      mainWindow.close();
+      return;
+    }
     autoUpdater.quitAndInstall();
   });
 
@@ -2445,7 +2624,12 @@ app.whenReady().then(() => {
     if(mainWindow) mainWindow.webContents.send('update-message', 'Update downloaded! Ready to install.', 'install');
   });
 
-  if (!isDev && !updateSource.managed) {
+  /*
+   * Only with the Automatic updates setting on. Up to 1.15.0 this ran on every launch regardless,
+   * so turning the setting off still contacted GitHub, downloaded the update and installed it on
+   * quit, against what PRIVACY.md promises.
+   */
+  if (!isDev && !updateSource.managed && store.get('autoUpdatesEnabled')) {
     // Offline launches reject here; the 'error' handler above has already told the status bar.
     autoUpdater.checkForUpdatesAndNotify().catch(() => {});
   }

@@ -18,7 +18,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { promisify } = require('util');
-const { decode } = require('./fileFormat.cjs');
+const { decode, textDigest, sameFormat } = require('./fileFormat.cjs');
 
 const fsp = fs.promises;
 
@@ -36,8 +36,9 @@ function codedError(code, message, extra) {
 }
 
 /**
- * Read and decode a text file: `{ text, format, bytes }` (see fileFormat.cjs for `format`;
- * `bytes` is the raw Buffer, for callers that need to compare it with an encoding of the text).
+ * Read and decode a text file: `{ text, format, bytes, stamp }` (see fileFormat.cjs for `format`;
+ * `bytes` is the raw Buffer, for callers that need to compare it with an encoding of the text;
+ * `stamp` is { size, mtimeMs }, a cheap "has it changed since?" check for later).
  *
  * Throws the fs error as is (ENOENT, EACCES, …) or a coded one: NOT_FILE (a folder, a device,
  * a pipe: anything readFile could hang on or that isn't a document), TOO_LARGE (with `size`),
@@ -54,7 +55,7 @@ async function readTextFile(filePath, { maxBytes = Infinity, forcedEncoding = nu
   // It may have grown between the stat and the read (a log being written, say).
   if (buffer.length > maxBytes) throw codedError('TOO_LARGE', `${path.basename(filePath)} is too large`, { size: buffer.length });
   const { text, format } = decode(buffer, forcedEncoding, { defaultEol });
-  return { text, format, bytes: buffer };
+  return { text, format, bytes: buffer, stamp: { size: buffer.length, mtimeMs: stat.mtimeMs } };
 }
 
 /**
@@ -226,4 +227,53 @@ async function writeFileAtomic(filePath, data, { mode = 0o666 } = {}) {
   }
 }
 
-module.exports = { readTextFile, writeFileAtomic };
+/**
+ * Before a save: has the file moved on since FATE last read or wrote it? Up to 1.15.0 a save simply
+ * wrote, and another program's edit that FATE had not shown yet was replaced without a word.
+ *
+ * `known` is what FATE last saw, { stamp, digest, format } (all optional: an empty `known` forces
+ * a read). `savingDigest` is textDigest of the text about to be written. `read` reads the file the
+ * way its tab does (main's readDocument); `formatOf` settles the format of what it read (main's
+ * adoptFormat). Size and mtime come first, from an open handle rather than a path stat so a
+ * network client revalidates attributes it may have cached; the text is read only when they moved.
+ *
+ * Resolves `{ verdict, stamp? }`, the stamp being the file's as it is now:
+ *   'unchanged'   write (also when the disk already holds exactly the text being saved)
+ *   'missing'     write: the save brings the file back
+ *   'unknown'     write: it can't be checked (permissions), and the write reports any real error
+ *   'changed'     don't write. Also { doc, format, digest } for showing the disk text
+ *   'unreadable'  don't write: it changed but can't be shown (too large, binary). Also { error }
+ */
+async function diskChangeSince(filePath, { known = {}, savingDigest, read, formatOf = (doc) => doc.format }) {
+  let stat;
+  try {
+    const handle = await fsp.open(filePath, 'r');
+    try {
+      stat = await handle.stat();
+    } finally {
+      await handle.close();
+    }
+  } catch (err) {
+    return { verdict: err.code === 'ENOENT' ? 'missing' : 'unknown' };
+  }
+  const stamp = { size: stat.size, mtimeMs: stat.mtimeMs };
+  if (known.stamp && stamp.size === known.stamp.size && stamp.mtimeMs === known.stamp.mtimeMs) {
+    return { verdict: 'unchanged', stamp };
+  }
+  let doc;
+  try {
+    doc = await read(filePath);
+  } catch (error) {
+    if (error.code === 'TOO_LARGE' || error.code === 'BINARY') return { verdict: 'unreadable', error, stamp };
+    return { verdict: 'unknown' };
+  }
+  const digest = textDigest(doc.text);
+  const format = formatOf(doc);
+  // Touched but not changed (a scan, a sync client), or already exactly what is being saved.
+  if ((digest === known.digest && known.format && sameFormat(format, known.format)) || digest === savingDigest) {
+    return { verdict: 'unchanged', stamp: doc.stamp };
+  }
+  return { verdict: 'changed', stamp: doc.stamp, doc, format, digest };
+}
+
+module.exports = { readTextFile, writeFileAtomic, diskChangeSince };

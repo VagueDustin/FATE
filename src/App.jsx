@@ -329,6 +329,14 @@ function App() {
   const pendingRestoresRef = useRef(new Map());
   const backupStateRef = useRef(new Map());
   const backupQueueRef = useRef(new Map());
+  /**
+   * pathKey → the last disk generation main sent with this file's text (`meta.diskGen`). Saves
+   * carry it, so main can refuse one from a tab that has not seen the latest change yet.
+   */
+  const diskGenRef = useRef(new Map());
+  const noteDiskGen = (p, gen) => {
+    if (p && typeof gen === 'number') diskGenRef.current.set(pathKey(p), gen);
+  };
   const quittingRef = useRef(false);
   const restoreStartedRef = useRef(false);
   /** The current render's operations, for listeners registered once (IPC, menu, keys, timers). */
@@ -1084,6 +1092,7 @@ function App() {
       setStatusError(res?.error || `Couldn't reopen ${doc.name}`);
       return;
     }
+    noteDiskGen(doc.path, res.diskGen);
     const latest = getDoc(id);
     if (!latest || isDocDirty(latest)) return; // edited while the file was read: leave it be
     reloadDoc(latest, res.content, res.format ?? null);
@@ -1159,7 +1168,8 @@ function App() {
    */
   const closeDoc = async (docId) => {
     const doc = getDoc(docId);
-    if (!doc) return false;
+    // Already gone (a Save As onto its path replaced it) counts as closed: closeMany stopped here.
+    if (!doc) return true;
 
     if (isDocDirty(doc)) {
       const api = window.electronAPI;
@@ -1453,7 +1463,7 @@ function App() {
     try {
       let res;
       if (doc.path && !forceAs) {
-        res = await window.electronAPI.saveFile(doc.path, content, format);
+        res = await window.electronAPI.saveFile(doc.path, content, format, diskGenRef.current.get(pathKey(doc.path)));
         /*
          * Main only saves to paths it has open (opened by any route, or chosen in Save As). A tab
          * restored from a backup whose file was gone, or would not reopen, has a path main never
@@ -1471,6 +1481,14 @@ function App() {
       if (res?.ok) {
         markDocSaved(id, { content, snapshot, editor, format: res.format ?? format ?? null });
         return true;
+      }
+      if (res?.code === 'CHANGED_ON_DISK') {
+        // Someone else's edit landed first: nothing was written, and the bar offers the choice.
+        noteDiskGen(doc.path, res.diskGen);
+        const latest = getDoc(id);
+        if (latest) applyDiskContent(latest, res.content, res.format ?? null);
+        setStatusError(res.error);
+        return false;
       }
       if (res?.code === 'UNENCODABLE') {
         // A Windows-1252 save of text it can't store. main's message suggests UTF-8.
@@ -1946,6 +1964,7 @@ function App() {
       }
 
       api.onOpenFile((content, name, path, meta) => {
+        noteDiskGen(path, meta.diskGen);
         opsRef.current.openDocument(content, name, path, meta);
       });
 
@@ -1955,6 +1974,7 @@ function App() {
        * changed-on-disk bar (see applyDiskContent).
        */
       api.onFileChanged((content, changedPath, meta) => {
+        noteDiskGen(changedPath, meta.diskGen);
         opsRef.current.onDiskChange(content, changedPath, meta);
       });
       api.onFileDeleted?.((deletedPath) => opsRef.current.markDeleted(deletedPath));
@@ -2117,8 +2137,10 @@ function App() {
         return;
       }
 
-      // Fixed: Ctrl+1–9 jump (9 = last), Ctrl+PgUp/PgDn cycle.
-      if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && /^[1-9]$/.test(e.key)) {
+      // Fixed: Ctrl+1-9 jump (9 = last), Ctrl+PgUp/PgDn cycle. Not under Settings or the palette,
+      // where they switched tabs behind the open layer.
+      const modalOpen = showSettings || showPalette;
+      if (!modalOpen && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && /^[1-9]$/.test(e.key)) {
         e.preventDefault();
         const ds = docsRef.current;
         if (ds.length > 0) {
@@ -2127,7 +2149,7 @@ function App() {
         }
         return;
       }
-      if (e.ctrlKey && !e.altKey && !e.metaKey && (e.key === 'PageDown' || e.key === 'PageUp')) {
+      if (!modalOpen && e.ctrlKey && !e.altKey && !e.metaKey && (e.key === 'PageDown' || e.key === 'PageUp')) {
         e.preventDefault();
         opsRef.current.runAction(e.key === 'PageDown' ? 'nextTab' : 'prevTab');
         return;
@@ -2140,8 +2162,9 @@ function App() {
       for (const { id } of SHORTCUT_ACTIONS) {
         if (matchesShortcut(e, settings.shortcuts[id])) {
           if (escapeHeld) return;
-          // Escape-as-close must not swallow Escape while a modal layer is open above the tabs.
-          if (id === 'close' && (showSettings || showPalette)) return;
+          // Escape-as-close must not swallow Escape while a modal layer is open above the tabs, and
+          // nothing may switch tabs behind one (Ctrl+Tab passes the dialogs' focus trap on purpose).
+          if (modalOpen && (id === 'close' || id === 'nextTab' || id === 'prevTab' || id === 'goHome')) return;
           e.preventDefault();
           opsRef.current.runAction(id);
           return;
@@ -2205,7 +2228,9 @@ function App() {
       setIsLoading(true);
       const reader = new FileReader();
       reader.onload = (ev) => {
-        const text = ev.target.result;
+        // Line breaks as main delivers them for every other open: a CR-only file otherwise met
+        // renderMarkdown's CR-based TeX repairs (`\rho`) at every line starting "ho".
+        const text = ev.target.result.replace(/\r\n?/g, '\n');
         if (looksBinary(text)) {
           setIsLoading(false);
           setStatusError(`Can't open ${file.name}: it looks like a binary file`);

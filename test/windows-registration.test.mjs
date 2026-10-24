@@ -63,3 +63,12 @@ test('preInit does nothing in the uninstaller-building pass that runs on the bui
   const preInit = nsh.match(/!macro preInit([\s\S]*?)!macroend/)[1];
   assert.match(preInit.trim(), /^!ifndef BUILD_UNINSTALLER[\s\S]*!endif$/);
 });
+
+test('the .reg and PowerShell files carry a byte-order mark, or Windows reads them as ANSI', () => {
+  // Without one, reg.exe and PowerShell 5.1 decode in the ANSI code page, and a non-ASCII install
+  // folder is registered garbled (and stays so: the stamp says it is done).
+  assert.match(mainCjs, /writeFileSync\(regFile, Buffer\.concat\(\[Buffer\.from\(\[0xff, 0xfe\]\), Buffer\.from\([^;]*'utf16le'\)\]\)\)/,
+    'the .reg file must be UTF-16LE with a BOM');
+  assert.match(mainCjs, /writeFileSync\(file, Buffer\.concat\(\[Buffer\.from\(\[0xef, 0xbb, 0xbf\]\), Buffer\.from\(script, 'utf8'\)\]\)\)/,
+    'the PowerShell script must be UTF-8 with a BOM');
+});

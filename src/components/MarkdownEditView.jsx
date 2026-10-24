@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import CodeEditor from './CodeEditor.jsx';
 import { renderMarkdown } from '../markdown.js';
+import { renderSafely } from '../renderSafely.js';
 import { useMermaid } from '../useMermaid.js';
 import { usePreviewScrollSync } from '../usePreviewScrollSync.js';
 
@@ -32,18 +33,17 @@ function MarkdownEditView({
 }) {
   const editorRef = useRef(null);
   const previewRef = useRef(null);
-  const [preview, setPreview] = useState(() =>
-    remoteImagesAllowed && doc.remoteImageCount > 0
-      ? renderMarkdown(doc.source, doc.path, { remoteImages: true })
-      : { html: doc.html, hasMermaid: doc.hasMermaid }
-  );
+  // doc.html already follows the remote-images setting (App renders with it), so no second render.
+  const [preview, setPreview] = useState(() => ({ html: doc.html, hasMermaid: doc.hasMermaid }));
   // Stable object, or React 19 rewrites the preview on every render (see MarkdownView).
   const previewMarkup = useMemo(() => ({ __html: preview.html }), [preview.html]);
   const timerRef = useRef(null);
 
   const renderNow = useCallback(() => {
     const text = editorRef.current?.getContent() ?? '';
-    const { html, hasMermaid } = renderMarkdown(text, doc.path, { remoteImages: remoteImagesAllowed });
+    // Through renderSafely: from a timer a throw reached nothing but the console, and the preview
+    // silently stopped following the text.
+    const { html, hasMermaid } = renderSafely(renderMarkdown, text, doc.path, { remoteImages: remoteImagesAllowed });
     setPreview({ html, hasMermaid });
   }, [doc.path, remoteImagesAllowed]);
 
@@ -52,13 +52,17 @@ function MarkdownEditView({
     timerRef.current = setTimeout(renderNow, 350);
   }, [renderNow]);
 
-  // Remote images switched on (Always load, in another tab) while editing: show them now.
-  const allowedRef = useRef(remoteImagesAllowed);
+  /*
+   * What the preview renders against changed under it: remote images switched on (Always load, in
+   * another tab), or Save As moved the file, so relative images resolve from its new folder (up to
+   * 1.15.0 that waited for the next keystroke). renderNow's identity changes exactly then.
+   */
+  const renderNowRef = useRef(renderNow);
   useEffect(() => {
-    if (allowedRef.current === remoteImagesAllowed) return;
-    allowedRef.current = remoteImagesAllowed;
+    if (renderNowRef.current === renderNow) return;
+    renderNowRef.current = renderNow;
     onDocChanged();
-  }, [remoteImagesAllowed, onDocChanged]);
+  }, [renderNow, onDocChanged]);
 
   useEffect(() => () => clearTimeout(timerRef.current), []);
 

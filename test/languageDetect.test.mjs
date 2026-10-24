@@ -41,9 +41,19 @@ test('real JSON is still JSON', () => {
     '   \n  [1, 2]',
     // JSONC: comments before the first token.
     '{\n  // editor settings\n  "a": 1\n}',
-    '[ /* first */ 1, 2 ]'
+    '[ /* first */ 1, 2 ]',
+    '{ /* a ** b */ /* c */ "k": 1 }'
   ];
   for (const text of json) assert.equal(sniffed(text), 'JSON', JSON.stringify(text));
+});
+
+test('many block comments before a non-JSON token fail fast instead of backtracking', () => {
+  // 28: enough that the old regex takes seconds and fails the assertion. More would make it hang
+  // the run instead (a regex blocks the event loop, so the test runner's timeout can't stop it).
+  const text = `{${' /* c */'.repeat(28)} key: 1 }`;
+  const start = performance.now();
+  assert.equal(sniffed(text), null);
+  assert.ok(performance.now() - start < 250, `took ${(performance.now() - start).toFixed(0)} ms`);
 });
 
 test('the head rules match JSON whose first token fits the sniffed head', () => {

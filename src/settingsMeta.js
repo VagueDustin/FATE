@@ -93,13 +93,20 @@ export const DEFAULT_SHORTCUTS = Object.fromEntries(
  * recorder should never have accepted back to its default: before 1.14.0 a bare letter could be
  * recorded, so "H" bound to Close tab closed tabs while typing, across restarts.
  */
+/**
+ * Fixed tab keys (see isAllowedShortcut) a stored binding may still name when they do the same
+ * thing anyway. Resetting such a binding to its default could land it on a key the user had given
+ * another action.
+ */
+const SAME_AS_FIXED = { nextTab: /^Control\+(?:Shift\+)?PageDown$/, prevTab: /^Control\+(?:Shift\+)?PageUp$/ };
+
 export function resolveShortcuts(stored) {
   const merged = { ...DEFAULT_SHORTCUTS };
   if (stored && typeof stored === 'object') {
     for (const [k, v] of Object.entries(stored)) {
       if (!(k in merged) || typeof v !== 'string' || !v) continue;
       const binding = normalizeBinding(v);
-      if (binding && isAllowedShortcut(binding)) merged[k] = binding;
+      if (binding && (isAllowedShortcut(binding) || SAME_AS_FIXED[k]?.test(binding))) merged[k] = binding;
     }
   }
   return merged;
@@ -251,10 +258,17 @@ const FUNCTION_KEY = /^F([1-9]|1[0-2])$/;
  * typing; Shift doesn't count, since Shift+H is just a capital H. The exceptions are F1–F12, on
  * their own or with modifiers, and a lone Escape, kept because it is the default for "Close tab /
  * dismiss (alternate)".
+ *
+ * Not the keys App.jsx handles itself before any binding: Ctrl+1-9 (jump to a tab) and
+ * Ctrl+PgUp/PgDn (cycle tabs). The recorder used to accept them, and the binding never fired.
  */
 export function isAllowedShortcut(binding) {
   const parsed = typeof binding === 'string' ? parseShortcut(binding) : binding;
   if (!parsed) return false;
+  if (parsed.ctrl && !parsed.alt && !parsed.meta) {
+    if (!parsed.shift && /^[1-9]$/.test(parsed.key)) return false;
+    if (parsed.key === 'PageUp' || parsed.key === 'PageDown') return false;
+  }
   if (FUNCTION_KEY.test(parsed.key)) return true;
   if (parsed.key === 'Escape' && !parsed.ctrl && !parsed.shift && !parsed.alt && !parsed.meta) return true;
   return parsed.ctrl || parsed.alt || parsed.meta;

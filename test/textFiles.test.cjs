@@ -5,7 +5,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { readTextFile, writeFileAtomic } = require('../electron/textFiles.cjs');
+const { readTextFile, writeFileAtomic, diskChangeSince } = require('../electron/textFiles.cjs');
+const { textDigest } = require('../electron/fileFormat.cjs');
 
 const posix = process.platform !== 'win32';
 
@@ -32,6 +33,8 @@ test('readTextFile decodes and reports the format', async (t) => {
   const doc = await readTextFile(file, { maxBytes: 1024 });
   assert.equal(doc.text, 'Write-Host hi\n');
   assert.deepEqual(doc.format, { encoding: 'utf16le', bom: true, eol: '\r\n' });
+  const stat = fs.statSync(file);
+  assert.deepEqual(doc.stamp, { size: stat.size, mtimeMs: stat.mtimeMs });
 });
 
 test('readTextFile refuses folders, oversized and binary files with coded errors', async (t) => {
@@ -196,3 +199,87 @@ test('saving onto a folder is refused', async (t) => {
   const dir = tempDir(t);
   await assert.rejects(writeFileAtomic(dir, Buffer.from('x')), (err) => err.code === 'EISDIR');
 });
+
+/* ── diskChangeSince: what a save checks first ──────────────────────────────────────────────── */
+
+/** A file, and what FATE would know about it right after reading it. */
+async function seen(t, contents) {
+  const file = path.join(tempDir(t), 'a.txt');
+  fs.writeFileSync(file, contents);
+  const doc = await readTextFile(file);
+  return { file, known: { stamp: doc.stamp, digest: textDigest(doc.text), format: doc.format } };
+}
+
+/** Move the mtime on, as any real write a moment later would. */
+const later = (file) => {
+  const when = new Date(Date.now() + 5000);
+  fs.utimesSync(file, when, when);
+};
+
+const MINE = textDigest('mine\n');
+
+test('diskChangeSince: an untouched file is unchanged, and is not read', async (t) => {
+  const { file, known } = await seen(t, 'one\n');
+  let reads = 0;
+  const read = (p) => {
+    reads++;
+    return readTextFile(p);
+  };
+  const r = await diskChangeSince(file, { known, savingDigest: MINE, read });
+  assert.equal(r.verdict, 'unchanged');
+  assert.equal(reads, 0);
+});
+
+test('diskChangeSince: touched with the same text and format is unchanged', async (t) => {
+  const { file, known } = await seen(t, 'one\r\n');
+  later(file);
+  const r = await diskChangeSince(file, { known, savingDigest: MINE, read: readTextFile });
+  assert.equal(r.verdict, 'unchanged');
+  assert.equal(r.stamp.mtimeMs, fs.statSync(file).mtimeMs, 'the new stamp is reported, to record');
+});
+
+test("diskChangeSince: another program's edit is changed, with the text to show", async (t) => {
+  const { file, known } = await seen(t, 'one\n');
+  fs.writeFileSync(file, 'theirs\n');
+  later(file);
+  const r = await diskChangeSince(file, { known, savingDigest: MINE, read: readTextFile });
+  assert.equal(r.verdict, 'changed');
+  assert.equal(r.doc.text, 'theirs\n');
+  assert.equal(r.digest, textDigest('theirs\n'));
+});
+
+test('diskChangeSince: a line-ending change alone is a change', async (t) => {
+  const { file, known } = await seen(t, 'one\r\ntwo\r\n');
+  fs.writeFileSync(file, 'one\ntwo\n');
+  later(file);
+  const r = await diskChangeSince(file, { known, savingDigest: MINE, read: readTextFile });
+  assert.equal(r.verdict, 'changed');
+  assert.equal(r.format.eol, '\n');
+});
+
+test('diskChangeSince: a disk that already holds the text being saved is unchanged', async (t) => {
+  const { file, known } = await seen(t, 'one\n');
+  fs.writeFileSync(file, 'mine\n');
+  later(file);
+  const r = await diskChangeSince(file, { known, savingDigest: MINE, read: readTextFile });
+  assert.equal(r.verdict, 'unchanged');
+});
+
+test('diskChangeSince: an empty known always reads', async (t) => {
+  const { file } = await seen(t, 'one\n');
+  const r = await diskChangeSince(file, { known: {}, savingDigest: MINE, read: readTextFile });
+  assert.equal(r.verdict, 'changed');
+});
+
+test('diskChangeSince: missing, and changed but unreadable', async (t) => {
+  const { file, known } = await seen(t, 'one\n');
+  const gone = await diskChangeSince(path.join(path.dirname(file), 'nope.txt'), { known, read: readTextFile });
+  assert.equal(gone.verdict, 'missing');
+  fs.writeFileSync(file, Buffer.from([0x7f, 0x45, 0x4c, 0x46, 0x00, 0x01]));
+  later(file);
+  const r = await diskChangeSince(file, { known, savingDigest: MINE, read: readTextFile });
+  assert.equal(r.verdict, 'unreadable');
+  assert.equal(r.error.code, 'BINARY');
+  assert.ok(r.stamp, 'the stamp is reported, so a second Save can go ahead');
+});
+

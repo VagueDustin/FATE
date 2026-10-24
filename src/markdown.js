@@ -1,5 +1,4 @@
 import { marked, Parser } from 'marked';
-import { markedHighlight } from 'marked-highlight';
 import DOMPurify from 'dompurify';
 // `lib/common` registers ~40 mainstream languages instead of all ~190. The full `highlight.js`
 // entrypoint was costing roughly a megabyte of bundle for long-tail languages that markdown code
@@ -23,13 +22,18 @@ import { classifyImageSrc, toFateLocalUrl, createSlugger } from './previewPaths.
  * opening a document and when a watched file changes on disk, without the tangle of setState the
  * old processMarkdown carried.
  *
- * ── Code fences: marked-highlight, not `marked.setOptions({ highlight })` ─────────────────────
+ * ── Code fences: highlighted in the code renderer ────────────────────────────────────────────
  * The old `highlight` option was removed from marked in v5. FATE had carried the dead option ever
  * since. It parsed fine, did nothing, and every fenced block rendered as plain <code> with no
  * `.hljs-*` spans, while a hard-coded github-dark.css sat in the bundle styling markup that never
- * existed. marked-highlight is the supported hook. The emitted `.hljs-*` classes are styled in
- * App.css from the SAME --syn-* tokens the code editor uses, so fenced blocks follow the active
- * theme exactly like full code files do.
+ * existed. The emitted `.hljs-*` classes are styled in App.css from the SAME --syn-* tokens the
+ * code editor uses, so fenced blocks follow the active theme exactly like full code files do.
+ *
+ * Up to 1.15.0 this went through marked-highlight, which works by registering a walkTokens hook.
+ * marked's walkTokens copies its whole result list once per token, so render time grew with the
+ * SQUARE of the block count: 400 KB of short paragraphs took about a second (36 s at 480 KB in
+ * the worst shape), on open, on every reload and on every pause while typing in Edit mode.
+ * Highlighting in the renderer emits the same markup byte for byte with no walk at all.
  *
  * ── KaTeX (see AI_CONTEXT.md §1; this is the app's founding feature) ─────────────────────────
  * `throwOnError: false, nonStandard: true` are load-bearing: nonStandard lets equations sit tight
@@ -50,15 +54,21 @@ hljs.registerLanguage('dockerfile', dockerfile);
 hljs.registerAliases(['ps', 'ps1', 'pwsh'], { languageName: 'powershell' });
 hljs.registerAliases(['bat', 'cmd', 'batch'], { languageName: 'dos' });
 
-marked.use(
-  markedHighlight({
-    langPrefix: 'hljs language-',
-    highlight(code, lang) {
-      const language = hljs.getLanguage(lang) ? lang : 'plaintext';
-      return hljs.highlight(code, { language }).value;
+const ATTR_ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+
+marked.use({
+  renderer: {
+    code({ text, lang }) {
+      // The info string's first word names the language; the rest (```js title="x") is ignored.
+      const language = (lang || '').match(/\S*/)[0];
+      const html = hljs.highlight(text, { language: hljs.getLanguage(language) ? language : 'plaintext' }).value;
+      // marked's own non-encoding escape: an entity already in the info string is left as it is.
+      const escaped = language.replace(/[<>"']|&(?!(?:#\d{1,7}|#[Xx][a-fA-F0-9]{1,6}|\w+);)/g, (c) => ATTR_ESCAPES[c]);
+      const cls = language ? ` class="hljs language-${escaped}"` : '';
+      return `<pre><code${cls}>${html.replace(/\n$/, '')}\n</code></pre>`;
     }
-  })
-);
+  }
+});
 
 /*
  * ── Telling KaTeX's markup from the document's ───────────────────────────────────────────────
@@ -165,6 +175,10 @@ function annotateLines(root) {
  *     the app's elements. #fragment links look for either form (previewLinks.js).
  *   - Nothing that fetches by itself: `srcset`, `poster`, `background` and CSS `url()` in SVG
  *     paint attributes are dropped; <img> is handled below (remote images are opt-in).
+ *   - No <audio>, <video>, <source> or <track>: they fetch their `src` the moment they parse, past
+ *     the remote-image opt-in, and a `//host/share` src on this file:// page is an SMB request
+ *     that hands the Windows login hash to that host (C5 in previewPaths.js). Local media never
+ *     played here anyway (fate-local serves images only).
  */
 const purifier = DOMPurify(window);
 
@@ -174,7 +188,8 @@ const SANITIZE_CONFIG = {
   ADD_ATTR: ['class', 'style', 'aria-hidden', 'encoding', 'xmlns', 'viewBox', 'd', 'preserveAspectRatio'],
   FORBID_TAGS: [
     'style', 'form', 'button', 'textarea', 'select', 'option', 'optgroup', 'datalist', 'dialog',
-    'meta', 'link', 'base', 'iframe', 'frame', 'frameset', 'object', 'embed', 'image'
+    'meta', 'link', 'base', 'iframe', 'frame', 'frameset', 'object', 'embed', 'image',
+    'audio', 'video', 'source', 'track'
   ],
   FORBID_ATTR: [
     'popover', 'popovertarget', 'popovertargetaction', 'command', 'commandfor', 'interestfor',
